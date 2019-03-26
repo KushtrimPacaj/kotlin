@@ -1,6 +1,6 @@
-// IGNORE_BACKEND: JS_IR
 // FILE: 1.kt
 // WITH_RUNTIME
+// KJS_WITH_FULL_RUNTIME
 package test
 
 inline fun <reified T : Enum<T>> myValues(): Array<T> {

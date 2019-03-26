@@ -6,10 +6,10 @@
 package org.jetbrains.kotlin.ir.backend.js.utils
 
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
-import org.jetbrains.kotlin.ir.declarations.IrFunction
-import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrLoop
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
+import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.js.backend.ast.*
 
 class JsGenerationContext {
@@ -43,7 +43,14 @@ class JsGenerationContext {
         this.currentFunction = func
     }
 
+    fun getNameForDeclaration(declaration: IrDeclaration): JsName =
+        if (declaration is IrSymbolOwner)
+            getNameForSymbol(declaration.symbol)
+        else
+            error("Unsupported")
+
     fun getNameForSymbol(symbol: IrSymbol): JsName = staticContext.getNameForSymbol(symbol, this)
+    fun getNameForType(type: IrType): JsName = staticContext.getNameForType(type, this)
     fun getNameForLoop(loop: IrLoop): JsName? = staticContext.getNameForLoop(loop, this)
 
     val continuation

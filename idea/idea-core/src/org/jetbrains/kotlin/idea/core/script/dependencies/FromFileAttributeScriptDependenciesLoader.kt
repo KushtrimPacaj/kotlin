@@ -11,25 +11,20 @@ import org.jetbrains.kotlin.idea.core.script.scriptDependencies
 import org.jetbrains.kotlin.script.KotlinScriptDefinition
 import kotlin.script.experimental.dependencies.ScriptDependencies
 
-class FromFileAttributeScriptDependenciesLoader(
-    file: VirtualFile,
-    scriptDef: KotlinScriptDefinition,
-    project: Project
-) : ScriptDependenciesLoader(file, scriptDef, project, true) {
+class FromFileAttributeScriptDependenciesLoader(project: Project) : ScriptDependenciesLoader(project) {
 
-    override fun loadDependencies() {
+    override fun loadDependencies(file: VirtualFile, scriptDef: KotlinScriptDefinition) {
         val deserializedDependencies = file.scriptDependencies ?: return
-        saveToCache(deserializedDependencies)
+        saveToCache(deserializedDependencies, file)
     }
 
-    private fun saveToCache(deserialized: ScriptDependencies) {
+    private fun saveToCache(deserialized: ScriptDependencies, file: VirtualFile) {
         val rootsChanged = cache.hasNotCachedRoots(deserialized)
         cache.save(file, deserialized)
         if (rootsChanged) {
-            notifyRootsChanged()
+            shouldNotifyRootsChanged = true
         }
     }
 
-    override fun shouldUseBackgroundThread() = false
     override fun shouldShowNotification(): Boolean = false
 }

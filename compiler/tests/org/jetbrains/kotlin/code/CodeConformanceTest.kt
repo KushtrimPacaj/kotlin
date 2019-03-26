@@ -47,16 +47,20 @@ class CodeConformanceTest : TestCase() {
                 "libraries/tools/kotlin-gradle-plugin-core/gradle_api_jar/build/tmp",
                 "libraries/tools/kotlin-maven-plugin/target",
                 "libraries/tools/kotlinp/src",
+                "libraries/tools/kotlin-test-nodejs-runner/node_modules",
+                "libraries/tools/kotlin-test-nodejs-runner/.gradle",
                 "compiler/testData/psi/kdoc",
                 "compiler/tests/org/jetbrains/kotlin/code/CodeConformanceTest.kt",
-                "compiler/util/src/org/jetbrains/kotlin/config/MavenComparableVersion.java"
+                "compiler/util/src/org/jetbrains/kotlin/config/MavenComparableVersion.java",
+                "dependencies/protobuf/protobuf-relocated/build"
         ).map(::File)
 
         private val COPYRIGHT_EXCLUDED_FILES_AND_DIRS = listOf(
             "dependencies",
             "out",
             "dist",
-            "custom-dependencies/android-sdk/build",
+            "dependencies/android-sdk/build",
+            "dependencies/protobuf/protobuf-relocated/build",
             "compiler/tests/org/jetbrains/kotlin/code/CodeConformanceTest.kt",
             "idea/idea-jvm/src/org/jetbrains/kotlin/idea/copyright",
             "js/js.tests/.gradle",
@@ -70,8 +74,9 @@ class CodeConformanceTest : TestCase() {
             "libraries/stdlib/js/node_modules",
             "libraries/tools/kotlin-maven-plugin-test/target",
             "libraries/tools/kotlin-gradle-plugin-integration-tests/build",
-            "buildSrc/prepare-deps/android-dx/build",
-            "buildSrc/prepare-deps/intellij-sdk/build"
+            "libraries/tools/kotlin-test-nodejs-runner/node_modules",
+            "libraries/tools/kotlin-test-nodejs-runner/.gradle",
+            "buildSrc/prepare-deps/build"
         )
     }
 

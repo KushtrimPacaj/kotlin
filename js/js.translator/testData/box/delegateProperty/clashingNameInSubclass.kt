@@ -1,5 +1,4 @@
-// IGNORE_BACKEND: JS_IR
-// EXPECTED_REACHABLE_NODES: 1157
+// EXPECTED_REACHABLE_NODES: 1327
 fun box(): String {
     val b = B()
 

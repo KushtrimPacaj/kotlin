@@ -23,10 +23,15 @@ import org.jetbrains.kotlin.codegen.*
 import org.jetbrains.kotlin.codegen.binding.CodegenBinding
 import org.jetbrains.kotlin.codegen.inline.DefaultSourceMapper
 import org.jetbrains.kotlin.codegen.inline.SourceMapper
+import org.jetbrains.kotlin.codegen.serialization.JvmSerializationBindings
+import org.jetbrains.kotlin.codegen.serialization.JvmSerializerExtension
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.util.dump
+import org.jetbrains.kotlin.ir.util.getPackageFragment
 import org.jetbrains.kotlin.load.java.JavaVisibilities
+import org.jetbrains.kotlin.load.java.JvmAbi
+import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.name.SpecialNames
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.resolve.DescriptorUtils
@@ -34,12 +39,13 @@ import org.jetbrains.kotlin.resolve.DescriptorUtils.isTopLevelDeclaration
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.OtherOrigin
 import org.jetbrains.kotlin.resolve.source.getPsi
+import org.jetbrains.kotlin.serialization.DescriptorSerializer
 import org.jetbrains.kotlin.types.ErrorUtils
 import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.Type
-import java.lang.RuntimeException
+import java.io.File
 
-class ClassCodegen private constructor(
+open class ClassCodegen protected constructor(
     internal val irClass: IrClass,
     val context: JvmBackendContext,
     private val parentClassCodegen: ClassCodegen? = null
@@ -64,11 +70,25 @@ class ClassCodegen private constructor(
 
     private val fileEntry = sourceManager.getFileEntry(irClass.fileParent)
 
-    val psiElement = irClass.descriptor.psiElement!!
+    val psiElement = irClass.descriptor.psiElement
 
-    val visitor: ClassBuilder = state.factory.newVisitor(OtherOrigin(psiElement, descriptor), type, psiElement.containingFile)
+    val visitor: ClassBuilder = createClassBuilder()
+
+    open fun createClassBuilder() = state.factory.newVisitor(
+        OtherOrigin(psiElement, descriptor),
+        type,
+        psiElement?.containingFile?.let { setOf(it) } ?: emptySet()
+    )
 
     private var sourceMapper: DefaultSourceMapper? = null
+
+    private val serializerExtension = JvmSerializerExtension(visitor.serializationBindings, state)
+    private val serializer: DescriptorSerializer? =
+        when (val metadata = irClass.metadata) {
+            is MetadataSource.Class -> DescriptorSerializer.create(metadata.descriptor, serializerExtension, parentClassCodegen?.serializer)
+            is MetadataSource.File -> DescriptorSerializer.createTopLevel(serializerExtension)
+            else -> null
+        }
 
     fun generate() {
         val superClassInfo = SuperClassInfo.getSuperClassInfo(descriptor, typeMapper)
@@ -83,14 +103,57 @@ class ClassCodegen private constructor(
             signature.superclassName,
             signature.interfaces.toTypedArray()
         )
-        AnnotationCodegen.forClass(visitor.visitor, this, typeMapper).genAnnotations(descriptor, null)
-        visitor.visitSource(irClass.symbol.descriptor.source.containingFile.name!!, null)
+        AnnotationCodegen(this, context.state, visitor.visitor::visitAnnotation).genAnnotations(irClass, null)
+        /* TODO: Temporary workaround: ClassBuilder needs a pathless name. */
+        val shortName = File(fileEntry.name).name
+        visitor.visitSource(shortName, null)
 
-        irClass.declarations.forEach {
-            generateDeclaration(it)
+        val nestedClasses = irClass.declarations.mapNotNull { declaration ->
+            if (declaration is IrClass) {
+                ClassCodegen(declaration, context, this)
+            } else null
         }
 
+        val companionObjectCodegen = nestedClasses.firstOrNull { it.irClass.isCompanion }
+
+        for (declaration in irClass.declarations) {
+            generateDeclaration(declaration, companionObjectCodegen)
+        }
+
+        // Generate nested classes at the end, to ensure that codegen for companion object will have the necessary JVM signatures in its
+        // trace for properties moved to the outer class
+        for (codegen in nestedClasses) {
+            codegen.generate()
+        }
+
+        generateKotlinMetadataAnnotation()
+
         done()
+    }
+
+    private fun generateKotlinMetadataAnnotation() {
+        when (val metadata = irClass.metadata) {
+            is MetadataSource.Class -> {
+                val classProto = serializer!!.classProto(metadata.descriptor).build()
+                writeKotlinMetadata(visitor, state, KotlinClassHeader.Kind.CLASS, 0) {
+                    AsmUtil.writeAnnotationData(it, serializer, classProto)
+                }
+            }
+            is MetadataSource.File -> {
+                val packageFqName = irClass.getPackageFragment()!!.fqName
+                val packageProto = serializer!!.packagePartProto(packageFqName, metadata.descriptors)
+
+                serializerExtension.serializeJvmPackage(packageProto, type)
+
+                writeKotlinMetadata(visitor, state, KotlinClassHeader.Kind.FILE_FACADE, 0) {
+                    AsmUtil.writeAnnotationData(it, serializer, packageProto.build())
+                    // TODO: JvmPackageName
+                }
+            }
+            else -> {
+                writeSyntheticClassMetadata(visitor, state)
+            }
+        }
     }
 
     private fun done() {
@@ -127,46 +190,79 @@ class ClassCodegen private constructor(
         }
     }
 
-    fun generateDeclaration(declaration: IrDeclaration) {
+    private fun generateDeclaration(declaration: IrDeclaration, companionObjectCodegen: ClassCodegen?) {
         when (declaration) {
             is IrField ->
-                generateField(declaration)
+                generateField(declaration, companionObjectCodegen)
             is IrFunction -> {
                 generateMethod(declaration)
             }
             is IrAnonymousInitializer -> {
                 // skip
             }
-            is IrTypeAlias -> {
-                // skip
-            }
             is IrClass -> {
-                ClassCodegen(declaration, context, this).generate()
+                // Nested classes are generated separately
             }
             else -> throw RuntimeException("Unsupported declaration $declaration")
         }
     }
 
+    fun generateLocalClass(klass: IrClass) {
+        ClassCodegen(klass, context, this).generate()
+    }
 
-    private fun generateField(field: IrField) {
+    private fun generateField(field: IrField, companionObjectCodegen: ClassCodegen?) {
         if (field.origin == IrDeclarationOrigin.FAKE_OVERRIDE) return
+
         val fieldType = typeMapper.mapType(field.descriptor)
         val fieldSignature = typeMapper.mapFieldSignature(field.descriptor.type, field.descriptor)
+        val fieldName = field.descriptor.name.asString()
         val fv = visitor.newField(
-            field.OtherOrigin, field.descriptor.calculateCommonFlags(), field.descriptor.name.asString(), fieldType.descriptor,
+            field.OtherOrigin, field.descriptor.calculateCommonFlags(), fieldName, fieldType.descriptor,
             fieldSignature, null/*TODO support default values*/
         )
 
-        if (field.origin == JvmLoweredDeclarationOrigin.FIELD_FOR_ENUM_ENTRY) {
-            AnnotationCodegen.forField(fv, this, typeMapper).genAnnotations(field.descriptor, null)
-        } else {
+        AnnotationCodegen(this, state, fv::visitAnnotation).genAnnotations(field, fieldType)
 
+        val descriptor = field.metadata?.descriptor
+        if (descriptor != null) {
+            val codegen = if (JvmAbi.isPropertyWithBackingFieldInOuterClass(descriptor)) {
+                companionObjectCodegen ?: error("Class with a property moved from the companion must have a companion:\n${irClass.dump()}")
+            } else this
+            codegen.visitor.serializationBindings.put(JvmSerializationBindings.FIELD_FOR_PROPERTY, descriptor, fieldType to fieldName)
         }
     }
 
     private fun generateMethod(method: IrFunction) {
         if (method.origin == IrDeclarationOrigin.FAKE_OVERRIDE) return
-        FunctionCodegen(method, this).generate()
+
+        val signature = FunctionCodegen(method, this).generate().asmMethod
+
+        val metadata = method.metadata
+        when (metadata) {
+            is MetadataSource.Property -> {
+                // We can't check for JvmLoweredDeclarationOrigin.SYNTHETIC_METHOD_FOR_PROPERTY_ANNOTATIONS because for interface methods
+                // moved to DefaultImpls, origin is changed to DEFAULT_IMPLS
+                // TODO: fix origin somehow, because otherwise $annotations methods in interfaces also don't have ACC_SYNTHETIC
+                assert(method.name.asString().endsWith(JvmAbi.ANNOTATED_PROPERTY_METHOD_NAME_SUFFIX)) { method.dump() }
+
+                val codegen = if (DescriptorUtils.isInterface(metadata.descriptor.containingDeclaration)) {
+                    assert(irClass.origin == JvmLoweredDeclarationOrigin.DEFAULT_IMPLS) { irClass.dump() }
+                    parentClassCodegen!!
+                } else {
+                    this
+                }
+                codegen.visitor.serializationBindings.put(
+                    JvmSerializationBindings.SYNTHETIC_METHOD_FOR_PROPERTY, metadata.descriptor, signature
+                )
+            }
+            is MetadataSource.Function -> {
+                visitor.serializationBindings.put(JvmSerializationBindings.METHOD_FOR_FUNCTION, metadata.descriptor, signature)
+            }
+            null -> {
+            }
+            else -> error("Incorrect metadata source $metadata for:\n${method.dump()}")
+        }
     }
 
     private fun writeInnerClasses() {
@@ -197,8 +293,8 @@ class ClassCodegen private constructor(
 
     // It's necessary for proper recovering of classId by plain string JVM descriptor when loading annotations
     // See FileBasedKotlinClass.convertAnnotationVisitor
-    override fun addInnerClassInfoFromAnnotation(classDescriptor: ClassDescriptor) {
-        var current: DeclarationDescriptor? = classDescriptor
+    override fun addInnerClassInfoFromAnnotation(irClass: IrClass) {
+        var current: DeclarationDescriptor? = irClass.descriptor
         while (current != null && !isTopLevelDeclaration(current)) {
             if (current is ClassDescriptor) {
                 innerClasses.add(current)
@@ -210,13 +306,7 @@ class ClassCodegen private constructor(
 
     fun getOrCreateSourceMapper(): DefaultSourceMapper {
         if (sourceMapper == null) {
-            sourceMapper = DefaultSourceMapper(
-                SourceInfo.createInfoForIr(
-                    fileEntry.getSourceRangeInfo(irClass.startOffset, irClass.endOffset).endLineNumber + 1,
-                    this.visitor.thisName,
-                    this.psiElement.containingFile.name
-                )
-            )
+            sourceMapper = context.getSourceMapper(irClass)
         }
         return sourceMapper!!
     }
@@ -258,7 +348,12 @@ fun MemberDescriptor.calculateCommonFlags(): Int {
 
 private fun MemberDescriptor.calcModalityFlag(): Int {
     var flags = 0
-    when (effectiveModality) {
+    if (this is PropertyDescriptor) {
+        // Modality for a field: set FINAL for vals
+        if (!isVar && !isLateInit) {
+            flags = flags.or(Opcodes.ACC_FINAL)
+        }
+    } else when (effectiveModality) {
         Modality.ABSTRACT -> {
             flags = flags.or(Opcodes.ACC_ABSTRACT)
         }
@@ -283,14 +378,8 @@ private fun MemberDescriptor.calcModalityFlag(): Int {
 
 private val MemberDescriptor.effectiveModality: Modality
     get() {
-        if (this is ClassDescriptor && kind == ClassKind.ENUM_CLASS) {
-            if (JvmCodegenUtil.hasAbstractMembers(this)) {
-                return Modality.ABSTRACT
-            }
-        }
         if (DescriptorUtils.isSealedClass(this) ||
-            DescriptorUtils.isAnnotationClass(this) ||
-            DescriptorUtils.isAnnotationClass(this.containingDeclaration)
+            DescriptorUtils.isAnnotationClass(this)
         ) {
             return Modality.ABSTRACT
         }

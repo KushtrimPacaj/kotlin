@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.serialization.builtins
 
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
+import org.jetbrains.kotlin.descriptors.deserialization.AdditionalClassPartsProvider
 import org.jetbrains.kotlin.descriptors.deserialization.PlatformDependentDeclarationFilter
 import org.jetbrains.kotlin.jvm.compiler.LoadDescriptorUtil.TEST_PACKAGE_FQNAME
 import org.jetbrains.kotlin.serialization.deserialization.builtins.BuiltInsLoaderImpl
@@ -41,10 +42,15 @@ class BuiltInsSerializerTest : TestCaseWithTmpdir() {
         val module = KotlinTestUtils.createEmptyModule("<module>", DefaultBuiltIns.Instance)
 
         val packageFragmentProvider = BuiltInsLoaderImpl().createBuiltInPackageFragmentProvider(
-                LockBasedStorageManager(), module, setOf(TEST_PACKAGE_FQNAME), emptyList(), PlatformDependentDeclarationFilter.All
+            LockBasedStorageManager("BuiltInsSerializerTest"),
+            module,
+            setOf(TEST_PACKAGE_FQNAME),
+            emptyList(),
+            PlatformDependentDeclarationFilter.All,
+            AdditionalClassPartsProvider.None,
+            isFallback = false
         ) {
-            val file = File(tmpdir, it)
-            if (file.exists()) FileInputStream(file) else null
+            File(tmpdir, it).takeIf(File::exists)?.let(::FileInputStream)
         }
 
         module.initialize(packageFragmentProvider)
@@ -111,5 +117,9 @@ class BuiltInsSerializerTest : TestCaseWithTmpdir() {
 
     fun testBinaryRetainedAnnotation() {
         doTest("binaryRetainedAnnotation.kt")
+    }
+
+    fun testPropertyAccessorAnnotations() {
+        doTest("propertyAccessorAnnotations.kt")
     }
 }

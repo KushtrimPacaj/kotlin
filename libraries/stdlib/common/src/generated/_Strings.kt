@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -13,20 +13,19 @@ package kotlin.text
 // See: https://github.com/JetBrains/kotlin/tree/master/libraries/stdlib
 //
 
-import kotlin.*
-import kotlin.text.*
-import kotlin.comparisons.*
+import kotlin.random.*
 
 /**
  * Returns a character at the given [index] or throws an [IndexOutOfBoundsException] if the [index] is out of bounds of this char sequence.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAt
  */
-@kotlin.internal.InlineOnly
-public inline fun CharSequence.elementAt(index: Int): Char {
-    return get(index)
-}
+public expect fun CharSequence.elementAt(index: Int): Char
 
 /**
  * Returns a character at the given [index] or the result of calling the [defaultValue] function if the [index] is out of bounds of this char sequence.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAtOrElse
  */
 @kotlin.internal.InlineOnly
 public inline fun CharSequence.elementAtOrElse(index: Int, defaultValue: (Int) -> Char): Char {
@@ -35,6 +34,8 @@ public inline fun CharSequence.elementAtOrElse(index: Int, defaultValue: (Int) -
 
 /**
  * Returns a character at the given [index] or `null` if the [index] is out of bounds of this char sequence.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAtOrNull
  */
 @kotlin.internal.InlineOnly
 public inline fun CharSequence.elementAtOrNull(index: Int): Char? {
@@ -171,6 +172,29 @@ public inline fun CharSequence.lastOrNull(predicate: (Char) -> Boolean): Char? {
 }
 
 /**
+ * Returns a random character from this char sequence.
+ * 
+ * @throws NoSuchElementException if this char sequence is empty.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline fun CharSequence.random(): Char {
+    return random(Random)
+}
+
+/**
+ * Returns a random character from this char sequence using the specified source of randomness.
+ * 
+ * @throws NoSuchElementException if this char sequence is empty.
+ */
+@SinceKotlin("1.3")
+public fun CharSequence.random(random: Random): Char {
+    if (isEmpty())
+        throw NoSuchElementException("Char sequence is empty.")
+    return get(random.nextInt(length))
+}
+
+/**
  * Returns the single character, or throws an exception if the char sequence is empty or has more than one character.
  */
 public fun CharSequence.single(): Char {
@@ -226,7 +250,9 @@ public inline fun CharSequence.singleOrNull(predicate: (Char) -> Boolean): Char?
 /**
  * Returns a subsequence of this char sequence with the first [n] characters removed.
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.drop
  */
 public fun CharSequence.drop(n: Int): CharSequence {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -236,7 +262,9 @@ public fun CharSequence.drop(n: Int): CharSequence {
 /**
  * Returns a string with the first [n] characters removed.
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.drop
  */
 public fun String.drop(n: Int): String {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -246,7 +274,9 @@ public fun String.drop(n: Int): String {
 /**
  * Returns a subsequence of this char sequence with the last [n] characters removed.
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.drop
  */
 public fun CharSequence.dropLast(n: Int): CharSequence {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -256,7 +286,9 @@ public fun CharSequence.dropLast(n: Int): CharSequence {
 /**
  * Returns a string with the last [n] characters removed.
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.drop
  */
 public fun String.dropLast(n: Int): String {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -266,7 +298,7 @@ public fun String.dropLast(n: Int): String {
 /**
  * Returns a subsequence of this char sequence containing all characters except last characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @sample samples.text.Strings.drop
  */
 public inline fun CharSequence.dropLastWhile(predicate: (Char) -> Boolean): CharSequence {
     for (index in lastIndex downTo 0)
@@ -278,7 +310,7 @@ public inline fun CharSequence.dropLastWhile(predicate: (Char) -> Boolean): Char
 /**
  * Returns a string containing all characters except last characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @sample samples.text.Strings.drop
  */
 public inline fun String.dropLastWhile(predicate: (Char) -> Boolean): String {
     for (index in lastIndex downTo 0)
@@ -290,7 +322,7 @@ public inline fun String.dropLastWhile(predicate: (Char) -> Boolean): String {
 /**
  * Returns a subsequence of this char sequence containing all characters except first characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @sample samples.text.Strings.drop
  */
 public inline fun CharSequence.dropWhile(predicate: (Char) -> Boolean): CharSequence {
     for (index in this.indices)
@@ -302,7 +334,7 @@ public inline fun CharSequence.dropWhile(predicate: (Char) -> Boolean): CharSequ
 /**
  * Returns a string containing all characters except first characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.drop
+ * @sample samples.text.Strings.drop
  */
 public inline fun String.dropWhile(predicate: (Char) -> Boolean): String {
     for (index in this.indices)
@@ -428,7 +460,9 @@ public inline fun String.slice(indices: Iterable<Int>): String {
 /**
  * Returns a subsequence of this char sequence containing the first [n] characters from this char sequence, or the entire char sequence if this char sequence is shorter.
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.take
  */
 public fun CharSequence.take(n: Int): CharSequence {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -438,7 +472,9 @@ public fun CharSequence.take(n: Int): CharSequence {
 /**
  * Returns a string containing the first [n] characters from this string, or the entire string if this string is shorter.
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.take
  */
 public fun String.take(n: Int): String {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -448,7 +484,9 @@ public fun String.take(n: Int): String {
 /**
  * Returns a subsequence of this char sequence containing the last [n] characters from this char sequence, or the entire char sequence if this char sequence is shorter.
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.take
  */
 public fun CharSequence.takeLast(n: Int): CharSequence {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -459,7 +497,9 @@ public fun CharSequence.takeLast(n: Int): CharSequence {
 /**
  * Returns a string containing the last [n] characters from this string, or the entire string if this string is shorter.
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
+ * @sample samples.text.Strings.take
  */
 public fun String.takeLast(n: Int): String {
     require(n >= 0) { "Requested character count $n is less than zero." }
@@ -470,7 +510,7 @@ public fun String.takeLast(n: Int): String {
 /**
  * Returns a subsequence of this char sequence containing last characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @sample samples.text.Strings.take
  */
 public inline fun CharSequence.takeLastWhile(predicate: (Char) -> Boolean): CharSequence {
     for (index in lastIndex downTo 0) {
@@ -484,7 +524,7 @@ public inline fun CharSequence.takeLastWhile(predicate: (Char) -> Boolean): Char
 /**
  * Returns a string containing last characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @sample samples.text.Strings.take
  */
 public inline fun String.takeLastWhile(predicate: (Char) -> Boolean): String {
     for (index in lastIndex downTo 0) {
@@ -498,7 +538,7 @@ public inline fun String.takeLastWhile(predicate: (Char) -> Boolean): String {
 /**
  * Returns a subsequence of this char sequence containing the first characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @sample samples.text.Strings.take
  */
 public inline fun CharSequence.takeWhile(predicate: (Char) -> Boolean): CharSequence {
     for (index in 0 until length)
@@ -511,7 +551,7 @@ public inline fun CharSequence.takeWhile(predicate: (Char) -> Boolean): CharSequ
 /**
  * Returns a string containing the first characters that satisfy the given [predicate].
  * 
- * @sample samples.collections.Collections.Transformations.take
+ * @sample samples.text.Strings.take
  */
 public inline fun String.takeWhile(predicate: (Char) -> Boolean): String {
     for (index in 0 until length)
@@ -611,6 +651,36 @@ public inline fun <K, V, M : MutableMap<in K, in V>> CharSequence.associateByTo(
 public inline fun <K, V, M : MutableMap<in K, in V>> CharSequence.associateTo(destination: M, transform: (Char) -> Pair<K, V>): M {
     for (element in this) {
         destination += transform(element)
+    }
+    return destination
+}
+
+/**
+ * Returns a [Map] where keys are characters from the given char sequence and values are
+ * produced by the [valueSelector] function applied to each character.
+ * 
+ * If any two characters are equal, the last one gets added to the map.
+ * 
+ * The returned map preserves the entry iteration order of the original char sequence.
+ * 
+ * @sample samples.text.Strings.associateWith
+ */
+@SinceKotlin("1.3")
+public inline fun <V> CharSequence.associateWith(valueSelector: (Char) -> V): Map<Char, V> {
+    val result = LinkedHashMap<Char, V>(mapCapacity(length).coerceAtLeast(16))
+    return associateWithTo(result, valueSelector)
+}
+
+/**
+ * Populates and returns the [destination] mutable map with key-value pairs for each character of the given char sequence,
+ * where key is the character itself and value is provided by the [valueSelector] function applied to that key.
+ * 
+ * If any two characters are equal, the last one overwrites the former value in the map.
+ */
+@SinceKotlin("1.3")
+public inline fun <V, M : MutableMap<in Char, in V>> CharSequence.associateWithTo(destination: M, valueSelector: (Char) -> V): M {
+    for (element in this) {
+        destination.put(element, valueSelector(element))
     }
     return destination
 }
@@ -745,7 +815,7 @@ public inline fun <K, V, M : MutableMap<in K, MutableList<V>>> CharSequence.grou
  * Creates a [Grouping] source from a char sequence to be used later with one of group-and-fold operations
  * using the specified [keySelector] function to extract a key from each character.
  * 
- * @sample samples.collections.Collections.Transformations.groupingByEachCount
+ * @sample samples.collections.Grouping.groupingByEachCount
  */
 @SinceKotlin("1.1")
 public inline fun <K> CharSequence.groupingBy(crossinline keySelector: (Char) -> K): Grouping<Char, K> {
@@ -883,7 +953,7 @@ public inline fun CharSequence.count(): Int {
  */
 public inline fun CharSequence.count(predicate: (Char) -> Boolean): Int {
     var count = 0
-    for (element in this) if (predicate(element)) count++
+    for (element in this) if (predicate(element)) ++count
     return count
 }
 
@@ -969,6 +1039,8 @@ public fun CharSequence.max(): Char? {
 
 /**
  * Returns the first character yielding the largest value of the given function or `null` if there are no characters.
+ * 
+ * @sample samples.collections.Collections.Aggregates.maxBy
  */
 public inline fun <R : Comparable<R>> CharSequence.maxBy(selector: (Char) -> R): Char? {
     if (isEmpty()) return null
@@ -1013,6 +1085,8 @@ public fun CharSequence.min(): Char? {
 
 /**
  * Returns the first character yielding the smallest value of the given function or `null` if there are no characters.
+ * 
+ * @sample samples.collections.Collections.Aggregates.minBy
  */
 public inline fun <R : Comparable<R>> CharSequence.minBy(selector: (Char) -> R): Char? {
     if (isEmpty()) return null

@@ -266,10 +266,12 @@ public class KtPsiUtil {
     }
 
     @Nullable
+    @SafeVarargs
     @Contract("null, _ -> null")
     public static PsiElement getTopmostParentOfTypes(
             @Nullable PsiElement element,
-            @NotNull Class<? extends PsiElement>... parentTypes) {
+            @NotNull Class<? extends PsiElement>... parentTypes
+    ) {
         if (element instanceof PsiFile) return null;
 
         PsiElement answer = PsiTreeUtil.getParentOfType(element, parentTypes);
@@ -446,6 +448,11 @@ public class KtPsiUtil {
             }
         }
 
+        if (innerExpression instanceof KtLambdaExpression) {
+            PsiElement prevSibling = PsiTreeUtil.skipWhitespacesAndCommentsBackward(currentInner);
+            if (prevSibling != null && prevSibling.getText().endsWith(KtTokens.RPAR.getValue())) return true;
+        }
+
         if (parentElement instanceof KtCallExpression && currentInner == ((KtCallExpression) parentElement).getCalleeExpression()) {
             KtCallExpression parentCall = (KtCallExpression) parentElement;
             if (innerExpression instanceof KtSimpleNameExpression) return false;
@@ -489,6 +496,14 @@ public class KtPsiUtil {
         if (parentElement instanceof KtBinaryExpression &&
             parentOperation == KtTokens.ELVIS &&
             !(innerExpression instanceof KtBinaryExpression) &&
+            currentInner == ((KtBinaryExpression) parentElement).getRight()) {
+            return false;
+        }
+
+        // 'x = fun {}' case
+        if (parentElement instanceof KtBinaryExpression &&
+            parentOperation == KtTokens.EQ &&
+            innerExpression instanceof KtNamedFunction &&
             currentInner == ((KtBinaryExpression) parentElement).getRight()) {
             return false;
         }
@@ -641,12 +656,13 @@ public class KtPsiUtil {
         return parent;
     }
 
+    @SafeVarargs
+    @SuppressWarnings("unchecked")
     public static <T extends PsiElement> T getLastChildByType(@NotNull PsiElement root, @NotNull Class<? extends T>... elementTypes) {
         PsiElement[] children = root.getChildren();
 
         for (int i = children.length - 1; i >= 0; i--) {
             if (PsiTreeUtil.instanceOf(children[i], elementTypes)) {
-                //noinspection unchecked
                 return (T) children[i];
             }
         }
@@ -800,6 +816,12 @@ public class KtPsiUtil {
                 }
                 else if (parent instanceof KtClassBody && !isMemberOfObjectExpression((KtCallableDeclaration) current)) {
                     return (KtElement) parent;
+                }
+                else if (parent instanceof KtBlockExpression) {
+                    PsiElement grandParent = parent.getParent();
+                    if (grandParent instanceof KtScript) {
+                        return (KtElement) parent;
+                    }
                 }
             }
             if (current instanceof KtParameter) {

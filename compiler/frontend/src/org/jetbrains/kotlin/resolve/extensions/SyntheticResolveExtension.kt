@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.resolve.extensions
 
 import com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
+import org.jetbrains.kotlin.descriptors.PackageFragmentDescriptor
 import org.jetbrains.kotlin.descriptors.PropertyDescriptor
 import org.jetbrains.kotlin.descriptors.SimpleFunctionDescriptor
 import org.jetbrains.kotlin.extensions.ProjectExtensionDescriptor
@@ -25,6 +26,7 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.lazy.LazyClassContext
 import org.jetbrains.kotlin.resolve.lazy.declarations.ClassMemberDeclarationProvider
+import org.jetbrains.kotlin.resolve.lazy.declarations.PackageMemberDeclarationProvider
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.utils.addToStdlib.firstNotNullResult
 import java.util.*
@@ -42,23 +44,38 @@ interface SyntheticResolveExtension {
             // return list combiner here
             return object : SyntheticResolveExtension {
                 override fun getSyntheticNestedClassNames(thisDescriptor: ClassDescriptor): List<Name> =
-                    instances.flatMap { it.getSyntheticNestedClassNames(thisDescriptor) }
+                    instances.flatMap { withLinkageErrorLogger(it) { getSyntheticNestedClassNames(thisDescriptor) } }
 
                 override fun getSyntheticFunctionNames(thisDescriptor: ClassDescriptor): List<Name> =
-                    instances.flatMap { it.getSyntheticFunctionNames(thisDescriptor) }
+                    instances.flatMap { withLinkageErrorLogger(it) { getSyntheticFunctionNames(thisDescriptor) } }
 
                 override fun generateSyntheticClasses(
                     thisDescriptor: ClassDescriptor, name: Name,
                     ctx: LazyClassContext, declarationProvider: ClassMemberDeclarationProvider,
                     result: MutableSet<ClassDescriptor>
                 ) =
-                    instances.forEach { it.generateSyntheticClasses(thisDescriptor, name, ctx, declarationProvider, result) }
+                    instances.forEach {
+                        withLinkageErrorLogger(it) {
+                            generateSyntheticClasses(thisDescriptor, name, ctx, declarationProvider, result)
+                        }
+                    }
+
+                override fun generateSyntheticClasses(
+                    thisDescriptor: PackageFragmentDescriptor, name: Name,
+                    ctx: LazyClassContext, declarationProvider: PackageMemberDeclarationProvider,
+                    result: MutableSet<ClassDescriptor>
+                ) =
+                    instances.forEach {
+                        withLinkageErrorLogger(it) {
+                            generateSyntheticClasses(thisDescriptor, name, ctx, declarationProvider, result)
+                        }
+                    }
 
                 override fun getSyntheticCompanionObjectNameIfNeeded(thisDescriptor: ClassDescriptor): Name? =
-                    instances.firstNotNullResult { it.getSyntheticCompanionObjectNameIfNeeded(thisDescriptor) }
+                    instances.firstNotNullResult { withLinkageErrorLogger(it) { getSyntheticCompanionObjectNameIfNeeded(thisDescriptor) } }
 
                 override fun addSyntheticSupertypes(thisDescriptor: ClassDescriptor, supertypes: MutableList<KotlinType>) =
-                    instances.forEach { it.addSyntheticSupertypes(thisDescriptor, supertypes) }
+                    instances.forEach { withLinkageErrorLogger(it) { addSyntheticSupertypes(thisDescriptor, supertypes) } }
 
                 // todo revert
                 override fun generateSyntheticMethods(
@@ -67,7 +84,17 @@ interface SyntheticResolveExtension {
                     fromSupertypes: List<SimpleFunctionDescriptor>,
                     result: MutableCollection<SimpleFunctionDescriptor>
                 ) =
-                    instances.forEach { it.generateSyntheticMethods(thisDescriptor, name, bindingContext, fromSupertypes, result) }
+                    instances.forEach {
+                        withLinkageErrorLogger(it) {
+                            generateSyntheticMethods(
+                                thisDescriptor,
+                                name,
+                                bindingContext,
+                                fromSupertypes,
+                                result
+                            )
+                        }
+                    }
 
                 override fun generateSyntheticProperties(
                     thisDescriptor: ClassDescriptor, name: Name,
@@ -75,7 +102,17 @@ interface SyntheticResolveExtension {
                     fromSupertypes: ArrayList<PropertyDescriptor>,
                     result: MutableSet<PropertyDescriptor>
                 ) =
-                    instances.forEach { it.generateSyntheticProperties(thisDescriptor, name, bindingContext, fromSupertypes, result) }
+                    instances.forEach {
+                        withLinkageErrorLogger(it) {
+                            generateSyntheticProperties(
+                                thisDescriptor,
+                                name,
+                                bindingContext,
+                                fromSupertypes,
+                                result
+                            )
+                        }
+                    }
             }
         }
     }
@@ -93,6 +130,15 @@ interface SyntheticResolveExtension {
         name: Name,
         ctx: LazyClassContext,
         declarationProvider: ClassMemberDeclarationProvider,
+        result: MutableSet<ClassDescriptor>
+    ) {
+    }
+
+    fun generateSyntheticClasses(
+        thisDescriptor: PackageFragmentDescriptor,
+        name: Name,
+        ctx: LazyClassContext,
+        declarationProvider: PackageMemberDeclarationProvider,
         result: MutableSet<ClassDescriptor>
     ) {
     }

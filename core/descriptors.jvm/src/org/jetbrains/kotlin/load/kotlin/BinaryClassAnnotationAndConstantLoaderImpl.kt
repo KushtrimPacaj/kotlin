@@ -19,8 +19,6 @@ package org.jetbrains.kotlin.load.kotlin
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptorImpl
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationWithTarget
 import org.jetbrains.kotlin.load.java.components.DescriptorResolverUtils
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinaryClass.AnnotationArrayArgumentVisitor
 import org.jetbrains.kotlin.metadata.ProtoBuf
@@ -34,17 +32,17 @@ import org.jetbrains.kotlin.utils.compact
 import java.util.*
 
 class BinaryClassAnnotationAndConstantLoaderImpl(
-        private val module: ModuleDescriptor,
-        private val notFoundClasses: NotFoundClasses,
-        storageManager: StorageManager,
-        kotlinClassFinder: KotlinClassFinder
-) : AbstractBinaryClassAnnotationAndConstantLoader<AnnotationDescriptor, ConstantValue<*>, AnnotationWithTarget>(
-        storageManager, kotlinClassFinder
+    private val module: ModuleDescriptor,
+    private val notFoundClasses: NotFoundClasses,
+    storageManager: StorageManager,
+    kotlinClassFinder: KotlinClassFinder
+) : AbstractBinaryClassAnnotationAndConstantLoader<AnnotationDescriptor, ConstantValue<*>>(
+    storageManager, kotlinClassFinder
 ) {
     private val annotationDeserializer = AnnotationDeserializer(module, notFoundClasses)
 
     override fun loadTypeAnnotation(proto: ProtoBuf.Annotation, nameResolver: NameResolver): AnnotationDescriptor =
-            annotationDeserializer.deserializeAnnotation(proto, nameResolver)
+        annotationDeserializer.deserializeAnnotation(proto, nameResolver)
 
     override fun loadConstant(desc: String, initializer: Any): ConstantValue<*>? {
         val normalizedValue: Any = if (desc in "ZBCS") {
@@ -56,8 +54,7 @@ class BinaryClassAnnotationAndConstantLoaderImpl(
                 "S" -> intValue.toShort()
                 else -> throw AssertionError(desc)
             }
-        }
-        else {
+        } else {
             initializer
         }
 
@@ -74,23 +71,10 @@ class BinaryClassAnnotationAndConstantLoaderImpl(
         }
     }
 
-    override fun loadPropertyAnnotations(
-            propertyAnnotations: List<AnnotationDescriptor>,
-            fieldAnnotations: List<AnnotationDescriptor>,
-            fieldUseSiteTarget: AnnotationUseSiteTarget
-    ): List<AnnotationWithTarget> {
-        return propertyAnnotations.map { AnnotationWithTarget(it, null) } +
-               fieldAnnotations.map { AnnotationWithTarget(it, fieldUseSiteTarget) }
-    }
-
-    override fun transformAnnotations(annotations: List<AnnotationDescriptor>): List<AnnotationWithTarget> {
-        return annotations.map { AnnotationWithTarget(it, null) }
-    }
-
     override fun loadAnnotation(
-            annotationClassId: ClassId,
-            source: SourceElement,
-            result: MutableList<AnnotationDescriptor>
+        annotationClassId: ClassId,
+        source: SourceElement,
+        result: MutableList<AnnotationDescriptor>
     ): KotlinJvmBinaryClass.AnnotationArgumentVisitor? {
         val annotationClass = resolveClass(annotationClassId)
 
@@ -103,12 +87,16 @@ class BinaryClassAnnotationAndConstantLoaderImpl(
                 }
             }
 
+            override fun visitClassLiteral(name: Name, value: ClassLiteralValue) {
+                arguments[name] = KClassValue(value)
+            }
+
             override fun visitEnum(name: Name, enumClassId: ClassId, enumEntryName: Name) {
                 arguments[name] = EnumValue(enumClassId, enumEntryName)
             }
 
             override fun visitArray(name: Name): AnnotationArrayArgumentVisitor? {
-                return object : KotlinJvmBinaryClass.AnnotationArrayArgumentVisitor {
+                return object : AnnotationArrayArgumentVisitor {
                     private val elements = ArrayList<ConstantValue<*>>()
 
                     override fun visit(value: Any?) {
@@ -117,6 +105,10 @@ class BinaryClassAnnotationAndConstantLoaderImpl(
 
                     override fun visitEnum(enumClassId: ClassId, enumEntryName: Name) {
                         elements.add(EnumValue(enumClassId, enumEntryName))
+                    }
+
+                    override fun visitClassLiteral(value: ClassLiteralValue) {
+                        elements.add(KClassValue(value))
                     }
 
                     override fun visitEnd() {
@@ -131,7 +123,7 @@ class BinaryClassAnnotationAndConstantLoaderImpl(
             override fun visitAnnotation(name: Name, classId: ClassId): KotlinJvmBinaryClass.AnnotationArgumentVisitor? {
                 val list = ArrayList<AnnotationDescriptor>()
                 val visitor = loadAnnotation(classId, SourceElement.NO_SOURCE, list)!!
-                return object: KotlinJvmBinaryClass.AnnotationArgumentVisitor by visitor {
+                return object : KotlinJvmBinaryClass.AnnotationArgumentVisitor by visitor {
                     override fun visitEnd() {
                         visitor.visitEnd()
                         arguments[name] = AnnotationValue(list.single())
@@ -145,7 +137,7 @@ class BinaryClassAnnotationAndConstantLoaderImpl(
 
             private fun createConstant(name: Name?, value: Any?): ConstantValue<*> {
                 return ConstantValueFactory.createConstantValue(value)
-                       ?: ErrorValue.create("Unsupported annotation argument: $name")
+                    ?: ErrorValue.create("Unsupported annotation argument: $name")
             }
         }
     }

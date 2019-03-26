@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.ir.backend.js.lower.coroutines
 
+import org.jetbrains.kotlin.backend.common.ir.isSuspend
 import org.jetbrains.kotlin.backend.common.lower.FinallyBlocksLowering
 import org.jetbrains.kotlin.backend.common.pop
 import org.jetbrains.kotlin.backend.common.push
@@ -44,7 +45,7 @@ open class SuspendableNodesCollector(protected val suspendableNodes: MutableSet<
 
     override fun visitCall(expression: IrCall) {
         super.visitCall(expression)
-        if (expression.descriptor.isSuspend) {
+        if (expression.isSuspend) {
             suspendableNodes += expression
             hasSuspendableChildren = true
         }
@@ -146,19 +147,19 @@ class SuspendedTerminatorsCollector(suspendableNodes: MutableSet<IrElement>) : S
 
 class LiveLocalsTransformer(
     private val localMap: Map<IrValueSymbol, IrFieldSymbol>,
-    private val receiver: IrExpression,
+    private val receiver: () -> IrExpression,
     private val unitType: IrType
 ) :
     IrElementTransformerVoid() {
     override fun visitGetValue(expression: IrGetValue): IrExpression {
         val field = localMap[expression.symbol] ?: return expression
-        return expression.run { IrGetFieldImpl(startOffset, endOffset, field, type, receiver, origin) }
+        return expression.run { IrGetFieldImpl(startOffset, endOffset, field, type, receiver(), origin) }
     }
 
     override fun visitSetVariable(expression: IrSetVariable): IrExpression {
         expression.transformChildrenVoid(this)
         val field = localMap[expression.symbol] ?: return expression
-        return expression.run { IrSetFieldImpl(startOffset, endOffset, field, receiver, value, unitType, origin) }
+        return expression.run { IrSetFieldImpl(startOffset, endOffset, field, receiver(), value, unitType, origin) }
     }
 
     override fun visitVariable(declaration: IrVariable): IrStatement {
@@ -166,7 +167,7 @@ class LiveLocalsTransformer(
         val field = localMap[declaration.symbol] ?: return declaration
         val initializer = declaration.initializer
         return if (initializer != null) {
-            declaration.run { IrSetFieldImpl(startOffset, endOffset, field, receiver, initializer, unitType) }
+            declaration.run { IrSetFieldImpl(startOffset, endOffset, field, receiver(), initializer, unitType) }
         } else {
             JsIrBuilder.buildComposite(declaration.type)
         }

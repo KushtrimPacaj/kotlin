@@ -10,7 +10,6 @@ import com.intellij.codeInsight.FileModificationService
 import com.intellij.codeInsight.daemon.QuickFixBundle
 import com.intellij.codeInsight.daemon.impl.analysis.HighlightUtil
 import com.intellij.codeInsight.daemon.impl.analysis.JavaHighlightUtil
-import com.intellij.codeInsight.intention.QuickFixFactory
 import com.intellij.codeInspection.*
 import com.intellij.codeInspection.deadCode.UnusedDeclarationInspection
 import com.intellij.codeInspection.ex.EntryPointsManager
@@ -25,7 +24,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiReference
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.PsiSearchHelper
+import com.intellij.psi.search.PsiSearchHelper.SearchCostResult
 import com.intellij.psi.search.PsiSearchHelper.SearchCostResult.*
 import com.intellij.psi.search.SearchScope
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
@@ -36,20 +35,25 @@ import org.jetbrains.kotlin.asJava.LightClassUtil
 import org.jetbrains.kotlin.asJava.classes.KtLightClass
 import org.jetbrains.kotlin.asJava.toLightClass
 import org.jetbrains.kotlin.asJava.toLightMethods
+import org.jetbrains.kotlin.config.AnalysisFlags
 import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil
 import org.jetbrains.kotlin.idea.caches.project.implementingDescriptors
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.caches.resolve.findModuleDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptorIfAny
 import org.jetbrains.kotlin.idea.core.isInheritable
+import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesUpdater
 import org.jetbrains.kotlin.idea.core.toDescriptor
 import org.jetbrains.kotlin.idea.findUsages.KotlinFindUsagesHandlerFactory
 import org.jetbrains.kotlin.idea.findUsages.handlers.KotlinFindClassUsagesHandler
 import org.jetbrains.kotlin.idea.imports.importableFqName
+import org.jetbrains.kotlin.idea.intentions.isFinalizeMethod
+import org.jetbrains.kotlin.idea.isMainFunction
+import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.idea.quickfix.RemoveUnusedFunctionParameterFix
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.idea.references.resolveMainReferenceToDescriptors
+import org.jetbrains.kotlin.idea.search.findScriptsWithUsages
 import org.jetbrains.kotlin.idea.search.ideaExtensions.KotlinReferencesSearchOptions
 import org.jetbrains.kotlin.idea.search.ideaExtensions.KotlinReferencesSearchParameters
 import org.jetbrains.kotlin.idea.search.isCheapEnoughToSearchConsideringOperators
@@ -59,12 +63,17 @@ import org.jetbrains.kotlin.idea.search.usagesSearch.getAccessorNames
 import org.jetbrains.kotlin.idea.search.usagesSearch.getClassNameForCompanionObject
 import org.jetbrains.kotlin.idea.stubindex.KotlinSourceFilterScope
 import org.jetbrains.kotlin.idea.util.ProjectRootsUtil
+import org.jetbrains.kotlin.idea.util.application.runWriteAction
+import org.jetbrains.kotlin.idea.util.compat.psiSearchHelperInstance
 import org.jetbrains.kotlin.idea.util.hasActualsFor
+import org.jetbrains.kotlin.js.resolve.diagnostics.findPsi
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.*
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorUtils
+import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
+import org.jetbrains.kotlin.resolve.isInlineClassType
 import org.jetbrains.kotlin.util.findCallableMemberBySignature
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
@@ -85,6 +94,12 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
         fun isEntryPoint(declaration: KtNamedDeclaration): Boolean {
             if (declaration.hasKotlinAdditionalAnnotation()) return true
             if (declaration is KtClass && declaration.declarations.any { it.hasKotlinAdditionalAnnotation() }) return true
+
+            // Some of the main-function-cases are covered by 'javaInspection.isEntryPoint(lightElement)' call
+            // but not all of them: light method for parameterless main still points to parameterless name
+            // that is not an actual entry point from Java language point of view
+            if (declaration.isMainFunction()) return true
+
             val lightElement: PsiElement? = when (declaration) {
                 is KtClassOrObject -> declaration.toLightClass()
                 is KtNamedFunction, is KtSecondaryConstructor -> LightClassUtil.getLightClassMethod(declaration as KtFunction)
@@ -99,7 +114,41 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
                 }
                 else -> return false
             }
-            return lightElement != null && javaInspection.isEntryPoint(lightElement)
+
+            if (lightElement == null) return false
+
+            if (isCheapEnoughToSearchUsages(declaration) == TOO_MANY_OCCURRENCES) return false
+
+            return javaInspection.isEntryPoint(lightElement)
+        }
+
+        private fun isCheapEnoughToSearchUsages(declaration: KtNamedDeclaration): SearchCostResult {
+            val project = declaration.project
+            val psiSearchHelper = psiSearchHelperInstance(project)
+
+            val usedScripts = findScriptsWithUsages(declaration)
+            if (usedScripts.isNotEmpty()) {
+                if (ScriptDependenciesUpdater.getInstance(declaration.project).updateDependenciesIfNeeded(usedScripts)) {
+                    return TOO_MANY_OCCURRENCES
+                }
+            }
+
+            val useScope = psiSearchHelper.getUseScope(declaration)
+            if (useScope is GlobalSearchScope) {
+                var zeroOccurrences = true
+                for (name in listOf(declaration.name) + declaration.getAccessorNames() + listOfNotNull(declaration.getClassNameForCompanionObject())) {
+                    if (name == null) continue
+                    when (psiSearchHelper.isCheapEnoughToSearchConsideringOperators(name, useScope, null, null)) {
+                        ZERO_OCCURRENCES -> {
+                        } // go on, check other names
+                        FEW_OCCURRENCES -> zeroOccurrences = false
+                        TOO_MANY_OCCURRENCES -> return TOO_MANY_OCCURRENCES // searching usages is too expensive; behave like it is used
+                    }
+                }
+
+                if (zeroOccurrences) return ZERO_OCCURRENCES
+            }
+            return FEW_OCCURRENCES
         }
 
         private fun KtProperty.isSerializationImplicitlyUsedField(): Boolean {
@@ -159,10 +208,19 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
             val descriptor = declaration.resolveToDescriptorIfAny() ?: return
             if (descriptor is FunctionDescriptor && descriptor.isOperator) return
             if (isEntryPoint(declaration)) return
+            if (declaration.isFinalizeMethod(descriptor)) return
             if (declaration is KtProperty && declaration.isSerializationImplicitlyUsedField()) return
             if (declaration is KtNamedFunction && declaration.isSerializationImplicitlyUsedMethod()) return
             // properties can be referred by component1/component2, which is too expensive to search, don't mark them as unused
             if (declaration is KtParameter && declaration.dataClassComponentFunction() != null) return
+            // experimental annotations
+            if (descriptor is ClassDescriptor && descriptor.kind == ClassKind.ANNOTATION_CLASS) {
+                val fqName = descriptor.fqNameSafe.asString()
+                val languageVersionSettings = declaration.languageVersionSettings
+                if (fqName in languageVersionSettings.getFlag(AnalysisFlags.experimental) ||
+                    fqName in languageVersionSettings.getFlag(AnalysisFlags.useExperimental)
+                ) return
+            }
 
             // Main checks: finding reference usages && text usages
             if (hasNonTrivialUsages(declaration, descriptor)) return
@@ -202,20 +260,15 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
 
     private fun hasNonTrivialUsages(declaration: KtNamedDeclaration, descriptor: DeclarationDescriptor? = null): Boolean {
         val project = declaration.project
-        val psiSearchHelper = PsiSearchHelper.SERVICE.getInstance(project)
+        val psiSearchHelper = psiSearchHelperInstance(project)
 
-        val useScope = declaration.useScope
+        val useScope = psiSearchHelper.getUseScope(declaration)
         val restrictedScope = if (useScope is GlobalSearchScope) {
-            var zeroOccurrences = true
-
-            for (name in listOf(declaration.name) + declaration.getAccessorNames() + listOfNotNull(declaration.getClassNameForCompanionObject())) {
-                if (name == null) continue
-                when (psiSearchHelper.isCheapEnoughToSearchConsideringOperators(name, useScope, null, null)) {
-                    ZERO_OCCURRENCES -> {
-                    } // go on, check other names
-                    FEW_OCCURRENCES -> zeroOccurrences = false
-                    TOO_MANY_OCCURRENCES -> return true // searching usages is too expensive; behave like it is used
-                }
+            val enoughToSearchUsages = isCheapEnoughToSearchUsages(declaration)
+            val zeroOccurrences = when (enoughToSearchUsages) {
+                ZERO_OCCURRENCES -> true
+                FEW_OCCURRENCES -> false
+                TOO_MANY_OCCURRENCES -> return true // searching usages is too expensive; behave like it is used
             }
 
             if (zeroOccurrences && !declaration.hasActualModifier()) {
@@ -232,12 +285,72 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
             }
         } else useScope
 
+        if (declaration is KtTypeParameter) {
+            val containingClass = declaration.containingClass()
+            if (containingClass != null) {
+                val isOpenClass = containingClass.isInterface()
+                        || containingClass.hasModifier(KtTokens.ABSTRACT_KEYWORD)
+                        || containingClass.hasModifier(KtTokens.SEALED_KEYWORD)
+                        || containingClass.hasModifier(KtTokens.OPEN_KEYWORD)
+                if (isOpenClass && hasOverrides(containingClass, restrictedScope)) return true
+            }
+        }
+
         return (declaration is KtObjectDeclaration && declaration.isCompanion() &&
-                declaration.getBody()?.declarations?.isNotEmpty() == true) ||
+                declaration.body?.declarations?.isNotEmpty() == true) ||
                 hasReferences(declaration, descriptor, restrictedScope) ||
                 hasOverrides(declaration, restrictedScope) ||
                 hasFakeOverrides(declaration, restrictedScope) ||
                 hasPlatformImplementations(declaration, descriptor)
+    }
+
+    private fun checkDeclaration(declaration: KtNamedDeclaration, importedDeclaration: KtNamedDeclaration): Boolean =
+        declaration !in importedDeclaration.parentsWithSelf && !hasNonTrivialUsages(importedDeclaration)
+
+    private val KtNamedDeclaration.isObjectOrEnum: Boolean get() = this is KtObjectDeclaration || this is KtClass && isEnum()
+
+    private fun checkReference(ref: PsiReference, declaration: KtNamedDeclaration, descriptor: DeclarationDescriptor?): Boolean {
+        if (declaration.isAncestor(ref.element)) return true // usages inside element's declaration are not counted
+
+        if (ref.element.parent is KtValueArgumentName) return true // usage of parameter in form of named argument is not counted
+
+        val import = ref.element.getParentOfType<KtImportDirective>(false)
+        if (import != null) {
+            if (import.aliasName != null && import.aliasName != declaration.name) {
+                return false
+            }
+            // check if we import member(s) from object / nested object / enum and search for their usages
+            val originalDeclaration = (descriptor as? TypeAliasDescriptor)?.classDescriptor?.findPsi() as? KtNamedDeclaration
+            if (declaration is KtClassOrObject || originalDeclaration is KtClassOrObject) {
+                if (import.isAllUnder) {
+                    val importedFrom = import.importedReference?.getQualifiedElementSelector()?.mainReference?.resolve()
+                            as? KtClassOrObject ?: return true
+                    return importedFrom.declarations.none { it is KtNamedDeclaration && hasNonTrivialUsages(it) }
+                } else {
+                    if (import.importedFqName != declaration.fqName) {
+                        val importedDeclaration =
+                            import.importedReference?.getQualifiedElementSelector()?.mainReference?.resolve() as? KtNamedDeclaration
+                                ?: return true
+
+                        if (declaration.isObjectOrEnum || importedDeclaration.containingClassOrObject is KtObjectDeclaration) return checkDeclaration(
+                            declaration,
+                            importedDeclaration
+                        )
+
+                        if (originalDeclaration?.isObjectOrEnum == true) return checkDeclaration(
+                            originalDeclaration,
+                            importedDeclaration
+                        )
+
+                        // check type alias
+                        if (importedDeclaration.fqName == declaration.fqName) return true
+                    }
+                }
+            }
+            return true
+        }
+
+        return false
     }
 
     private fun hasReferences(
@@ -245,42 +358,7 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
         descriptor: DeclarationDescriptor?,
         useScope: SearchScope
     ): Boolean {
-
-        fun checkReference(ref: PsiReference): Boolean {
-            if (declaration.isAncestor(ref.element)) return true // usages inside element's declaration are not counted
-
-            if (ref.element.parent is KtValueArgumentName) return true // usage of parameter in form of named argument is not counted
-
-            val import = ref.element.getParentOfType<KtImportDirective>(false)
-            if (import != null) {
-                if (import.aliasName != null && import.aliasName != declaration.name) {
-                    return false
-                }
-                // check if we import member(s) from object / nested object / enum and search for their usages
-                if (declaration is KtClassOrObject) {
-                    if (import.isAllUnder) {
-                        val importedFrom = import.importedReference?.getQualifiedElementSelector()?.mainReference?.resolve()
-                                as? KtClassOrObject ?: return true
-                        return importedFrom.declarations.none { it is KtNamedDeclaration && hasNonTrivialUsages(it) }
-                    } else {
-                        if (import.importedFqName != declaration.fqName) {
-                            val importedDeclaration =
-                                import.importedReference?.getQualifiedElementSelector()?.mainReference?.resolve() as? KtNamedDeclaration
-                                        ?: return true
-                            if (declaration is KtObjectDeclaration ||
-                                (declaration is KtClass && declaration.isEnum()) ||
-                                importedDeclaration.containingClassOrObject is KtObjectDeclaration
-                            ) {
-                                return declaration !in importedDeclaration.parentsWithSelf && !hasNonTrivialUsages(importedDeclaration)
-                            }
-                        }
-                    }
-                }
-                return true
-            }
-
-            return false
-        }
+        fun checkReference(ref: PsiReference): Boolean = checkReference(ref, declaration, descriptor)
 
         val searchParameters = KotlinReferencesSearchParameters(
             declaration,
@@ -289,13 +367,11 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
         )
         val referenceUsed: Boolean by lazy { !ReferencesSearch.search(searchParameters).forEach(::checkReference) }
 
-        if (descriptor is FunctionDescriptor &&
-            DescriptorUtils.getAnnotationByFqName(descriptor.annotations, JvmFileClassUtil.JVM_NAME) != null
-        ) {
+        if (descriptor is FunctionDescriptor && DescriptorUtils.findJvmNameAnnotation(descriptor) != null) {
             if (referenceUsed) return true
         }
 
-        if (declaration is KtCallableDeclaration && !declaration.hasModifier(KtTokens.INTERNAL_KEYWORD)) {
+        if (declaration is KtCallableDeclaration && declaration.canBeHandledByLightMethods(descriptor)) {
             val lightMethods = declaration.toLightMethods()
             if (lightMethods.isNotEmpty()) {
                 val lightMethodsUsed = lightMethods.any { method ->
@@ -306,7 +382,37 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
             }
         }
 
-        return referenceUsed
+        return referenceUsed || checkPrivateDeclaration(declaration, descriptor)
+    }
+
+    private fun checkPrivateDeclaration(declaration: KtNamedDeclaration, descriptor: DeclarationDescriptor?): Boolean {
+        if (descriptor == null || !declaration.isPrivateNestedClassOrObject) return false
+
+        val set = hashSetOf<KtSimpleNameExpression>()
+        declaration.containingKtFile.importList?.acceptChildren(simpleNameExpressionRecursiveVisitor {
+            set += it
+        })
+
+        return set.mapNotNull { it.referenceExpression() }
+            .filter { descriptor in it.resolveMainReferenceToDescriptors() }
+            .any { !checkReference(it.mainReference, declaration, descriptor) }
+    }
+
+    private fun KtCallableDeclaration.canBeHandledByLightMethods(descriptor: DeclarationDescriptor?): Boolean {
+        return when {
+            descriptor is ConstructorDescriptor -> !descriptor.constructedClass.isInline
+            hasModifier(KtTokens.INTERNAL_KEYWORD) -> false
+            descriptor !is FunctionDescriptor -> true
+            else -> !descriptor.hasInlineClassParameters()
+        }
+    }
+
+    private fun FunctionDescriptor.hasInlineClassParameters(): Boolean {
+        return when {
+            dispatchReceiverParameter?.type?.isInlineClassType() == true -> true
+            extensionReceiverParameter?.type?.isInlineClassType() == true -> true
+            else -> valueParameters.any { it.type.isInlineClassType() }
+        }
     }
 
     private fun hasOverrides(declaration: KtNamedDeclaration, useScope: SearchScope): Boolean =
@@ -344,7 +450,7 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
     private fun hasPlatformImplementations(declaration: KtNamedDeclaration, descriptor: DeclarationDescriptor?): Boolean {
         if (!declaration.hasExpectModifier()) return false
 
-        descriptor as? MemberDescriptor ?: return false
+        if (descriptor !is MemberDescriptor) return false
         val commonModuleDescriptor = declaration.containingKtFile.findModuleDescriptor()
 
         return commonModuleDescriptor.implementingDescriptors.any { it.hasActualsFor(descriptor) } ||
@@ -378,8 +484,8 @@ class UnusedSymbolInspection : AbstractKotlinInspection() {
             )
                 continue
 
-            val intentionAction =
-                QuickFixFactory.getInstance().createAddToDependencyInjectionAnnotationsFix(declaration.project, fqName, "declarations")
+            val intentionAction = createAddToDependencyInjectionAnnotationsFix(declaration.project, fqName)
+
             list.add(IntentionWrapper(intentionAction, declaration.containingFile))
         }
 
@@ -405,9 +511,22 @@ class SafeDeleteFix(declaration: KtDeclaration) : LocalQuickFix {
             RemoveUnusedFunctionParameterFix(declaration).invoke(project, declaration.findExistingEditor(), declaration.containingKtFile)
         } else {
             ApplicationManager.getApplication().invokeLater(
-                { SafeDeleteHandler.invoke(project, arrayOf(declaration), false) },
+                { safeDelete(project, declaration) },
                 ModalityState.NON_MODAL
             )
         }
     }
+}
+
+private val KtNamedDeclaration.isPrivateNestedClassOrObject: Boolean get() = this is KtClassOrObject && isPrivate() && !isTopLevel()
+
+private fun safeDelete(project: Project, declaration: PsiElement) {
+    if (declaration is KtNamedDeclaration && declaration.isPrivateNestedClassOrObject) {
+        runWriteAction {
+            declaration.containingKtFile.importDirectives.forEach {
+                if (it.importedFqName == declaration.fqName) it.delete()
+            }
+        }
+    }
+    SafeDeleteHandler.invoke(project, arrayOf(declaration), false)
 }

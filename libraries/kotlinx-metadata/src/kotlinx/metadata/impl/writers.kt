@@ -139,7 +139,7 @@ private fun writeConstructor(c: WriteContext, flags: Flags, output: (ProtoBuf.Co
             writeValueParameter(c, flags, name) { t.addValueParameter(it.build()) }
 
         override fun visitVersionRequirement(): KmVersionRequirementVisitor? =
-            writeVersionRequirement(c) { t.versionRequirement = it }
+            writeVersionRequirement(c) { t.addVersionRequirement(it) }
 
         override fun visitExtensions(type: KmExtensionType): KmConstructorExtensionVisitor? =
             c.applySingleExtension(type) {
@@ -171,7 +171,7 @@ private fun writeFunction(c: WriteContext, flags: Flags, name: String, output: (
             writeType(c, flags) { t.returnType = it.build() }
 
         override fun visitVersionRequirement(): KmVersionRequirementVisitor? =
-            writeVersionRequirement(c) { t.versionRequirement = it }
+            writeVersionRequirement(c) { t.addVersionRequirement(it) }
 
         override fun visitContract(): KmContractVisitor? =
             writeContract(c) { t.contract = it.build() }
@@ -208,7 +208,7 @@ fun writeProperty(
         writeType(c, flags) { t.returnType = it.build() }
 
     override fun visitVersionRequirement(): KmVersionRequirementVisitor? =
-        writeVersionRequirement(c) { t.versionRequirement = it }
+        writeVersionRequirement(c) { t.addVersionRequirement(it) }
 
     override fun visitExtensions(type: KmExtensionType): KmPropertyExtensionVisitor? =
         c.applySingleExtension(type) {
@@ -268,7 +268,7 @@ private fun writeTypeAlias(
     }
 
     override fun visitVersionRequirement(): KmVersionRequirementVisitor? =
-        writeVersionRequirement(c) { t.versionRequirement = it }
+        writeVersionRequirement(c) { t.addVersionRequirement(it) }
 
     override fun visitEnd() {
         if (flags != ProtoBuf.TypeAlias.getDefaultInstance().flags) {
@@ -286,19 +286,21 @@ private fun writeVersionRequirement(
 
     override fun visit(kind: KmVersionRequirementVersionKind, level: KmVersionRequirementLevel, errorCode: Int?, message: String?) {
         t = ProtoBuf.VersionRequirement.newBuilder().apply {
-            if (kind != defaultInstanceForType.versionKind) {
-                this.versionKind = when (kind) {
-                    KmVersionRequirementVersionKind.LANGUAGE_VERSION -> ProtoBuf.VersionRequirement.VersionKind.LANGUAGE_VERSION
-                    KmVersionRequirementVersionKind.COMPILER_VERSION -> ProtoBuf.VersionRequirement.VersionKind.COMPILER_VERSION
-                    KmVersionRequirementVersionKind.API_VERSION -> ProtoBuf.VersionRequirement.VersionKind.API_VERSION
-                }
+            val versionKind = when (kind) {
+                KmVersionRequirementVersionKind.LANGUAGE_VERSION -> ProtoBuf.VersionRequirement.VersionKind.LANGUAGE_VERSION
+                KmVersionRequirementVersionKind.COMPILER_VERSION -> ProtoBuf.VersionRequirement.VersionKind.COMPILER_VERSION
+                KmVersionRequirementVersionKind.API_VERSION -> ProtoBuf.VersionRequirement.VersionKind.API_VERSION
             }
-            if (level != defaultInstanceForType.level) {
-                this.level = when (level) {
-                    KmVersionRequirementLevel.WARNING -> ProtoBuf.VersionRequirement.Level.WARNING
-                    KmVersionRequirementLevel.ERROR -> ProtoBuf.VersionRequirement.Level.ERROR
-                    KmVersionRequirementLevel.HIDDEN -> ProtoBuf.VersionRequirement.Level.HIDDEN
-                }
+            if (versionKind != defaultInstanceForType.versionKind) {
+                this.versionKind = versionKind
+            }
+            val requirementLevel = when (level) {
+                KmVersionRequirementLevel.WARNING -> ProtoBuf.VersionRequirement.Level.WARNING
+                KmVersionRequirementLevel.ERROR -> ProtoBuf.VersionRequirement.Level.ERROR
+                KmVersionRequirementLevel.HIDDEN -> ProtoBuf.VersionRequirement.Level.HIDDEN
+            }
+            if (requirementLevel != defaultInstanceForType.level) {
+                this.level = requirementLevel
             }
             if (errorCode != null) {
                 this.errorCode = errorCode
@@ -453,7 +455,7 @@ open class ClassWriter(stringTable: StringTable) : KmClassVisitor() {
     }
 
     override fun visitVersionRequirement(): KmVersionRequirementVisitor? =
-        writeVersionRequirement(c) { t.versionRequirement = it }
+        writeVersionRequirement(c) { t.addVersionRequirement(it) }
 
     override fun visitExtensions(type: KmExtensionType): KmClassExtensionVisitor? =
         c.applySingleExtension(type) {

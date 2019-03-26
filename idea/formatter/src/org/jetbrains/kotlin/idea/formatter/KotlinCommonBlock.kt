@@ -18,7 +18,6 @@ import com.intellij.psi.tree.IElementType
 import com.intellij.psi.tree.TokenSet
 import org.jetbrains.kotlin.KtNodeTypes
 import org.jetbrains.kotlin.KtNodeTypes.*
-import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
 import org.jetbrains.kotlin.idea.formatter.NodeIndentStrategy.Companion.strategy
 import org.jetbrains.kotlin.idea.util.requireNode
@@ -27,10 +26,7 @@ import org.jetbrains.kotlin.kdoc.parser.KDocElementTypes
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.lexer.KtTokens.*
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.psi.psiUtil.children
-import org.jetbrains.kotlin.psi.psiUtil.leaves
-import org.jetbrains.kotlin.psi.psiUtil.parents
-import org.jetbrains.kotlin.psi.psiUtil.siblings
+import org.jetbrains.kotlin.psi.psiUtil.*
 
 private val QUALIFIED_OPERATION = TokenSet.create(DOT, SAFE_ACCESS)
 private val QUALIFIED_EXPRESSIONS = TokenSet.create(KtNodeTypes.DOT_QUALIFIED_EXPRESSION, KtNodeTypes.SAFE_ACCESS_EXPRESSION)
@@ -95,6 +91,16 @@ abstract class KotlinCommonBlock(
 
     fun isLeaf(): Boolean = node.firstChildNode == null
 
+    fun isIncomplete(): Boolean {
+        if (isIncompleteInSuper()) {
+            return true
+        }
+
+        // An incomplete declaration is the reason when modifier list can become a class body child, otherwise
+        // it's going to be a declaration child.
+        return node.elementType == MODIFIER_LIST && node.treeParent?.elementType == CLASS_BODY
+    }
+
     fun buildChildren(): List<Block> {
         if (mySubBlocks != null) {
             return mySubBlocks!!
@@ -154,7 +160,15 @@ abstract class KotlinCommonBlock(
             operationBlock.requireNode(),
             subList(index, size),
             null, indent, wrap, spacingBuilder
-        ) { createSyntheticSpacingNodeBlock(it) }
+        ) {
+            val parent = it.treeParent ?: node
+            val skipOperationNodeParent = if (parent.elementType === KtNodeTypes.OPERATION_REFERENCE) {
+                parent.treeParent ?: parent
+            } else {
+                parent
+            }
+            createSyntheticSpacingNodeBlock(skipOperationNodeParent)
+        }
 
         return subList(0, index) + operationSyntheticBlock
     }
@@ -207,10 +221,8 @@ abstract class KotlinCommonBlock(
         val childParent = child.treeParent
         val childType = child.elementType
 
-        if (childParent?.treeParent != null) {
-            if (childParent.elementType === KtNodeTypes.BLOCK && childParent.treeParent.elementType === KtNodeTypes.SCRIPT) {
-                return Indent.getNoneIndent()
-            }
+        if (childParent != null && isInCodeChunk(childParent)) {
+            return Indent.getNoneIndent()
         }
 
         // do not indent child after heading comments inside declaration
@@ -252,10 +264,24 @@ abstract class KotlinCommonBlock(
         return Indent.getNoneIndent()
     }
 
+    private fun isInCodeChunk(node: ASTNode): Boolean {
+        val parent = node.treeParent ?: return false
+
+        if (node.elementType != KtNodeTypes.BLOCK) {
+            return false
+        }
+
+        val parentType = parent.elementType
+        return parentType == KtNodeTypes.SCRIPT
+                || parentType == KtNodeTypes.BLOCK_CODE_FRAGMENT
+                || parentType == KtNodeTypes.EXPRESSION_CODE_FRAGMENT
+                || parentType == KtNodeTypes.TYPE_CODE_FRAGMENT
+    }
+
     fun getChildAttributes(newChildIndex: Int): ChildAttributes {
         val type = node.elementType
 
-        if (node.elementType == KtNodeTypes.BLOCK && node.treeParent.elementType == KtNodeTypes.SCRIPT) {
+        if (isInCodeChunk(node)) {
             return ChildAttributes(Indent.getNoneIndent(), null)
         }
 
@@ -350,7 +376,7 @@ abstract class KotlinCommonBlock(
             parentType in BINARY_EXPRESSIONS && getOperationType(node) in ALIGN_FOR_BINARY_OPERATIONS ->
                 createAlignmentStrategy(kotlinCommonSettings.ALIGN_MULTILINE_BINARY_OPERATION, getAlignment())
 
-            parentType === KtNodeTypes.SUPER_TYPE_LIST || parentType === KtNodeTypes.INITIALIZER_LIST ->
+            parentType === KtNodeTypes.SUPER_TYPE_LIST ->
                 createAlignmentStrategy(kotlinCommonSettings.ALIGN_MULTILINE_EXTENDS_LIST, getAlignment())
 
             parentType === KtNodeTypes.PARENTHESIZED ->
@@ -417,9 +443,14 @@ abstract class KotlinCommonBlock(
         val childNodes = when {
             overrideChildren != null -> overrideChildren.asSequence()
             node.elementType == KtNodeTypes.BINARY_EXPRESSION -> {
-                val binaryExpressionChildren = mutableListOf<ASTNode>()
-                collectBinaryExpressionChildren(node, binaryExpressionChildren)
-                binaryExpressionChildren.asSequence()
+                val binaryExpression = node.psi as? KtBinaryExpression
+                if (binaryExpression != null && ALL_ASSIGNMENTS.contains(binaryExpression.operationToken)) {
+                    node.children()
+                } else {
+                    val binaryExpressionChildren = mutableListOf<ASTNode>()
+                    collectBinaryExpressionChildren(node, binaryExpressionChildren)
+                    binaryExpressionChildren.asSequence()
+                }
             }
             else -> node.children()
         }
@@ -513,13 +544,13 @@ abstract class KotlinCommonBlock(
                             ANNOTATIONS,
                             !node.treeParent.isFirstParameter()
                         )
-                    is KtClassOrObject ->
+                    is KtClassOrObject, is KtTypeAlias ->
                         return getWrappingStrategyForItemList(
                             commonSettings.CLASS_ANNOTATION_WRAP,
                             ANNOTATIONS
                         )
 
-                    is KtNamedFunction ->
+                    is KtNamedFunction, is KtSecondaryConstructor ->
                         return getWrappingStrategyForItemList(
                             commonSettings.METHOD_ANNOTATION_WRAP,
                             ANNOTATIONS
@@ -539,10 +570,10 @@ abstract class KotlinCommonBlock(
             elementType === KtNodeTypes.VALUE_PARAMETER ->
                 return wrapAfterAnnotation(commonSettings.PARAMETER_ANNOTATION_WRAP)
 
-            nodePsi is KtClassOrObject ->
+            nodePsi is KtClassOrObject || nodePsi is KtTypeAlias ->
                 return wrapAfterAnnotation(commonSettings.CLASS_ANNOTATION_WRAP)
 
-            nodePsi is KtNamedFunction ->
+            nodePsi is KtNamedFunction || nodePsi is KtSecondaryConstructor ->
                 return wrap@{ childElement ->
                     getWrapAfterAnnotation(childElement, commonSettings.METHOD_ANNOTATION_WRAP)?.let {
                         return@wrap it
@@ -673,7 +704,19 @@ private val INDENT_RULES = arrayOf(
     strategy("Expression body")
         .within(KtNodeTypes.FUN)
         .forElement {
-            it.psi is KtExpression && it.psi !is KtBlockExpression
+            (it.psi is KtExpression && it.psi !is KtBlockExpression)
+        }
+        .continuationIf(KotlinCodeStyleSettings::CONTINUATION_INDENT_FOR_EXPRESSION_BODIES, indentFirst = true),
+
+    strategy("Line comment at expression body position")
+        .forElement { node ->
+            val psi = node.psi
+            val parent = psi.parent
+            if (psi is PsiComment && parent is KtDeclarationWithInitializer) {
+                psi.getNextSiblingIgnoringWhitespace() == parent.initializer
+            } else {
+                false
+            }
         }
         .continuationIf(KotlinCodeStyleSettings::CONTINUATION_INDENT_FOR_EXPRESSION_BODIES, indentFirst = true),
 
@@ -701,6 +744,28 @@ private val INDENT_RULES = arrayOf(
         }
         .continuationIf(KotlinCodeStyleSettings::CONTINUATION_INDENT_FOR_EXPRESSION_BODIES),
 
+    strategy("Destructuring declaration")
+        .within(KtNodeTypes.DESTRUCTURING_DECLARATION)
+        .forElement {
+            it.psi is KtExpression
+        }
+        .continuationIf(KotlinCodeStyleSettings::CONTINUATION_INDENT_FOR_EXPRESSION_BODIES),
+
+    strategy("Assignment expressions")
+        .within(KtNodeTypes.BINARY_EXPRESSION)
+        .within {
+            val binaryExpression = it.psi as? KtBinaryExpression
+                ?: return@within false
+
+            return@within KtTokens.ALL_ASSIGNMENTS.contains(binaryExpression.operationToken)
+        }
+        .forElement {
+            val psi = it.psi
+            val binaryExpression = psi?.parent as? KtBinaryExpression
+            binaryExpression?.right == psi
+        }
+        .continuationIf(KotlinCodeStyleSettings::CONTINUATION_INDENT_FOR_EXPRESSION_BODIES),
+
     strategy("Indent for parts")
         .within(KtNodeTypes.PROPERTY, KtNodeTypes.FUN, KtNodeTypes.DESTRUCTURING_DECLARATION, KtNodeTypes.SECONDARY_CONSTRUCTOR)
         .notForType(
@@ -721,7 +786,7 @@ private val INDENT_RULES = arrayOf(
         .set(Indent.getNormalIndent(false)),
 
     strategy("Delegation list")
-        .within(KtNodeTypes.SUPER_TYPE_LIST, KtNodeTypes.INITIALIZER_LIST)
+        .within(KtNodeTypes.SUPER_TYPE_LIST)
         .continuationIf(KotlinCodeStyleSettings::CONTINUATION_INDENT_IN_SUPERTYPE_LISTS, indentFirst = true),
 
     strategy("Indices")
@@ -731,7 +796,9 @@ private val INDENT_RULES = arrayOf(
 
     strategy("Binary expressions")
         .within(BINARY_EXPRESSIONS)
-        .forElement { node -> !node.suppressBinaryExpressionIndent() }
+        .forElement { node ->
+            !node.suppressBinaryExpressionIndent()
+        }
         .set(Indent.getContinuationWithoutFirstIndent(false)),
 
     strategy("Parenthesized expression")

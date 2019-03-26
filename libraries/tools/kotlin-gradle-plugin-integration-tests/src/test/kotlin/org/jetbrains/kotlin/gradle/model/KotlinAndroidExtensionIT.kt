@@ -6,6 +6,8 @@
 package org.jetbrains.kotlin.gradle.model
 
 import org.jetbrains.kotlin.gradle.BaseGradleIT
+import org.jetbrains.kotlin.gradle.GradleVersionRequired
+import org.jetbrains.kotlin.gradle.util.AGPVersion
 import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -14,10 +16,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class KotlinAndroidExtensionIT : BaseGradleIT() {
+    override val defaultGradleVersion: GradleVersionRequired
+        get() = GradleVersionRequired.AtLeast("4.4")
 
     override fun defaultBuildOptions(): BuildOptions {
         return super.defaultBuildOptions().copy(
-            androidGradlePluginVersion = "3.0.0",
+            androidGradlePluginVersion = AGPVersion.v3_1_0,
             androidHome = KotlinTestUtils.findAndroidSdk()
         )
     }

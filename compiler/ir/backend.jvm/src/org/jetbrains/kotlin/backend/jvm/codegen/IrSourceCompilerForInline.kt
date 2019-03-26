@@ -16,10 +16,12 @@
 
 package org.jetbrains.kotlin.backend.jvm.codegen
 
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import org.jetbrains.kotlin.codegen.ClassBuilder
 import org.jetbrains.kotlin.codegen.OwnerKind
-import org.jetbrains.kotlin.codegen.SourceInfo
 import org.jetbrains.kotlin.codegen.inline.*
+import org.jetbrains.kotlin.codegen.serialization.JvmSerializationBindings
 import org.jetbrains.kotlin.codegen.state.GenerationState
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
@@ -31,10 +33,10 @@ import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrMemberAccessExpression
 import org.jetbrains.kotlin.load.java.JvmAbi
+import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodGenericSignature
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodSignature
-import org.jetbrains.org.objectweb.asm.Label
-import org.jetbrains.org.objectweb.asm.MethodVisitor
+import org.jetbrains.org.objectweb.asm.*
 import org.jetbrains.org.objectweb.asm.commons.Method
 import org.jetbrains.org.objectweb.asm.tree.MethodNode
 
@@ -67,7 +69,7 @@ class IrSourceCompilerForInline(
         get() = codegen.classCodegen.getOrCreateSourceMapper()
 
     override fun generateLambdaBody(adapter: MethodVisitor, jvmMethodSignature: JvmMethodSignature, lambdaInfo: ExpressionLambda): SMAP {
-        lambdaInfo as? IrExpressionLambda ?: error("Expecting ir lambda, but $lambdaInfo")
+        lambdaInfo as? IrExpressionLambdaImpl ?: error("Expecting ir lambda, but $lambdaInfo")
 
         val functionCodegen = object : FunctionCodegen(lambdaInfo.function, codegen.classCodegen) {
             override fun createMethod(flags: Int, signature: JvmMethodGenericSignature): MethodVisitor {
@@ -109,10 +111,11 @@ class IrSourceCompilerForInline(
         //ExpressionCodegen()
         var node: MethodNode? = null
         var maxCalcAdapter: MethodVisitor? = null
-        val functionCodegen = object : FunctionCodegen(irFunction, codegen.classCodegen) {
+        val fakeClassCodegen = FakeClassCodegen(irFunction, codegen.classCodegen)
+        val functionCodegen = object : FunctionCodegen(irFunction, fakeClassCodegen) {
             override fun createMethod(flags: Int, signature: JvmMethodGenericSignature): MethodVisitor {
                 node = MethodNode(
-                    API,
+                    Opcodes.API_VERSION,
                     flags,
                     signature.asmMethod.name, signature.asmMethod.descriptor,
                     signature.genericsSignature, null
@@ -121,11 +124,15 @@ class IrSourceCompilerForInline(
                 return maxCalcAdapter!!
             }
         }
+
+        assert(codegen.lastLineNumber >= 0)
+        lazySourceMapper.callSiteMarker = CallSiteMarker(codegen.lastLineNumber)
         functionCodegen.generate()
+        lazySourceMapper.callSiteMarker = null
         maxCalcAdapter!!.visitMaxs(-1, -1)
         maxCalcAdapter!!.visitEnd()
 
-        return SMAPAndMethodNode(node!!, SMAP(/*TODO*/listOf(FileMapping.SKIP)))
+        return SMAPAndMethodNode(node!!, SMAP(fakeClassCodegen.getOrCreateSourceMapper().resultMappings))
     }
 
     override fun generateAndInsertFinallyBlocks(
@@ -159,5 +166,87 @@ class IrSourceCompilerForInline(
 
     override fun initializeInlineFunctionContext(functionDescriptor: FunctionDescriptor) {
         //TODO
+    }
+
+    private class FakeClassCodegen(irFunction: IrFunction, codegen: ClassCodegen) :
+        ClassCodegen(irFunction.parent as IrClass, codegen.context) {
+
+        override fun createClassBuilder(): ClassBuilder {
+            return FakeBuilder
+        }
+
+        companion object {
+            val FakeBuilder = object : ClassBuilder {
+                override fun newField(
+                    origin: JvmDeclarationOrigin,
+                    access: Int,
+                    name: String,
+                    desc: String,
+                    signature: String?,
+                    value: Any?
+                ): FieldVisitor {
+                    TODO("not implemented")
+                }
+
+                override fun newMethod(
+                    origin: JvmDeclarationOrigin,
+                    access: Int,
+                    name: String,
+                    desc: String,
+                    signature: String?,
+                    exceptions: Array<out String>?
+                ): MethodVisitor {
+                    TODO("not implemented")
+                }
+
+                override fun getSerializationBindings(): JvmSerializationBindings {
+                    return JvmSerializationBindings()
+                }
+
+                override fun newAnnotation(desc: String, visible: Boolean): AnnotationVisitor {
+                    TODO("not implemented")
+                }
+
+                override fun done() {
+                    TODO("not implemented")
+                }
+
+                override fun getVisitor(): ClassVisitor {
+                    TODO("not implemented")
+                }
+
+                override fun defineClass(
+                    origin: PsiElement?,
+                    version: Int,
+                    access: Int,
+                    name: String,
+                    signature: String?,
+                    superName: String,
+                    interfaces: Array<out String>
+                ) {
+                    TODO("not implemented")
+                }
+
+                override fun visitSource(name: String, debug: String?) {
+                    TODO("not implemented")
+                }
+
+                override fun visitOuterClass(owner: String, name: String?, desc: String?) {
+                    TODO("not implemented")
+                }
+
+                override fun visitInnerClass(name: String, outerName: String?, innerName: String?, access: Int) {
+                    TODO("not implemented")
+                }
+
+                override fun getThisName(): String {
+                    TODO("not implemented")
+                }
+
+                override fun addSMAP(mapping: FileMapping?) {
+                    TODO("not implemented")
+                }
+            }
+        }
     }
 }

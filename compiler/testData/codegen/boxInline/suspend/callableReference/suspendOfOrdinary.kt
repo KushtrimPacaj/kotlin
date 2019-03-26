@@ -1,6 +1,7 @@
 // !LANGUAGE: +NewInference
+// IGNORE_BACKEND: NATIVE
 // IGNORE_BACKEND: JVM_IR
-// IGNORE_BACKEND: JS, JS_IR
+// IGNORE_BACKEND: JS
 // NO_CHECK_LAMBDA_INLINING
 // FILE: test.kt
 
@@ -9,19 +10,16 @@ inline suspend fun go(f: () -> String) = f()
 // FILE: box.kt
 // WITH_RUNTIME
 
-import kotlin.coroutines.experimental.*
-import kotlin.coroutines.experimental.intrinsics.*
+import kotlin.coroutines.*
+import kotlin.coroutines.intrinsics.*
 
 fun builder(c: suspend () -> Unit) {
     c.startCoroutine(object: Continuation<Unit> {
         override val context: CoroutineContext
             get() = EmptyCoroutineContext
 
-        override fun resume(value: Unit) {
-        }
-
-        override fun resumeWithException(exception: Throwable) {
-            throw exception
+        override fun resumeWith(result: Result<Unit>) {
+            result.getOrThrow()
         }
     })
 }

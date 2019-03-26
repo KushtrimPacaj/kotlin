@@ -16,20 +16,19 @@
 
 package org.jetbrains.kotlin.psi2ir.generators
 
-import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
+import org.jetbrains.kotlin.descriptors.FunctionDescriptor
+import org.jetbrains.kotlin.descriptors.PropertyDescriptor
+import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrErrorDeclarationImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrPropertyImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrTypeAliasImpl
 import org.jetbrains.kotlin.ir.expressions.IrExpressionBody
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.util.withScope
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.endOffset
-import org.jetbrains.kotlin.psi.psiUtil.startOffset
+import org.jetbrains.kotlin.psi.psiUtil.startOffsetSkippingComments
 import org.jetbrains.kotlin.psi2ir.endOffsetOrUndefined
-import org.jetbrains.kotlin.psi2ir.pureEndOffsetOrUndefined
-import org.jetbrains.kotlin.psi2ir.pureStartOffsetOrUndefined
 import org.jetbrains.kotlin.psi2ir.startOffsetOrUndefined
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils
@@ -41,7 +40,7 @@ class DeclarationGenerator(override val context: GeneratorContext) : Generator {
 
     fun KotlinType.toIrType() = typeTranslator.translateType(this)
 
-    fun generateMemberDeclaration(ktDeclaration: KtDeclaration): IrDeclaration =
+    fun generateMemberDeclaration(ktDeclaration: KtDeclaration): IrDeclaration? =
         when (ktDeclaration) {
             is KtNamedFunction ->
                 FunctionGenerator(this).generateFunctionDeclaration(ktDeclaration)
@@ -50,10 +49,10 @@ class DeclarationGenerator(override val context: GeneratorContext) : Generator {
             is KtClassOrObject ->
                 generateClassOrObjectDeclaration(ktDeclaration)
             is KtTypeAlias ->
-                generateTypeAliasDeclaration(ktDeclaration)
+                null
             else ->
                 IrErrorDeclarationImpl(
-                    ktDeclaration.startOffset, ktDeclaration.endOffset,
+                    ktDeclaration.startOffsetSkippingComments, ktDeclaration.endOffset,
                     getOrFail(BindingContext.DECLARATION_TO_DESCRIPTOR, ktDeclaration)
                 )
         }
@@ -62,10 +61,10 @@ class DeclarationGenerator(override val context: GeneratorContext) : Generator {
         return generateClassOrObjectDeclaration(syntheticDeclaration)
     }
 
-    fun generateClassMemberDeclaration(ktDeclaration: KtDeclaration, classDescriptor: ClassDescriptor): IrDeclaration =
+    fun generateClassMemberDeclaration(ktDeclaration: KtDeclaration, irClass: IrClass): IrDeclaration? =
         when (ktDeclaration) {
             is KtAnonymousInitializer ->
-                AnonymousInitializerGenerator(this).generateAnonymousInitializerDeclaration(ktDeclaration, classDescriptor)
+                AnonymousInitializerGenerator(this).generateAnonymousInitializerDeclaration(ktDeclaration, irClass)
             is KtSecondaryConstructor ->
                 FunctionGenerator(this).generateSecondaryConstructor(ktDeclaration)
             is KtEnumEntry ->
@@ -79,12 +78,6 @@ class DeclarationGenerator(override val context: GeneratorContext) : Generator {
 
     fun generateClassOrObjectDeclaration(ktClassOrObject: KtPureClassOrObject): IrClass =
         ClassGenerator(this).generateClass(ktClassOrObject)
-
-    private fun generateTypeAliasDeclaration(ktDeclaration: KtTypeAlias): IrDeclaration =
-        IrTypeAliasImpl(
-            ktDeclaration.startOffset, ktDeclaration.endOffset, IrDeclarationOrigin.DEFINED,
-            getOrFail(BindingContext.TYPE_ALIAS, ktDeclaration)
-        )
 
 
     fun generateGlobalTypeParametersDeclarations(
@@ -141,7 +134,7 @@ class DeclarationGenerator(override val context: GeneratorContext) : Generator {
     fun generateInitializerBody(scopeOwnerSymbol: IrSymbol, ktBody: KtExpression): IrExpressionBody =
         createBodyGenerator(scopeOwnerSymbol).generateExpressionBody(ktBody)
 
-    fun generateFakeOverrideDeclaration(memberDescriptor: CallableMemberDescriptor, ktElement: KtPureElement): IrDeclaration {
+    fun generateFakeOverrideDeclaration(memberDescriptor: CallableMemberDescriptor, ktElement: KtPureElement): IrDeclaration? {
         assert(memberDescriptor.kind == CallableMemberDescriptor.Kind.FAKE_OVERRIDE) {
             "Fake override expected: $memberDescriptor"
         }
@@ -155,31 +148,10 @@ class DeclarationGenerator(override val context: GeneratorContext) : Generator {
         }
     }
 
-    private fun generateFakeOverrideProperty(propertyDescriptor: PropertyDescriptor, ktElement: KtPureElement): IrProperty {
-        val startOffset = ktElement.pureStartOffsetOrUndefined
-        val endOffset = ktElement.pureEndOffsetOrUndefined
+    private fun generateFakeOverrideProperty(propertyDescriptor: PropertyDescriptor, ktElement: KtPureElement): IrProperty? =
+        PropertyGenerator(this).generateFakeOverrideProperty(propertyDescriptor, ktElement)
 
-        val backingField =
-            if (propertyDescriptor.getter == null)
-                context.symbolTable.declareField(
-                    startOffset, endOffset, IrDeclarationOrigin.FAKE_OVERRIDE,
-                    propertyDescriptor, propertyDescriptor.type.toIrType()
-                )
-            else
-                null
-
-        return IrPropertyImpl(
-            startOffset, endOffset,
-            IrDeclarationOrigin.FAKE_OVERRIDE,
-            false,
-            propertyDescriptor,
-            backingField,
-            propertyDescriptor.getter?.let { generateFakeOverrideFunction(it, ktElement) },
-            propertyDescriptor.setter?.let { generateFakeOverrideFunction(it, ktElement) }
-        )
-    }
-
-    private fun generateFakeOverrideFunction(functionDescriptor: FunctionDescriptor, ktElement: KtPureElement): IrSimpleFunction =
+    private fun generateFakeOverrideFunction(functionDescriptor: FunctionDescriptor, ktElement: KtPureElement): IrSimpleFunction? =
         FunctionGenerator(this).generateFakeOverrideFunction(functionDescriptor, ktElement)
 }
 

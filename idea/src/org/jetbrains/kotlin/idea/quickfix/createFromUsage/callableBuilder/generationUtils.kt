@@ -49,12 +49,12 @@ fun setupEditorSelection(editor: Editor, declaration: KtNamedDeclaration) {
 
     when (declaration) {
         is KtNamedFunction, is KtSecondaryConstructor -> {
-            ((declaration as KtFunction).bodyExpression as? KtBlockExpression)?.let {
+            (declaration as KtFunction).bodyBlockExpression?.let {
                 positionBetween(it.lBrace!!, it.rBrace!!)
             }
         }
         is KtClassOrObject -> {
-            caretModel.moveToOffset(declaration.startOffset)
+            caretModel.moveToOffset(declaration.nameIdentifier?.startOffset ?: declaration.startOffset)
         }
         is KtProperty -> {
             caretModel.moveToOffset(declaration.endOffset)

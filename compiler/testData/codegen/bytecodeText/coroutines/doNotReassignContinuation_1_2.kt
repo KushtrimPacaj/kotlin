@@ -1,5 +1,7 @@
-// WITH_RUNTIME
+// !LANGUAGE: -ReleaseCoroutines
+// IGNORE_BACKEND: JVM_IR
 // WITH_COROUTINES
+
 import helpers.*
 // TREAT_AS_ONE_FILE
 import kotlin.coroutines.experimental.*

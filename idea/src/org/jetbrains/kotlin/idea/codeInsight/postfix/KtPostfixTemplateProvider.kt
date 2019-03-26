@@ -62,7 +62,9 @@ class KtPostfixTemplateProvider : PostfixTemplateProvider {
         KtWrapWithListOfPostfixTemplate,
         KtWrapWithSetOfPostfixTemplate,
         KtWrapWithArrayOfPostfixTemplate,
-        KtWrapWithSequenceOfPostfixTemplate
+        KtWrapWithSequenceOfPostfixTemplate,
+        KtSpreadPostfixTemplate,
+        KtArgumentPostfixTemplate
     )
 
     override fun isTerminalSymbol(currentChar: Char) = currentChar == '.' || currentChar == '!'
@@ -79,7 +81,7 @@ class KtPostfixTemplateProvider : PostfixTemplateProvider {
         /**
          * In tests only one expression should be suggested, so in case there are many of them, save relevant items
          */
-        @TestOnly
+        @get:TestOnly
         @Volatile
         var previouslySuggestedExpressions = emptyList<String>()
     }

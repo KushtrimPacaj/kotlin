@@ -10,6 +10,14 @@ annotation class A(
     val f: Float,
     val j: Long,
     val d: Double,
+    val ui: UInt,
+    val ub: UByte,
+    val us: UShort,
+    val ul: ULong,
+    val ui_max: UInt,
+    val ub_max: UByte,
+    val us_max: UShort,
+    val ul_max: ULong,
     val za: BooleanArray,
     val ca: CharArray,
     val ba: ByteArray,
@@ -26,8 +34,11 @@ annotation class A(
 
 annotation class B(val value: String)
 
+@Target(AnnotationTarget.TYPE)
+annotation class JvmNamed(@get:JvmName("uglyJvmName") val value: String)
+
 class C {
-    fun typeAnnotation(): @A(
+    fun returnTypeAnnotation(): @A(
         true,
         'x',
         1.toByte(),
@@ -36,6 +47,14 @@ class C {
         -2.72f,
         239239239239239L,
         3.14,
+        1u,
+        0xFFu,
+        3u,
+        4uL,
+        0xFFFF_FFFFu,
+        UByte.MAX_VALUE,
+        0xFF_FFu,
+        18446744073709551615u,
         [true],
         ['\''],
         [1.toByte()],
@@ -49,4 +68,6 @@ class C {
         C::class,
         B(value = "aba\ncaba'\"\t\u0001\u0002\uA66E")
     ) Unit {}
+
+    fun parameterTypeAnnotation(p: @JvmNamed("Q_Q") Any): Any = p
 }

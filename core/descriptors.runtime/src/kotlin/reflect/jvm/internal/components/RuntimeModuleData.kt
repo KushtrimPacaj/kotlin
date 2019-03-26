@@ -18,9 +18,11 @@ package kotlin.reflect.jvm.internal.components
 
 import org.jetbrains.kotlin.builtins.ReflectionTypes
 import org.jetbrains.kotlin.builtins.jvm.JvmBuiltIns
+import org.jetbrains.kotlin.builtins.jvm.JvmBuiltInsPackageFragmentProvider
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.NotFoundClasses
 import org.jetbrains.kotlin.descriptors.SupertypeLoopChecker
+import org.jetbrains.kotlin.descriptors.impl.CompositePackageFragmentProvider
 import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
 import org.jetbrains.kotlin.incremental.components.LookupTracker
 import org.jetbrains.kotlin.load.java.AnnotationTypeQualifierResolver
@@ -47,16 +49,17 @@ import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import org.jetbrains.kotlin.utils.Jsr305State
 
 class RuntimeModuleData private constructor(
-        val deserialization: DeserializationComponents,
-        val packagePartProvider: RuntimePackagePartProvider
+    val deserialization: DeserializationComponents,
+    val packagePartProvider: RuntimePackagePartProvider
 ) {
     val module: ModuleDescriptor get() = deserialization.moduleDescriptor
 
     companion object {
         fun create(classLoader: ClassLoader): RuntimeModuleData {
-            val storageManager = LockBasedStorageManager()
-            val builtIns = JvmBuiltIns(storageManager)
+            val storageManager = LockBasedStorageManager("RuntimeModuleData")
+            val builtIns = JvmBuiltIns(storageManager, JvmBuiltIns.Kind.FROM_DEPENDENCIES)
             val module = ModuleDescriptorImpl(Name.special("<runtime module for $classLoader>"), storageManager, builtIns)
+            builtIns.builtInsModule = module
 
             val reflectKotlinClassFinder = ReflectKotlinClassFinder(classLoader)
             val deserializedDescriptorResolver = DeserializedDescriptorResolver()
@@ -66,15 +69,13 @@ class RuntimeModuleData private constructor(
             val notFoundClasses = NotFoundClasses(storageManager, module)
             val annotationTypeQualifierResolver = AnnotationTypeQualifierResolver(storageManager, Jsr305State.DISABLED)
             val globalJavaResolverContext = JavaResolverComponents(
-                    storageManager, ReflectJavaClassFinder(classLoader), reflectKotlinClassFinder, deserializedDescriptorResolver,
-                    SignaturePropagator.DO_NOTHING, RuntimeErrorReporter, javaResolverCache,
-                    JavaPropertyInitializerEvaluator.DoNothing, SamConversionResolver.Empty, RuntimeSourceElementFactory, singleModuleClassResolver,
-                    runtimePackagePartProvider, SupertypeLoopChecker.EMPTY, LookupTracker.DO_NOTHING, module,
-                    ReflectionTypes(module, notFoundClasses),
-                    annotationTypeQualifierResolver,
-                    SignatureEnhancement(annotationTypeQualifierResolver, Jsr305State.DISABLED),
-                    JavaClassesTracker.Default,
-                    JavaResolverSettings.Default
+                storageManager, ReflectJavaClassFinder(classLoader), reflectKotlinClassFinder, deserializedDescriptorResolver,
+                SignaturePropagator.DO_NOTHING, RuntimeErrorReporter, javaResolverCache,
+                JavaPropertyInitializerEvaluator.DoNothing, SamConversionResolver.Empty, RuntimeSourceElementFactory,
+                singleModuleClassResolver, runtimePackagePartProvider, SupertypeLoopChecker.EMPTY, LookupTracker.DO_NOTHING, module,
+                ReflectionTypes(module, notFoundClasses), annotationTypeQualifierResolver,
+                SignatureEnhancement(annotationTypeQualifierResolver, Jsr305State.DISABLED),
+                JavaClassesTracker.Default, JavaResolverSettings.Default
             )
 
             val lazyJavaPackageFragmentProvider = LazyJavaPackageFragmentProvider(globalJavaResolverContext)
@@ -84,19 +85,23 @@ class RuntimeModuleData private constructor(
             val javaDescriptorResolver = JavaDescriptorResolver(lazyJavaPackageFragmentProvider, javaResolverCache)
             val javaClassDataFinder = JavaClassDataFinder(reflectKotlinClassFinder, deserializedDescriptorResolver)
             val binaryClassAnnotationAndConstantLoader = BinaryClassAnnotationAndConstantLoaderImpl(
-                    module, notFoundClasses, storageManager, reflectKotlinClassFinder
+                module, notFoundClasses, storageManager, reflectKotlinClassFinder
             )
             val deserializationComponentsForJava = DeserializationComponentsForJava(
-                    storageManager, module, DeserializationConfiguration.Default, javaClassDataFinder,
-                    binaryClassAnnotationAndConstantLoader, lazyJavaPackageFragmentProvider, notFoundClasses,
-                    RuntimeErrorReporter, LookupTracker.DO_NOTHING, ContractDeserializer.DEFAULT
+                storageManager, module, DeserializationConfiguration.Default, javaClassDataFinder,
+                binaryClassAnnotationAndConstantLoader, lazyJavaPackageFragmentProvider, notFoundClasses,
+                RuntimeErrorReporter, LookupTracker.DO_NOTHING, ContractDeserializer.DEFAULT
+            )
+            val builtinsProvider = JvmBuiltInsPackageFragmentProvider(
+                storageManager, reflectKotlinClassFinder, module, notFoundClasses, builtIns.settings, builtIns.settings,
+                DeserializationConfiguration.Default
             )
 
             singleModuleClassResolver.resolver = javaDescriptorResolver
             deserializedDescriptorResolver.setComponents(deserializationComponentsForJava)
 
-            module.setDependencies(module, builtIns.builtInsModule)
-            module.initialize(javaDescriptorResolver.packageFragmentProvider)
+            module.setDependencies(module)
+            module.initialize(CompositePackageFragmentProvider(listOf(javaDescriptorResolver.packageFragmentProvider, builtinsProvider)))
 
             return RuntimeModuleData(deserializationComponentsForJava.components, runtimePackagePartProvider)
         }

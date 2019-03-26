@@ -18,6 +18,7 @@ import com.intellij.psi.stubs.StringStubIndexExtension
 import com.intellij.util.containers.ContainerUtil
 import gnu.trove.THashSet
 import org.jetbrains.annotations.TestOnly
+import org.jetbrains.kotlin.analyzer.common.CommonPlatform
 import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.idea.caches.project.BinaryModuleInfo
 import org.jetbrains.kotlin.idea.caches.project.getBinaryLibrariesModuleInfos
@@ -29,6 +30,7 @@ import org.jetbrains.kotlin.idea.stubindex.KotlinTopLevelFunctionFqnNameIndex
 import org.jetbrains.kotlin.idea.stubindex.KotlinTopLevelPropertyFqnNameIndex
 import org.jetbrains.kotlin.idea.stubindex.KotlinTopLevelTypeAliasFqNameIndex
 import org.jetbrains.kotlin.idea.util.ProjectRootsUtil
+import org.jetbrains.kotlin.idea.util.isExpectDeclaration
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
@@ -74,10 +76,10 @@ object SourceNavigationHelper {
 
     private fun BinaryModuleInfo.associatedCommonLibraries(): List<BinaryModuleInfo> {
         val platform = platform
-        if (platform == null || platform == TargetPlatform.Common) return emptyList()
+        if (platform == null || platform is CommonPlatform) return emptyList()
 
         return dependencies().filterIsInstance<BinaryModuleInfo>().filter {
-            it.platform == TargetPlatform.Common
+            it.platform is CommonPlatform
         }
     }
 
@@ -203,20 +205,16 @@ object SourceNavigationHelper {
         navigationKind: NavigationKind
     ): Collection<KtNamedDeclaration> {
         val scopes = targetScopes(declaration, navigationKind)
-        val index = getIndexForTopLevelPropertyOrFunction(declaration)
-        for (scope in scopes) {
-            val candidates = index.get(declaration.fqName!!.asString(), declaration.project, scope)
-            if (candidates.isNotEmpty()) return candidates
-        }
-        return emptyList()
-    }
 
-    private fun getIndexForTopLevelPropertyOrFunction(
-        decompiledDeclaration: KtNamedDeclaration
-    ): StringStubIndexExtension<out KtNamedDeclaration> = when (decompiledDeclaration) {
-        is KtNamedFunction -> KotlinTopLevelFunctionFqnNameIndex.getInstance()
-        is KtProperty -> KotlinTopLevelPropertyFqnNameIndex.getInstance()
-        else -> throw IllegalArgumentException("Neither function nor declaration: " + decompiledDeclaration::class.java.name)
+        val index: StringStubIndexExtension<out KtNamedDeclaration> = when (declaration) {
+            is KtNamedFunction -> KotlinTopLevelFunctionFqnNameIndex.getInstance()
+            is KtProperty -> KotlinTopLevelPropertyFqnNameIndex.getInstance()
+            else -> throw IllegalArgumentException("Neither function nor declaration: " + declaration::class.java.name)
+        }
+
+        return scopes.flatMap { scope ->
+            index.get(declaration.fqName!!.asString(), declaration.project, scope).sortedBy { it.isExpectDeclaration() }
+        }
     }
 
     private fun getInitialMemberCandidates(
@@ -276,7 +274,7 @@ object SourceNavigationHelper {
             SourceNavigationHelper.NavigationKind.SOURCES_TO_CLASS_FILES -> {
                 val file = from.containingFile
                 if (file is KtFile && file.isCompiled) return from
-                if (!ProjectRootsUtil.isInContent(from, false, true, false, true)) return from
+                if (!ProjectRootsUtil.isInContent(from, false, true, false, true, false)) return from
                 if (KtPsiUtil.isLocal(from)) return from
             }
         }

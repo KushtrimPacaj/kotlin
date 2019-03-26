@@ -23,14 +23,12 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-val jar = runtimeJar {
-    from(fileTree("$projectDir/src")) { include("META-INF/**") }
-}
+publish()
+
+val jar = runtimeJar {}
 sourcesJar()
 javadocJar()
 testsJar {}
-
-publish()
 
 dist {
     rename("kotlin-", "")

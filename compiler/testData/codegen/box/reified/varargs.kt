@@ -1,5 +1,5 @@
+// KJS_WITH_FULL_RUNTIME
 // IGNORE_BACKEND: JVM_IR
-// IGNORE_BACKEND: JS_IR
 // WITH_RUNTIME
 
 import kotlin.test.assertEquals

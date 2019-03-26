@@ -10,19 +10,20 @@ import org.jetbrains.jps.model.ex.JpsElementChildRoleBase
 import org.jetbrains.jps.model.java.JpsJavaExtensionService
 import org.jetbrains.jps.model.module.JpsModule
 import org.jetbrains.kotlin.cli.common.arguments.*
-import org.jetbrains.kotlin.config.CompilerSettings
-import org.jetbrains.kotlin.config.KotlinFacetSettings
-import org.jetbrains.kotlin.config.KotlinModuleKind
-import org.jetbrains.kotlin.config.TargetPlatformKind
+import org.jetbrains.kotlin.config.*
+import org.jetbrains.kotlin.platform.IdePlatform
 
 val JpsModule.kotlinFacet: JpsKotlinFacetModuleExtension?
     get() = container.getChild(JpsKotlinFacetModuleExtension.KIND)
 
-val JpsModule.targetPlatform: TargetPlatformKind<*>?
-    get() = kotlinFacet?.settings?.targetPlatformKind
+val JpsModule.platform: IdePlatform<*, *>?
+    get() = kotlinFacet?.settings?.platform
 
 val JpsModule.kotlinKind: KotlinModuleKind
     get() = kotlinFacet?.settings?.kind ?: KotlinModuleKind.DEFAULT
+
+val JpsModule.isTestModule: Boolean
+    get() = kotlinFacet?.settings?.isTestModule ?: false
 
 /**
  * Modules which is imported from sources sets of the compilation represented by this module.
@@ -40,7 +41,7 @@ val JpsModule.expectedByModules: List<JpsModule>
 private fun JpsModule.findDependencies(moduleNames: List<String>?): List<JpsModule> {
     if (moduleNames == null || moduleNames.isEmpty()) return listOf()
 
-    val result = ArrayList<JpsModule>(moduleNames.size)
+    val result = mutableSetOf<JpsModule>()
 
     JpsJavaExtensionService.dependencies(this)
         .processModules {
@@ -50,7 +51,7 @@ private fun JpsModule.findDependencies(moduleNames: List<String>?): List<JpsModu
             }
         }
 
-    return result
+    return result.toList()
 }
 
 val JpsModule.productionOutputFilePath: String?

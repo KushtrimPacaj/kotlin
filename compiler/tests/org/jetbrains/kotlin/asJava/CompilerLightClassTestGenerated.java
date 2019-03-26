@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -27,6 +27,16 @@ public class CompilerLightClassTestGenerated extends AbstractCompilerLightClassT
 
     public void testAllFilesPresentInLightClasses() throws Exception {
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/asJava/lightClasses"), Pattern.compile("^([^.]+)\\.(kt|kts)$"), TargetBackend.ANY, true, "local", "ideRegression");
+    }
+
+    @TestMetadata("AnnotatedParameterInEnumConstructor.kt")
+    public void testAnnotatedParameterInEnumConstructor() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/AnnotatedParameterInEnumConstructor.kt");
+    }
+
+    @TestMetadata("AnnotatedParameterInInnerClassConstructor.kt")
+    public void testAnnotatedParameterInInnerClassConstructor() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/AnnotatedParameterInInnerClassConstructor.kt");
     }
 
     @TestMetadata("AnnotationClass.kt")
@@ -124,6 +134,11 @@ public class CompilerLightClassTestGenerated extends AbstractCompilerLightClassT
         runTest("compiler/testData/asJava/lightClasses/StubOrderForOverloads.kt");
     }
 
+    @TestMetadata("TypePararametersInClass.kt")
+    public void testTypePararametersInClass() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/TypePararametersInClass.kt");
+    }
+
     @TestMetadata("VarArgs.kt")
     public void testVarArgs() throws Exception {
         runTest("compiler/testData/asJava/lightClasses/VarArgs.kt");
@@ -164,6 +179,11 @@ public class CompilerLightClassTestGenerated extends AbstractCompilerLightClassT
         @TestMetadata("AnnotationModifiers.kt")
         public void testAnnotationModifiers() throws Exception {
             runTest("compiler/testData/asJava/lightClasses/compilationErrors/AnnotationModifiers.kt");
+        }
+
+        @TestMetadata("EnumNameOverride.kt")
+        public void testEnumNameOverride() throws Exception {
+            runTest("compiler/testData/asJava/lightClasses/compilationErrors/EnumNameOverride.kt");
         }
 
         @TestMetadata("ExpectClass.kt")
@@ -219,6 +239,11 @@ public class CompilerLightClassTestGenerated extends AbstractCompilerLightClassT
         @TestMetadata("TraitClassObjectField.kt")
         public void testTraitClassObjectField() throws Exception {
             runTest("compiler/testData/asJava/lightClasses/compilationErrors/TraitClassObjectField.kt");
+        }
+
+        @TestMetadata("TwoOverrides.kt")
+        public void testTwoOverrides() throws Exception {
+            runTest("compiler/testData/asJava/lightClasses/compilationErrors/TwoOverrides.kt");
         }
 
         @TestMetadata("WrongAnnotations.kt")

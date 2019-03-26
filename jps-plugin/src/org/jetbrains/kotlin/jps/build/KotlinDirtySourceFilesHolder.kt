@@ -22,6 +22,7 @@ import org.jetbrains.jps.builders.DirtyFilesHolder
 import org.jetbrains.jps.builders.java.JavaSourceRootDescriptor
 import org.jetbrains.jps.incremental.CompileContext
 import org.jetbrains.jps.incremental.ModuleBuildTarget
+import org.jetbrains.kotlin.jps.targets.KotlinModuleBuildTarget
 import java.io.File
 
 /**
@@ -38,17 +39,24 @@ class KotlinDirtySourceFilesHolder(
     val byTarget: Map<ModuleBuildTarget, TargetFiles>
 
     inner class TargetFiles(val target: ModuleBuildTarget, val removed: Collection<File>) {
-        private val _dirty: MutableSet<File> = mutableSetOf()
+        private val _dirty: MutableMap<File, KotlinModuleBuildTarget.Source> = mutableMapOf()
 
-        val dirty: Set<File>
+        val dirty: Map<File, KotlinModuleBuildTarget.Source>
             get() = _dirty
 
         /**
          * Should be called only from [FSOperationsHelper.markFilesForCurrentRound]
          * and during KotlinDirtySourceFilesHolder initialization.
          */
-        internal fun _markDirty(file: File) {
-            _dirty.add(file)
+        internal fun _markDirty(file: File, root: JavaSourceRootDescriptor) {
+            val isCrossCompiled = root is KotlinIncludedModuleSourceRoot
+            val old = _dirty.put(file.canonicalFile, KotlinModuleBuildTarget.Source(file, isCrossCompiled))
+
+            check(old == null || old.isCrossCompiled == isCrossCompiled) {
+                "`${file.canonicalFile}` already marked as dirty: " +
+                        "old is cross compiled: ${old!!.isCrossCompiled}, " +
+                        "new is cross compiled: $isCrossCompiled"
+            }
         }
     }
 
@@ -74,7 +82,7 @@ class KotlinDirtySourceFilesHolder(
                     ?: error("processDirtyFiles should callback only on chunk `$chunk` targets (`$target` is not)")
 
             if (file.isKotlinSourceFile) {
-                targetInfo._markDirty(file)
+                targetInfo._markDirty(file, root)
             }
 
             true
@@ -83,14 +91,14 @@ class KotlinDirtySourceFilesHolder(
         this.byTarget = byTarget
     }
 
-    fun getDirtyFiles(target: ModuleBuildTarget): Set<File> =
-        byTarget[target]?.dirty ?: setOf()
+    fun getDirtyFiles(target: ModuleBuildTarget): Map<File, KotlinModuleBuildTarget.Source> =
+        byTarget[target]?.dirty ?: mapOf()
 
     fun getRemovedFiles(target: ModuleBuildTarget): Collection<File> =
         byTarget[target]?.removed ?: listOf()
 
     val allDirtyFiles: Set<File>
-        get() = byTarget.flatMapTo(mutableSetOf()) { it.value.dirty }
+        get() = byTarget.flatMapTo(mutableSetOf()) { it.value.dirty.keys }
 
     val allRemovedFilesFiles: Set<File>
         get() = byTarget.flatMapTo(mutableSetOf()) { it.value.removed }

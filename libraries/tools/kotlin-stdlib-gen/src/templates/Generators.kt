@@ -10,6 +10,15 @@ import templates.SequenceClass.*
 
 object Generators : TemplateGroupBase() {
 
+    init {
+        defaultBuilder {
+            specialFor(ArraysOfUnsigned) {
+                since("1.3")
+                annotation("@ExperimentalUnsignedTypes")
+            }
+        }
+    }
+
     val f_plusElement = fn("plusElement(element: T)") {
         include(Iterables, Collections, Sets, Sequences)
     } builder {
@@ -358,13 +367,18 @@ object Generators : TemplateGroupBase() {
         }
     }
 
+    private fun elementsConversionClause(elements: Family) =
+            """
+            The [elements] ${elements.doc.collection} may be converted to a [HashSet] to speed up the operation, thus the elements are required to have
+            a correct and stable implementation of `hashCode()` that doesn't change between successive invocations.
+            """
 
     val f_minus_iterable = fn("minus(elements: Iterable<T>)") {
         include(Iterables, Sets, Sequences)
     } builder {
         operator(true)
 
-        doc { "Returns a list containing all elements of the original collection except the elements contained in the given [elements] collection." }
+        doc { "Returns a list containing all elements of the original collection except the elements contained in the given [elements] collection.\n" }
         returns("List<T>")
         specialFor(Sets, Sequences) { returns("SELF") }
         body {
@@ -425,6 +439,9 @@ object Generators : TemplateGroupBase() {
             }
 
         }
+        doc {
+            doc + elementsConversionClause(Iterables)
+        }
     }
 
     val f_minus_array = fn("minus(elements: Array<out T>)") {
@@ -432,7 +449,7 @@ object Generators : TemplateGroupBase() {
     } builder {
         operator(true)
 
-        doc { "Returns a list containing all elements of the original collection except the elements contained in the given [elements] array." }
+        doc { "Returns a list containing all elements of the original collection except the elements contained in the given [elements] array.\n" }
         returns("List<T>")
         specialFor(Sets, Sequences) { returns("SELF") }
         body {
@@ -481,6 +498,9 @@ object Generators : TemplateGroupBase() {
                 """
             }
         }
+        doc {
+            doc + elementsConversionClause(ArraysOfObjects)
+        }
     }
 
     val f_minus_sequence = fn("minus(elements: Sequence<T>)") {
@@ -488,7 +508,7 @@ object Generators : TemplateGroupBase() {
     } builder {
         operator(true)
 
-        doc { "Returns a list containing all elements of the original collection except the elements contained in the given [elements] sequence." }
+        doc { "Returns a list containing all elements of the original collection except the elements contained in the given [elements] sequence.\n" }
         returns("List<T>")
         specialFor(Sets, Sequences) { returns("SELF") }
         body {
@@ -541,6 +561,9 @@ object Generators : TemplateGroupBase() {
                 }
                 """
             }
+        }
+        doc {
+            doc + elementsConversionClause(Sequences)
         }
     }
 
@@ -944,7 +967,7 @@ object Generators : TemplateGroupBase() {
         }
         body(Sequences) {
             """
-            return buildSequence result@ {
+            return sequence result@ {
                 val iterator = iterator()
                 if (!iterator.hasNext()) return@result
                 var current = iterator.next()
@@ -979,8 +1002,11 @@ object Generators : TemplateGroupBase() {
     }
 
     val f_zip_transform = fn("zip(other: Iterable<R>, transform: (a: T, b: R) -> V)") {
-        include(Iterables, ArraysOfObjects, ArraysOfPrimitives)
+        include(Iterables, ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned)
     } builder {
+        inline()
+        specialFor(ArraysOfUnsigned) { inlineOnly() }
+
         doc {
             """
             Returns a list of values built from the elements of `this` ${f.collection} and the [other] collection with the same index
@@ -992,7 +1018,6 @@ object Generators : TemplateGroupBase() {
         typeParam("R")
         typeParam("V")
         returns("List<V>")
-        inline()
         body {
             """
             val first = iterator()
@@ -1004,7 +1029,7 @@ object Generators : TemplateGroupBase() {
             return list
             """
         }
-        body(ArraysOfObjects, ArraysOfPrimitives) {
+        body(ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned) {
             """
             val arraySize = size
             val list = ArrayList<V>(minOf(other.collectionSizeOrDefault(10), arraySize))
@@ -1019,8 +1044,11 @@ object Generators : TemplateGroupBase() {
     }
 
     val f_zip_array_transform = fn("zip(other: Array<out R>, transform: (a: T, b: R) -> V)") {
-        include(Iterables, ArraysOfObjects, ArraysOfPrimitives)
+        include(Iterables, ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned)
     } builder {
+        inline()
+        specialFor(ArraysOfUnsigned) { inlineOnly() }
+
         doc {
             """
             Returns a list of values built from the elements of `this` ${f.collection} and the [other] array with the same index
@@ -1032,7 +1060,6 @@ object Generators : TemplateGroupBase() {
         typeParam("R")
         typeParam("V")
         returns("List<V>")
-        inline()
         body {
             """
             val arraySize = other.size
@@ -1045,7 +1072,7 @@ object Generators : TemplateGroupBase() {
             return list
             """
         }
-        body(ArraysOfObjects, ArraysOfPrimitives) {
+        body(ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned) {
             """
             val size = minOf(size, other.size)
             val list = ArrayList<V>(size)
@@ -1059,8 +1086,11 @@ object Generators : TemplateGroupBase() {
     }
 
     val f_zip_sameArray_transform = fn("zip(other: SELF, transform: (a: T, b: T) -> V)") {
-        include(ArraysOfPrimitives)
+        include(ArraysOfPrimitives, ArraysOfUnsigned)
     } builder {
+        inline()
+        specialFor(ArraysOfUnsigned) { inlineOnly() }
+
         doc {
             """
             Returns a list of values built from the elements of `this` array and the [other] array with the same index
@@ -1071,7 +1101,6 @@ object Generators : TemplateGroupBase() {
         sample("samples.collections.Iterables.Operations.zipIterableWithTransform")
         typeParam("V")
         returns("List<V>")
-        inline()
         body {
             """
             val size = minOf(size, other.size)
@@ -1135,7 +1164,7 @@ object Generators : TemplateGroupBase() {
 
 
     val f_zip = fn("zip(other: Iterable<R>)") {
-        include(Iterables, ArraysOfObjects, ArraysOfPrimitives)
+        include(Iterables, ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned)
     } builder {
         infix(true)
         doc {
@@ -1174,7 +1203,7 @@ object Generators : TemplateGroupBase() {
     }
 
     val f_zip_array = fn("zip(other: Array<out R>)") {
-        include(Iterables, ArraysOfObjects, ArraysOfPrimitives)
+        include(Iterables, ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned)
     } builder {
         infix(true)
         doc {
@@ -1194,7 +1223,7 @@ object Generators : TemplateGroupBase() {
     }
 
     val f_zip_sameArray = fn("zip(other: SELF)") {
-        include(ArraysOfPrimitives)
+        include(ArraysOfPrimitives, ArraysOfUnsigned)
     } builder {
         infix(true)
         doc {

@@ -1,12 +1,11 @@
-// !LANGUAGE: +ReleaseCoroutines
-// !API_VERSION: 1.3
-// IGNORE_BACKEND: JS, JS_IR, NATIVE
 // IGNORE_BACKEND: JVM_IR
+// TARGET_BACKEND: JVM
 // WITH_COROUTINES
 // WITH_REFLECT
 
 // FILE: test.kt
 import kotlin.reflect.KSuspendFunction0
+import kotlin.coroutines.SuspendFunction0
 
 class Test {
     suspend fun o() = "O"

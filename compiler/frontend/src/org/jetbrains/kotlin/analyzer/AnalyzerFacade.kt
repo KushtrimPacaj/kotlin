@@ -39,13 +39,11 @@ import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.CompilerEnvironment
-import org.jetbrains.kotlin.resolve.MultiTargetPlatform
 import org.jetbrains.kotlin.resolve.TargetEnvironment
 import org.jetbrains.kotlin.resolve.TargetPlatform
 import org.jetbrains.kotlin.storage.StorageManager
 import org.jetbrains.kotlin.storage.getValue
 import java.util.*
-import kotlin.coroutines.experimental.buildSequence
 
 class ResolverForModule(
     val packageFragmentProvider: PackageFragmentProvider,
@@ -94,7 +92,6 @@ class ResolverForProjectImpl<M : ModuleInfo>(
     private val projectContext: ProjectContext,
     modules: Collection<M>,
     private val modulesContent: (M) -> ModuleContent<M>,
-    private val modulePlatforms: (M) -> MultiTargetPlatform?,
     private val moduleLanguageSettingsProvider: LanguageSettingsProvider,
     private val resolverForModuleFactoryByPlatform: (TargetPlatform?) -> ResolverForModuleFactory,
     private val platformParameters: (TargetPlatform) -> PlatformAnalysisParameters,
@@ -257,7 +254,7 @@ class ResolverForProjectImpl<M : ModuleInfo>(
             module.name,
             projectContext.storageManager,
             builtIns,
-            modulePlatforms(module),
+            module.platform?.multiTargetPlatform,
             module.capabilities,
             module.stableName
         )
@@ -279,37 +276,6 @@ interface PlatformAnalysisParameters {
     object Empty : PlatformAnalysisParameters
 }
 
-interface ModuleInfo {
-    val name: Name
-    val displayedName: String get() = name.asString()
-    fun dependencies(): List<ModuleInfo>
-    val expectedBy: List<ModuleInfo> get() = emptyList()
-    val platform: TargetPlatform? get() = null
-    fun modulesWhoseInternalsAreVisible(): Collection<ModuleInfo> = listOf()
-    val capabilities: Map<ModuleDescriptor.Capability<*>, Any?>
-        get() = mapOf(Capability to this)
-    val stableName: Name?
-        get() = null
-
-    // For common modules, we add built-ins at the beginning of the dependencies list, after the SDK.
-    // This is needed because if a JVM module depends on the common module, we should use JVM built-ins for resolution of both modules.
-    // The common module usually depends on kotlin-stdlib-common which may or may not have its own (common, non-JVM) built-ins,
-    // but if they are present, they should come after JVM built-ins in the dependencies list, because JVM built-ins contain
-    // additional members dependent on the JDK
-    fun dependencyOnBuiltIns(): ModuleInfo.DependencyOnBuiltIns =
-        if (platform == TargetPlatform.Common)
-            ModuleInfo.DependencyOnBuiltIns.AFTER_SDK
-        else
-            ModuleInfo.DependencyOnBuiltIns.LAST
-
-    //TODO: (module refactoring) provide dependency on builtins after runtime in IDEA
-    enum class DependencyOnBuiltIns { NONE, AFTER_SDK, LAST }
-
-    companion object {
-        val Capability = ModuleDescriptor.Capability<ModuleInfo>("ModuleInfo")
-    }
-}
-
 interface CombinedModuleInfo : ModuleInfo {
     val containedModules: List<ModuleInfo>
 }
@@ -321,6 +287,12 @@ fun ModuleInfo.flatten(): List<ModuleInfo> = when (this) {
 
 interface TrackableModuleInfo : ModuleInfo {
     fun createModificationTracker(): ModificationTracker
+}
+
+interface LibraryModuleInfo : ModuleInfo {
+    override val platform: TargetPlatform
+
+    fun getLibraryRoots(): Collection<String>
 }
 
 abstract class ResolverForModuleFactory {
@@ -346,7 +318,7 @@ class LazyModuleDependencies<M : ModuleInfo>(
 ) : ModuleDependencies {
     private val dependencies = storageManager.createLazyValue {
         val moduleDescriptor = resolverForProject.descriptorForModule(module)
-        buildSequence {
+        sequence {
             if (firstDependency != null) {
                 yield(resolverForProject.descriptorForModule(firstDependency))
             }
@@ -503,3 +475,6 @@ private object DiagnoseUnknownModuleInfoReporter {
 
     private fun otherError(message: String): Nothing = throw AssertionError(message)
 }
+
+@Suppress("UNCHECKED_CAST")
+fun <T> ModuleInfo.getCapability(capability: ModuleDescriptor.Capability<T>) = capabilities[capability] as? T

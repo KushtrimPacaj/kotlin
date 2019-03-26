@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -27,6 +27,11 @@ public class DiagnosticsWithModifiedMockJdkTestGenerated extends AbstractDiagnos
 
     public void testAllFilesPresentInTestWithModifiedMockJdk() throws Exception {
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/testWithModifiedMockJdk"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+    }
+
+    @TestMetadata("newStringMethods.kt")
+    public void testNewStringMethods() throws Exception {
+        runTest("compiler/testData/diagnostics/testWithModifiedMockJdk/newStringMethods.kt");
     }
 
     @TestMetadata("notConsideredMethod.kt")

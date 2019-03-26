@@ -6,13 +6,18 @@ plugins {
 }
 
 dependencies {
-    compile(projectDist(":kotlin-stdlib"))
+    compile(kotlinStdlib())
     compile(project(":kotlin-script-runtime"))
     compile(projectRuntimeJar(":kotlin-compiler-embeddable"))
     compile(project(":kotlin-script-util"))
-    testCompile(projectDist(":kotlin-test:kotlin-test-junit"))
+    runtime(projectRuntimeJar(":kotlin-scripting-compiler-embeddable"))
+    testCompile(project(":kotlin-test:kotlin-test-junit"))
     testCompile(commonDep("junit:junit"))
-    testRuntime(projectDist(":kotlin-reflect"))
+    testRuntime(project(":kotlin-reflect"))
+    compileOnly(project(":compiler:cli-common")) // TODO: fix import (workaround for jps build)
+    testCompileOnly(project(":core:util.runtime")) // TODO: fix import (workaround for jps build)
+    testCompileOnly(project(":compiler:daemon-common")) // TODO: fix import (workaround for jps build)
+    testRuntime(projectRuntimeJar(":kotlin-scripting-compiler-embeddable"))
 }
 
 projectTest()

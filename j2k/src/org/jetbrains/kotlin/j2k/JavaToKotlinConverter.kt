@@ -157,7 +157,7 @@ class JavaToKotlinConverter(
         if (usageProcessings.isEmpty()) return null
 
         val map: Map<PsiElement, Collection<UsageProcessing>> = usageProcessings.values
-                .flatMap { it }
+                .flatten()
                 .filter { it.javaCodeProcessors.isNotEmpty() || it.kotlinCodeProcessors.isNotEmpty() }
                 .groupBy { it.targetElement }
         if (map.isEmpty()) return null
@@ -314,6 +314,7 @@ class JavaToKotlinConverter(
         }
 
         constructor() {
+            // BUNCH: 181
             @Suppress("IncompatibleAPI")
             val indicator: ProgressIndicator? = ProgressManager.getInstance().progressIndicator
             delegate = indicator ?: EmptyProgressIndicator()
@@ -349,7 +350,7 @@ class JavaToKotlinConverter(
         override fun isModal() = delegate.isModal
         override fun getModalityState() = delegate.modalityState
 
-        override fun setModalityProgress(modalityProgress: ProgressIndicator) {
+        override fun setModalityProgress(modalityProgress: ProgressIndicator?) {
             delegate.setModalityProgress(modalityProgress)
         }
 

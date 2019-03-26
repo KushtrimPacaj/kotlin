@@ -128,10 +128,14 @@ internal class DescriptorRendererImpl(
     private fun StringBuilder.renderNormalizedType(type: KotlinType) {
         val abbreviated = type.unwrap() as? AbbreviatedType
         if (abbreviated != null) {
-            // TODO nullability is lost for abbreviated type?
-            renderNormalizedTypeAsIs(abbreviated.abbreviation)
-            if (renderUnabbreviatedType) {
-                renderAbbreviatedTypeExpansion(abbreviated)
+            if (renderTypeExpansions) {
+                renderNormalizedTypeAsIs(abbreviated.expandedType)
+            } else {
+                // TODO nullability is lost for abbreviated type?
+                renderNormalizedTypeAsIs(abbreviated.abbreviation)
+                if (renderUnabbreviatedType) {
+                    renderAbbreviatedTypeExpansion(abbreviated)
+                }
             }
             return
         }
@@ -399,13 +403,13 @@ internal class DescriptorRendererImpl(
         }
     }
 
-    private fun StringBuilder.renderAnnotations(annotated: Annotated) {
+    private fun StringBuilder.renderAnnotations(annotated: Annotated, target: AnnotationUseSiteTarget? = null) {
         if (DescriptorRendererModifier.ANNOTATIONS !in modifiers) return
 
         val excluded = if (annotated is KotlinType) excludedTypeAnnotationClasses else excludedAnnotationClasses
 
         val annotationFilter = annotationFilter
-        for ((annotation, target) in annotated.annotations.getAllAnnotations()) {
+        for (annotation in annotated.annotations) {
             if (annotation.fqName !in excluded && (annotationFilter == null || annotationFilter(annotation))) {
                 append(renderAnnotation(annotation, target))
                 if (eachAnnotationOnNewLine) {
@@ -458,24 +462,48 @@ internal class DescriptorRendererImpl(
         return when (value) {
             is ArrayValue -> value.value.joinToString(", ", "{", "}") { renderConstant(it) }
             is AnnotationValue -> renderAnnotation(value.value).removePrefix("@")
-            is KClassValue -> renderType(value.value) + "::class"
+            is KClassValue -> when (val classValue = value.value) {
+                is KClassValue.Value.LocalClass -> "${classValue.type}::class"
+                is KClassValue.Value.NormalClass -> {
+                    var type = classValue.classId.asSingleFqName().asString()
+                    repeat(classValue.arrayDimensions) { type = "kotlin.Array<$type>" }
+                    "$type::class"
+                }
+            }
             else -> value.toString()
         }
     }
 
-    private fun renderVisibility(visibility: Visibility, builder: StringBuilder) {
+    private fun renderVisibility(visibility: Visibility, builder: StringBuilder): Boolean {
         @Suppress("NAME_SHADOWING")
         var visibility = visibility
-        if (DescriptorRendererModifier.VISIBILITY !in modifiers) return
+        if (DescriptorRendererModifier.VISIBILITY !in modifiers) return false
         if (normalizedVisibilities) {
             visibility = visibility.normalize()
         }
-        if (!renderDefaultVisibility && visibility == Visibilities.DEFAULT_VISIBILITY) return
+        if (!renderDefaultVisibility && visibility == Visibilities.DEFAULT_VISIBILITY) return false
         builder.append(renderKeyword(visibility.displayName)).append(" ")
+        return true
     }
 
-    private fun renderModality(modality: Modality, builder: StringBuilder) {
+    private fun renderModality(modality: Modality, builder: StringBuilder, defaultModality: Modality) {
+        if (!renderDefaultModality && modality == defaultModality) return
         renderModifier(builder, DescriptorRendererModifier.MODALITY in modifiers, modality.name.toLowerCase())
+    }
+
+    private fun MemberDescriptor.implicitModalityWithoutExtensions(): Modality {
+        if (this is ClassDescriptor) {
+            return if (kind == ClassKind.INTERFACE) Modality.ABSTRACT else Modality.FINAL
+        }
+        val containingClassDescriptor = containingDeclaration as? ClassDescriptor ?: return Modality.FINAL
+        if (this !is CallableMemberDescriptor) return Modality.FINAL
+        if (this.overriddenDescriptors.isNotEmpty()) {
+            if (containingClassDescriptor.modality != Modality.FINAL) return Modality.OPEN
+        }
+        if (containingClassDescriptor.kind == ClassKind.INTERFACE && this.visibility != Visibilities.PRIVATE) {
+            return if (this.modality == Modality.ABSTRACT) Modality.ABSTRACT else Modality.OPEN
+        }
+        return Modality.FINAL
     }
 
     private fun renderModalityForCallable(callable: CallableMemberDescriptor, builder: StringBuilder) {
@@ -484,7 +512,7 @@ internal class DescriptorRendererImpl(
                 overridesSomething(callable)) {
                 return
             }
-            renderModality(callable.modality, builder)
+            renderModality(callable.modality, builder, callable.implicitModalityWithoutExtensions())
         }
     }
 
@@ -685,6 +713,8 @@ internal class DescriptorRendererImpl(
     private fun renderReceiver(callableDescriptor: CallableDescriptor, builder: StringBuilder) {
         val receiver = callableDescriptor.extensionReceiverParameter
         if (receiver != null) {
+            builder.renderAnnotations(receiver, AnnotationUseSiteTarget.RECEIVER)
+
             val type = receiver.type
             var result = renderType(type)
             if (shouldRenderAsPrettyFunctionType(type) && !TypeUtils.isNullableType(type)) {
@@ -696,15 +726,16 @@ internal class DescriptorRendererImpl(
 
     private fun renderConstructor(constructor: ConstructorDescriptor, builder: StringBuilder) {
         builder.renderAnnotations(constructor)
-        renderVisibility(constructor.visibility, builder)
+        val visibilityRendered = renderVisibility(constructor.visibility, builder)
         renderMemberKind(constructor, builder)
 
-        if (renderConstructorKeyword) {
+        val constructorKeywordRendered = renderConstructorKeyword || !constructor.isPrimary || visibilityRendered
+        if (constructorKeywordRendered) {
             builder.append(renderKeyword("constructor"))
         }
+        val classDescriptor = constructor.containingDeclaration
         if (secondaryConstructorsAsPrimary) {
-            val classDescriptor = constructor.containingDeclaration
-            if (renderConstructorKeyword) {
+            if (constructorKeywordRendered) {
                 builder.append(" ")
             }
             renderName(classDescriptor, builder, true)
@@ -712,6 +743,19 @@ internal class DescriptorRendererImpl(
         }
 
         renderValueParameters(constructor.valueParameters, constructor.hasSynthesizedParameterNames(), builder)
+
+        if (renderConstructorDelegation && !constructor.isPrimary && classDescriptor is ClassDescriptor) {
+            val primaryConstructor = classDescriptor.unsubstitutedPrimaryConstructor
+            if (primaryConstructor != null) {
+                val parametersWithoutDefault = primaryConstructor.valueParameters.filter {
+                    !it.declaresDefaultValue() && it.varargElementType == null
+                }
+                if (parametersWithoutDefault.isNotEmpty()) {
+                    builder.append(" : ").append(renderKeyword("this"))
+                    builder.append(parametersWithoutDefault.joinToString(prefix = "(", postfix = ")", separator = ", ") { "" })
+                }
+            }
+        }
 
         if (secondaryConstructorsAsPrimary) {
             renderWhereSuffix(constructor.typeParameters, builder)
@@ -773,6 +817,13 @@ internal class DescriptorRendererImpl(
         renderModifier(builder, valueParameter.isCrossinline, "crossinline")
         renderModifier(builder, valueParameter.isNoinline, "noinline")
 
+        if (renderPrimaryConstructorParametersAsProperties &&
+            (valueParameter.containingDeclaration as? ClassConstructorDescriptor)?.isPrimary == true
+        ) {
+            renderModifier(builder, actualPropertiesInPrimaryConstructor, "actual")
+            renderModifier(builder, true, "val")
+        }
+
         renderVariable(valueParameter, includeName, builder, topLevel)
 
         val withDefaultValue =
@@ -817,13 +868,13 @@ internal class DescriptorRendererImpl(
     private fun renderProperty(property: PropertyDescriptor, builder: StringBuilder) {
         if (!startFromName) {
             if (!startFromDeclarationKeyword) {
-                builder.renderAnnotations(property)
+                renderPropertyAnnotations(property, builder)
                 renderVisibility(property.visibility, builder)
-                renderModifier(builder, property.isConst, "const")
+                renderModifier(builder, DescriptorRendererModifier.CONST in modifiers && property.isConst, "const")
                 renderMemberModifiers(property, builder)
                 renderModalityForCallable(property, builder)
                 renderOverride(property, builder)
-                renderModifier(builder, property.isLateInit, "lateinit")
+                renderModifier(builder, DescriptorRendererModifier.LATEINIT in modifiers && property.isLateInit, "lateinit")
                 renderMemberKind(property, builder)
             }
             renderValVarPrefix(property, builder)
@@ -839,6 +890,29 @@ internal class DescriptorRendererImpl(
         renderInitializer(property, builder)
 
         renderWhereSuffix(property.typeParameters, builder)
+    }
+
+    private fun renderPropertyAnnotations(property: PropertyDescriptor, builder: StringBuilder) {
+        if (DescriptorRendererModifier.ANNOTATIONS !in modifiers) return
+
+        builder.renderAnnotations(property)
+
+        property.backingField?.let { builder.renderAnnotations(it, AnnotationUseSiteTarget.FIELD) }
+        property.delegateField?.let { builder.renderAnnotations(it, AnnotationUseSiteTarget.PROPERTY_DELEGATE_FIELD) }
+
+        if (propertyAccessorRenderingPolicy == PropertyAccessorRenderingPolicy.NONE) {
+            property.getter?.let {
+                builder.renderAnnotations(it, AnnotationUseSiteTarget.PROPERTY_GETTER)
+            }
+            property.setter?.let { setter ->
+                setter.let {
+                    builder.renderAnnotations(it, AnnotationUseSiteTarget.PROPERTY_SETTER)
+                }
+                setter.valueParameters.single().let {
+                    builder.renderAnnotations(it, AnnotationUseSiteTarget.SETTER_PARAMETER)
+                }
+            }
+        }
     }
 
     private fun renderInitializer(variable: VariableDescriptor, builder: StringBuilder) {
@@ -884,7 +958,7 @@ internal class DescriptorRendererImpl(
             }
             if (!(klass.kind == ClassKind.INTERFACE && klass.modality == Modality.ABSTRACT ||
                   klass.kind.isSingleton && klass.modality == Modality.FINAL)) {
-                renderModality(klass.modality, builder)
+                renderModality(klass.modality, builder, klass.implicitModalityWithoutExtensions())
             }
             renderMemberModifiers(klass, builder)
             renderModifier(builder, DescriptorRendererModifier.INNER in modifiers && klass.isInner, "inner")
@@ -985,25 +1059,25 @@ internal class DescriptorRendererImpl(
         }
 
         override fun visitPropertyGetterDescriptor(descriptor: PropertyGetterDescriptor, builder: StringBuilder) {
-            if (renderAccessors) {
-                renderAccessorModifiers(descriptor, builder)
-                builder.append("getter for ")
-                renderProperty(descriptor.correspondingProperty, builder)
-            }
-            else {
-                visitFunctionDescriptor(descriptor, builder)
-            }
-
+            visitPropertyAccessorDescriptor(descriptor, builder, "getter")
         }
 
         override fun visitPropertySetterDescriptor(descriptor: PropertySetterDescriptor, builder: StringBuilder) {
-            if (renderAccessors) {
-                renderAccessorModifiers(descriptor, builder)
-                builder.append("setter for ")
-                renderProperty(descriptor.correspondingProperty, builder)
-            }
-            else {
-                visitFunctionDescriptor(descriptor, builder)
+            visitPropertyAccessorDescriptor(descriptor, builder, "setter")
+        }
+
+        private fun visitPropertyAccessorDescriptor(descriptor: PropertyAccessorDescriptor, builder: StringBuilder, kind: String) {
+            when (propertyAccessorRenderingPolicy) {
+                PropertyAccessorRenderingPolicy.PRETTY -> {
+                    renderAccessorModifiers(descriptor, builder)
+                    builder.append("$kind for ")
+                    renderProperty(descriptor.correspondingProperty, builder)
+                }
+                PropertyAccessorRenderingPolicy.DEBUG -> {
+                    visitFunctionDescriptor(descriptor, builder)
+                }
+                PropertyAccessorRenderingPolicy.NONE -> {
+                }
             }
         }
 

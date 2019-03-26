@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -13,9 +13,7 @@ package kotlin.collections
 // See: https://github.com/JetBrains/kotlin/tree/master/libraries/stdlib
 //
 
-import kotlin.*
-import kotlin.text.*
-import kotlin.comparisons.*
+import kotlin.random.*
 
 /**
  * Returns 1st *element* from the collection.
@@ -68,6 +66,8 @@ public operator fun <@kotlin.internal.OnlyInputTypes T> Iterable<T>.contains(ele
 
 /**
  * Returns an element at the given [index] or throws an [IndexOutOfBoundsException] if the [index] is out of bounds of this collection.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAt
  */
 public fun <T> Iterable<T>.elementAt(index: Int): T {
     if (this is List)
@@ -77,6 +77,8 @@ public fun <T> Iterable<T>.elementAt(index: Int): T {
 
 /**
  * Returns an element at the given [index] or throws an [IndexOutOfBoundsException] if the [index] is out of bounds of this list.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAt
  */
 @kotlin.internal.InlineOnly
 public inline fun <T> List<T>.elementAt(index: Int): T {
@@ -85,6 +87,8 @@ public inline fun <T> List<T>.elementAt(index: Int): T {
 
 /**
  * Returns an element at the given [index] or the result of calling the [defaultValue] function if the [index] is out of bounds of this collection.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAtOrElse
  */
 public fun <T> Iterable<T>.elementAtOrElse(index: Int, defaultValue: (Int) -> T): T {
     if (this is List)
@@ -103,6 +107,8 @@ public fun <T> Iterable<T>.elementAtOrElse(index: Int, defaultValue: (Int) -> T)
 
 /**
  * Returns an element at the given [index] or the result of calling the [defaultValue] function if the [index] is out of bounds of this list.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAtOrElse
  */
 @kotlin.internal.InlineOnly
 public inline fun <T> List<T>.elementAtOrElse(index: Int, defaultValue: (Int) -> T): T {
@@ -111,6 +117,8 @@ public inline fun <T> List<T>.elementAtOrElse(index: Int, defaultValue: (Int) ->
 
 /**
  * Returns an element at the given [index] or `null` if the [index] is out of bounds of this collection.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAtOrNull
  */
 public fun <T> Iterable<T>.elementAtOrNull(index: Int): T? {
     if (this is List)
@@ -129,6 +137,8 @@ public fun <T> Iterable<T>.elementAtOrNull(index: Int): T? {
 
 /**
  * Returns an element at the given [index] or `null` if the [index] is out of bounds of this list.
+ * 
+ * @sample samples.collections.Collections.Elements.elementAtOrNull
  */
 @kotlin.internal.InlineOnly
 public inline fun <T> List<T>.elementAtOrNull(index: Int): T? {
@@ -251,6 +261,7 @@ public fun <@kotlin.internal.OnlyInputTypes T> Iterable<T>.indexOf(element: T): 
     if (this is List) return this.indexOf(element)
     var index = 0
     for (item in this) {
+        checkIndexOverflow(index)
         if (element == item)
             return index
         index++
@@ -272,6 +283,7 @@ public fun <@kotlin.internal.OnlyInputTypes T> List<T>.indexOf(element: T): Int 
 public inline fun <T> Iterable<T>.indexOfFirst(predicate: (T) -> Boolean): Int {
     var index = 0
     for (item in this) {
+        checkIndexOverflow(index)
         if (predicate(item))
             return index
         index++
@@ -299,6 +311,7 @@ public inline fun <T> Iterable<T>.indexOfLast(predicate: (T) -> Boolean): Int {
     var lastIndex = -1
     var index = 0
     for (item in this) {
+        checkIndexOverflow(index)
         if (predicate(item))
             lastIndex = index
         index++
@@ -387,6 +400,7 @@ public fun <@kotlin.internal.OnlyInputTypes T> Iterable<T>.lastIndexOf(element: 
     var lastIndex = -1
     var index = 0
     for (item in this) {
+        checkIndexOverflow(index)
         if (element == item)
             lastIndex = index
         index++
@@ -450,6 +464,29 @@ public inline fun <T> List<T>.lastOrNull(predicate: (T) -> Boolean): T? {
         if (predicate(element)) return element
     }
     return null
+}
+
+/**
+ * Returns a random element from this collection.
+ * 
+ * @throws NoSuchElementException if this collection is empty.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline fun <T> Collection<T>.random(): T {
+    return random(Random)
+}
+
+/**
+ * Returns a random element from this collection using the specified source of randomness.
+ * 
+ * @throws NoSuchElementException if this collection is empty.
+ */
+@SinceKotlin("1.3")
+public fun <T> Collection<T>.random(random: Random): T {
+    if (isEmpty())
+        throw NoSuchElementException("Collection is empty.")
+    return elementAt(random.nextInt(size))
 }
 
 /**
@@ -544,6 +581,8 @@ public inline fun <T> Iterable<T>.singleOrNull(predicate: (T) -> Boolean): T? {
 /**
  * Returns a list containing all elements except first [n] elements.
  * 
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
  * @sample samples.collections.Collections.Transformations.drop
  */
 public fun <T> Iterable<T>.drop(n: Int): List<T> {
@@ -580,6 +619,8 @@ public fun <T> Iterable<T>.drop(n: Int): List<T> {
 
 /**
  * Returns a list containing all elements except last [n] elements.
+ * 
+ * @throws IllegalArgumentException if [n] is negative.
  * 
  * @sample samples.collections.Collections.Transformations.drop
  */
@@ -728,6 +769,8 @@ public fun <T> List<T>.slice(indices: Iterable<Int>): List<T> {
 /**
  * Returns a list containing first [n] elements.
  * 
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
  * @sample samples.collections.Collections.Transformations.take
  */
 public fun <T> Iterable<T>.take(n: Int): List<T> {
@@ -749,6 +792,8 @@ public fun <T> Iterable<T>.take(n: Int): List<T> {
 
 /**
  * Returns a list containing last [n] elements.
+ * 
+ * @throws IllegalArgumentException if [n] is negative.
  * 
  * @sample samples.collections.Collections.Transformations.take
  */
@@ -824,6 +869,8 @@ public fun <T> Iterable<T>.reversed(): List<T> {
 
 /**
  * Sorts elements in the list in-place according to natural sort order of the value returned by specified [selector] function.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public inline fun <T, R : Comparable<R>> MutableList<T>.sortBy(crossinline selector: (T) -> R?): Unit {
     if (size > 1) sortWith(compareBy(selector))
@@ -831,6 +878,8 @@ public inline fun <T, R : Comparable<R>> MutableList<T>.sortBy(crossinline selec
 
 /**
  * Sorts elements in the list in-place descending according to natural sort order of the value returned by specified [selector] function.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public inline fun <T, R : Comparable<R>> MutableList<T>.sortByDescending(crossinline selector: (T) -> R?): Unit {
     if (size > 1) sortWith(compareByDescending(selector))
@@ -838,6 +887,8 @@ public inline fun <T, R : Comparable<R>> MutableList<T>.sortByDescending(crossin
 
 /**
  * Sorts elements in the list in-place descending according to their natural sort order.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public fun <T : Comparable<T>> MutableList<T>.sortDescending(): Unit {
     sortWith(reverseOrder())
@@ -845,6 +896,8 @@ public fun <T : Comparable<T>> MutableList<T>.sortDescending(): Unit {
 
 /**
  * Returns a list of all elements sorted according to their natural sort order.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public fun <T : Comparable<T>> Iterable<T>.sorted(): List<T> {
     if (this is Collection) {
@@ -857,6 +910,8 @@ public fun <T : Comparable<T>> Iterable<T>.sorted(): List<T> {
 
 /**
  * Returns a list of all elements sorted according to natural sort order of the value returned by specified [selector] function.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public inline fun <T, R : Comparable<R>> Iterable<T>.sortedBy(crossinline selector: (T) -> R?): List<T> {
     return sortedWith(compareBy(selector))
@@ -864,6 +919,8 @@ public inline fun <T, R : Comparable<R>> Iterable<T>.sortedBy(crossinline select
 
 /**
  * Returns a list of all elements sorted descending according to natural sort order of the value returned by specified [selector] function.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public inline fun <T, R : Comparable<R>> Iterable<T>.sortedByDescending(crossinline selector: (T) -> R?): List<T> {
     return sortedWith(compareByDescending(selector))
@@ -871,6 +928,8 @@ public inline fun <T, R : Comparable<R>> Iterable<T>.sortedByDescending(crossinl
 
 /**
  * Returns a list of all elements sorted descending according to their natural sort order.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public fun <T : Comparable<T>> Iterable<T>.sortedDescending(): List<T> {
     return sortedWith(reverseOrder())
@@ -878,6 +937,8 @@ public fun <T : Comparable<T>> Iterable<T>.sortedDescending(): List<T> {
 
 /**
  * Returns a list of all elements sorted according to the specified [comparator].
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  */
 public fun <T> Iterable<T>.sortedWith(comparator: Comparator<in T>): List<T> {
     if (this is Collection) {
@@ -1056,6 +1117,36 @@ public inline fun <T, K, V, M : MutableMap<in K, in V>> Iterable<T>.associateTo(
 }
 
 /**
+ * Returns a [Map] where keys are elements from the given collection and values are
+ * produced by the [valueSelector] function applied to each element.
+ * 
+ * If any two elements are equal, the last one gets added to the map.
+ * 
+ * The returned map preserves the entry iteration order of the original collection.
+ * 
+ * @sample samples.collections.Collections.Transformations.associateWith
+ */
+@SinceKotlin("1.3")
+public inline fun <K, V> Iterable<K>.associateWith(valueSelector: (K) -> V): Map<K, V> {
+    val result = LinkedHashMap<K, V>(mapCapacity(collectionSizeOrDefault(10)).coerceAtLeast(16))
+    return associateWithTo(result, valueSelector)
+}
+
+/**
+ * Populates and returns the [destination] mutable map with key-value pairs for each element of the given collection,
+ * where key is the element itself and value is provided by the [valueSelector] function applied to that key.
+ * 
+ * If any two elements are equal, the last one overwrites the former value in the map.
+ */
+@SinceKotlin("1.3")
+public inline fun <K, V, M : MutableMap<in K, in V>> Iterable<K>.associateWithTo(destination: M, valueSelector: (K) -> V): M {
+    for (element in this) {
+        destination.put(element, valueSelector(element))
+    }
+    return destination
+}
+
+/**
  * Appends all elements to the given [destination] collection.
  */
 public fun <T, C : MutableCollection<in T>> Iterable<T>.toCollection(destination: C): C {
@@ -1200,7 +1291,7 @@ public inline fun <T, K, V, M : MutableMap<in K, MutableList<V>>> Iterable<T>.gr
  * Creates a [Grouping] source from a collection to be used later with one of group-and-fold operations
  * using the specified [keySelector] function to extract a key from each element.
  * 
- * @sample samples.collections.Collections.Transformations.groupingByEachCount
+ * @sample samples.collections.Grouping.groupingByEachCount
  */
 @SinceKotlin("1.1")
 public inline fun <T, K> Iterable<T>.groupingBy(crossinline keySelector: (T) -> K): Grouping<T, K> {
@@ -1258,7 +1349,7 @@ public inline fun <T, R : Any, C : MutableCollection<in R>> Iterable<T>.mapIndex
 public inline fun <T, R, C : MutableCollection<in R>> Iterable<T>.mapIndexedTo(destination: C, transform: (index: Int, T) -> R): C {
     var index = 0
     for (item in this)
-        destination.add(transform(index++, item))
+        destination.add(transform(checkIndexOverflow(index++), item))
     return destination
 }
 
@@ -1407,7 +1498,7 @@ public inline fun <T> Iterable<T>.any(predicate: (T) -> Boolean): Boolean {
 public fun <T> Iterable<T>.count(): Int {
     if (this is Collection) return size
     var count = 0
-    for (element in this) count++
+    for (element in this) checkCountOverflow(++count)
     return count
 }
 
@@ -1425,7 +1516,7 @@ public inline fun <T> Collection<T>.count(): Int {
 public inline fun <T> Iterable<T>.count(predicate: (T) -> Boolean): Int {
     if (this is Collection && isEmpty()) return 0
     var count = 0
-    for (element in this) if (predicate(element)) count++
+    for (element in this) if (predicate(element)) checkCountOverflow(++count)
     return count
 }
 
@@ -1447,7 +1538,7 @@ public inline fun <T, R> Iterable<T>.fold(initial: R, operation: (acc: R, T) -> 
 public inline fun <T, R> Iterable<T>.foldIndexed(initial: R, operation: (index: Int, acc: R, T) -> R): R {
     var index = 0
     var accumulator = initial
-    for (element in this) accumulator = operation(index++, accumulator, element)
+    for (element in this) accumulator = operation(checkIndexOverflow(index++), accumulator, element)
     return accumulator
 }
 
@@ -1498,7 +1589,7 @@ public inline fun <T> Iterable<T>.forEach(action: (T) -> Unit): Unit {
  */
 public inline fun <T> Iterable<T>.forEachIndexed(action: (index: Int, T) -> Unit): Unit {
     var index = 0
-    for (item in this) action(index++, item)
+    for (item in this) action(checkIndexOverflow(index++), item)
 }
 
 /**
@@ -1555,6 +1646,8 @@ public fun <T : Comparable<T>> Iterable<T>.max(): T? {
 
 /**
  * Returns the first element yielding the largest value of the given function or `null` if there are no elements.
+ * 
+ * @sample samples.collections.Collections.Aggregates.maxBy
  */
 public inline fun <T, R : Comparable<R>> Iterable<T>.maxBy(selector: (T) -> R): T? {
     val iterator = iterator()
@@ -1640,6 +1733,8 @@ public fun <T : Comparable<T>> Iterable<T>.min(): T? {
 
 /**
  * Returns the first element yielding the smallest value of the given function or `null` if there are no elements.
+ * 
+ * @sample samples.collections.Collections.Aggregates.minBy
  */
 public inline fun <T, R : Comparable<R>> Iterable<T>.minBy(selector: (T) -> R): T? {
     val iterator = iterator()
@@ -1725,7 +1820,7 @@ public inline fun <S, T : S> Iterable<T>.reduceIndexed(operation: (index: Int, a
     var index = 1
     var accumulator: S = iterator.next()
     while (iterator.hasNext()) {
-        accumulator = operation(index++, accumulator, iterator.next())
+        accumulator = operation(checkIndexOverflow(index++), accumulator, iterator.next())
     }
     return accumulator
 }
@@ -1854,6 +1949,9 @@ public operator fun <T> Iterable<T>.minus(element: T): List<T> {
 
 /**
  * Returns a list containing all elements of the original collection except the elements contained in the given [elements] array.
+ * 
+ * The [elements] array may be converted to a [HashSet] to speed up the operation, thus the elements are required to have
+ * a correct and stable implementation of `hashCode()` that doesn't change between successive invocations.
  */
 public operator fun <T> Iterable<T>.minus(elements: Array<out T>): List<T> {
     if (elements.isEmpty()) return this.toList()
@@ -1863,6 +1961,9 @@ public operator fun <T> Iterable<T>.minus(elements: Array<out T>): List<T> {
 
 /**
  * Returns a list containing all elements of the original collection except the elements contained in the given [elements] collection.
+ * 
+ * The [elements] collection may be converted to a [HashSet] to speed up the operation, thus the elements are required to have
+ * a correct and stable implementation of `hashCode()` that doesn't change between successive invocations.
  */
 public operator fun <T> Iterable<T>.minus(elements: Iterable<T>): List<T> {
     val other = elements.convertToSetForSetOperationWith(this)
@@ -1873,6 +1974,9 @@ public operator fun <T> Iterable<T>.minus(elements: Iterable<T>): List<T> {
 
 /**
  * Returns a list containing all elements of the original collection except the elements contained in the given [elements] sequence.
+ * 
+ * The [elements] sequence may be converted to a [HashSet] to speed up the operation, thus the elements are required to have
+ * a correct and stable implementation of `hashCode()` that doesn't change between successive invocations.
  */
 public operator fun <T> Iterable<T>.minus(elements: Sequence<T>): List<T> {
     val other = elements.toHashSet()
@@ -2238,7 +2342,7 @@ public fun Iterable<Byte>.average(): Double {
     var count: Int = 0
     for (element in this) {
         sum += element
-        count += 1
+        checkCountOverflow(++count)
     }
     return if (count == 0) Double.NaN else sum / count
 }
@@ -2252,7 +2356,7 @@ public fun Iterable<Short>.average(): Double {
     var count: Int = 0
     for (element in this) {
         sum += element
-        count += 1
+        checkCountOverflow(++count)
     }
     return if (count == 0) Double.NaN else sum / count
 }
@@ -2266,7 +2370,7 @@ public fun Iterable<Int>.average(): Double {
     var count: Int = 0
     for (element in this) {
         sum += element
-        count += 1
+        checkCountOverflow(++count)
     }
     return if (count == 0) Double.NaN else sum / count
 }
@@ -2280,7 +2384,7 @@ public fun Iterable<Long>.average(): Double {
     var count: Int = 0
     for (element in this) {
         sum += element
-        count += 1
+        checkCountOverflow(++count)
     }
     return if (count == 0) Double.NaN else sum / count
 }
@@ -2294,7 +2398,7 @@ public fun Iterable<Float>.average(): Double {
     var count: Int = 0
     for (element in this) {
         sum += element
-        count += 1
+        checkCountOverflow(++count)
     }
     return if (count == 0) Double.NaN else sum / count
 }
@@ -2308,7 +2412,7 @@ public fun Iterable<Double>.average(): Double {
     var count: Int = 0
     for (element in this) {
         sum += element
-        count += 1
+        checkCountOverflow(++count)
     }
     return if (count == 0) Double.NaN else sum / count
 }

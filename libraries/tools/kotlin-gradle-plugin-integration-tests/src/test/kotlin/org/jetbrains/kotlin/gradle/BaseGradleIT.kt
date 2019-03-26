@@ -1,8 +1,13 @@
 package org.jetbrains.kotlin.gradle
 
+import com.intellij.testFramework.TestDataFile
 import org.gradle.api.logging.LogLevel
 import org.gradle.tooling.GradleConnector
 import org.gradle.util.GradleVersion
+import org.jdom.Element
+import org.jdom.input.SAXBuilder
+import org.jdom.output.Format
+import org.jdom.output.XMLOutputter
 import org.jetbrains.kotlin.gradle.model.ModelContainer
 import org.jetbrains.kotlin.gradle.model.ModelFetcherBuildAction
 import org.jetbrains.kotlin.gradle.util.*
@@ -22,7 +27,7 @@ abstract class BaseGradleIT {
 
     protected open fun defaultBuildOptions(): BuildOptions = BuildOptions(withDaemon = true)
 
-    protected open val defaultGradleVersion: GradleVersionRequired
+    open val defaultGradleVersion: GradleVersionRequired
         get() = GradleVersionRequired.None
 
     @Before
@@ -44,7 +49,13 @@ abstract class BaseGradleIT {
         val sdkLicense = File(sdkLicenses, "android-sdk-license")
         if (!sdkLicense.exists()) {
             sdkLicense.createNewFile()
-            sdkLicense.writeText("d56f5187479451eabf01fb78af6dfcb131a6481e")
+            sdkLicense.writeText(
+                """
+                8933bad161af4178b1185d1a37fbf41ea5269c55
+                d56f5187479451eabf01fb78af6dfcb131a6481e
+                24333f8a63b6825ea9c5514f83c2829b004d1fee
+                """.trimIndent()
+            )
         }
 
         val sdkPreviewLicense = File(sdkLicenses, "android-sdk-preview-license")
@@ -137,7 +148,14 @@ abstract class BaseGradleIT {
                 .apply {
                     File(BaseGradleIT.resourcesRootFile, "GradleWrapper").copyRecursively(this)
                     val wrapperProperties = File(this, "gradle/wrapper/gradle-wrapper.properties")
-                    wrapperProperties.modify { it.replace("<GRADLE_WRAPPER_VERSION>", version) }
+                    val isGradleVerisonSnapshot = version.endsWith("+0000")
+                    if (!isGradleVerisonSnapshot) {
+                        wrapperProperties.modify { it.replace("<GRADLE_WRAPPER_VERSION>", version) }
+                    } else {
+                        wrapperProperties.modify {
+                            it.replace("distributions/gradle-<GRADLE_WRAPPER_VERSION>", "distributions-snapshots/gradle-$version")
+                        }
+                    }
                 }
 
         private val runnerGradleVersion = System.getProperty("runnerGradleVersion")
@@ -168,9 +186,10 @@ abstract class BaseGradleIT {
         val withDaemon: Boolean = false,
         val daemonOptionSupported: Boolean = true,
         val incremental: Boolean? = null,
+        val incrementalJs: Boolean? = null,
         val androidHome: File? = null,
         val javaHome: File? = null,
-        val androidGradlePluginVersion: String? = null,
+        val androidGradlePluginVersion: AGPVersion? = null,
         val forceOutputToStdout: Boolean = false,
         val debug: Boolean = false,
         val freeCommandLineArgs: List<String> = emptyList(),
@@ -178,10 +197,11 @@ abstract class BaseGradleIT {
         val kotlinDaemonDebugPort: Int? = null,
         val usePreciseJavaTracking: Boolean? = null,
         val withBuildCache: Boolean = false,
-        val kaptOptions: KaptOptions? = null
+        val kaptOptions: KaptOptions? = null,
+        val parallelTasksInProject: Boolean? = null
     )
 
-    data class KaptOptions(val verbose: Boolean, val useWorkers: Boolean)
+    data class KaptOptions(val verbose: Boolean, val useWorkers: Boolean, val incrementalKapt: Boolean = false, val includeCompileClasspath: Boolean = true)
 
     open inner class Project(
         val projectName: String,
@@ -189,12 +209,15 @@ abstract class BaseGradleIT {
         directoryPrefix: String? = null,
         val minLogLevel: LogLevel = LogLevel.DEBUG
     ) {
+        internal val testCase = this@BaseGradleIT
+
         val resourceDirName = if (directoryPrefix != null) "$directoryPrefix/$projectName" else projectName
         open val resourcesRoot = File(resourcesRootFile, "testProject/$resourceDirName")
         val projectDir = File(workingDir.canonicalFile, projectName)
 
         open fun setupWorkingDir() {
-            copyRecursively(this.resourcesRoot, workingDir)
+            if (!projectDir.isDirectory || projectDir.listFiles().isEmpty())
+                copyRecursively(this.resourcesRoot, workingDir)
         }
 
         fun relativize(files: Iterable<File>): List<String> =
@@ -247,8 +270,19 @@ abstract class BaseGradleIT {
 
     // Basically the same as `Project.build`, tells gradle to wait for debug on 5005 port
     // Faster to type than `project.build("-Dorg.gradle.debug=true")` or `project.build(options = defaultBuildOptions().copy(debug = true))`
+    @Deprecated("Use, but do not commit!")
     fun Project.debug(vararg params: String, options: BuildOptions = defaultBuildOptions(), check: CompiledProject.() -> Unit) {
         build(*params, options = options.copy(debug = true), check = check)
+    }
+
+    @Deprecated("Use, but do not commit!")
+    fun Project.debugKotlinDaemon(
+        vararg params: String,
+        debugPort: Int = 5006,
+        options: BuildOptions = defaultBuildOptions(),
+        check: CompiledProject.() -> Unit
+    ) {
+        build(*params, options = options.copy(kotlinDaemonDebugPort = debugPort), check = check)
     }
 
     fun Project.build(vararg params: String, options: BuildOptions = defaultBuildOptions(), check: CompiledProject.() -> Unit) {
@@ -282,11 +316,18 @@ abstract class BaseGradleIT {
             setupWorkingDir()
         }
 
-        val connection = GradleConnector.newConnector().forProjectDirectory(projectDir).connect()
         val options = defaultBuildOptions()
         val arguments = mutableListOf("-Pkotlin_version=${options.kotlinVersion}")
         options.androidGradlePluginVersion?.let { arguments.add("-Pandroid_tools_version=$it") }
         val env = createEnvironmentVariablesMap(options)
+        val wrapperVersion = chooseWrapperVersionOrFinishTest()
+        prepareWrapper(wrapperVersion, env)
+
+        val connection = GradleConnector
+            .newConnector()
+            .useGradleVersion(wrapperVersion)
+            .forProjectDirectory(projectDir)
+            .connect()
         val model = connection.action(ModelFetcherBuildAction(modelType)).withArguments(arguments).setEnvironmentVariables(env).run()
         connection.close()
         return model
@@ -312,9 +353,9 @@ abstract class BaseGradleIT {
         return this
     }
 
-    fun CompiledProject.assertContains(vararg expected: String): CompiledProject {
+    fun CompiledProject.assertContains(vararg expected: String, ignoreCase: Boolean = false): CompiledProject {
         for (str in expected) {
-            assertTrue(output.contains(str.normalize()), "Output should contain '$str'")
+            assertTrue(output.contains(str.normalize(), ignoreCase), "Output should contain '$str'")
         }
         return this
     }
@@ -432,14 +473,55 @@ abstract class BaseGradleIT {
         }
     }
 
+    fun CompiledProject.assertTasksFailed(vararg tasks: String) {
+        assertTasksFailed(tasks.toList())
+    }
+
+    fun CompiledProject.assertTasksFailed(tasks: Iterable<String>) {
+        for (task in tasks) {
+            assertContains("$task FAILED")
+        }
+    }
+
     fun CompiledProject.assertTasksUpToDate(vararg tasks: String) {
         assertTasksUpToDate(tasks.toList())
     }
 
+    fun CompiledProject.assertTasksSubmittedWork(vararg tasks: String) {
+        for (task in tasks) {
+            assertContains("Starting Kotlin compiler work from task '$task'")
+        }
+    }
+
+    fun CompiledProject.assertTasksDidNotSubmitWork(vararg tasks: String) {
+        for (task in tasks) {
+            assertNotContains("Starting Kotlin compiler work from task '$task'")
+        }
+    }
+
+    fun CompiledProject.assertTasksRegistered(vararg tasks: String) {
+        for (task in tasks) {
+            assertContains("'Register task $task'")
+        }
+    }
+
+    fun CompiledProject.assertTasksNotRealized(vararg tasks: String) {
+        for (task in tasks) {
+            assertNotContains("'Realize task $task'")
+        }
+    }
+
+    fun CompiledProject.assertTasksRegisteredAndNotRealized(vararg tasks: String) {
+        assertTasksRegistered(*tasks)
+        assertTasksNotRealized(*tasks)
+    }
+
     fun CompiledProject.getOutputForTask(taskName: String): String {
-        val taskOutputRegex = ("\\[LIFECYCLE] \\[class org\\.gradle(?:\\.internal\\.buildevents)?\\.TaskExecutionLogger] :$taskName" +
+        val taskOutputRegex = ("(?:\\[LIFECYCLE] \\[class org\\.gradle(?:\\.internal\\.buildevents)?\\.TaskExecutionLogger] :$taskName|" +
+                "\\[org\\.gradle\\.execution\\.plan\\.DefaultPlanExecutor\\] :$taskName.*?started)" +
                 "([\\s\\S]+?)" +
-                "Finished executing task ':$taskName'").toRegex()
+                "(?:Finished executing task ':$taskName'|" +
+                "\\[org\\.gradle\\.execution\\.plan\\.DefaultPlanExecutor\\] :$taskName.*?completed)").toRegex()
 
         return taskOutputRegex.find(output)?.run { groupValues[1] } ?: error("Cannot find output for task $taskName")
     }
@@ -485,14 +567,10 @@ abstract class BaseGradleIT {
             assertSameFiles(sources, compiledJavaSources.projectRelativePaths(this.project), "Compiled Java files differ:\n  ")
 
     fun Project.resourcesDir(subproject: String? = null, sourceSet: String = "main"): String =
-        (subproject?.plus("/") ?: "") + "build/" +
-                (if (testGradleVersionBelow("4.0")) "classes/" else "resources/") +
-                sourceSet + "/"
+        (subproject?.plus("/") ?: "") + "build/resources/$sourceSet/"
 
     fun Project.classesDir(subproject: String? = null, sourceSet: String = "main", language: String = "kotlin"): String =
-        (subproject?.plus("/") ?: "") + "build/classes/" +
-                (if (testGradleVersionAtLeast("4.0")) "$language/" else "") +
-                sourceSet + "/"
+        (subproject?.plus("/") ?: "") + "build/classes/$language/$sourceSet/"
 
     fun Project.testGradleVersionAtLeast(version: String): Boolean =
         GradleVersion.version(chooseWrapperVersionOrFinishTest()) >= GradleVersion.version(version)
@@ -509,19 +587,91 @@ abstract class BaseGradleIT {
         createGradleCommand(wrapperDir, createGradleTailParameters(options, params))
 
     fun Project.gradleBuildScript(subproject: String? = null): File =
-        File(projectDir, subproject?.plus("/").orEmpty() + "build.gradle")
+        listOf("build.gradle", "build.gradle.kts").mapNotNull {
+            File(projectDir, subproject?.plus("/").orEmpty() + it).takeIf(File::exists)
+        }.single()
+
+    fun Project.gradleSettingsScript(): File =
+        listOf("settings.gradle", "settings.gradle.kts").mapNotNull {
+            File(projectDir, it).takeIf(File::exists)
+        }.single()
+
+    /**
+     * @param assertionFileName path to xml with expected test results, relative to test resources root
+     */
+    fun CompiledProject.assertTestResults(
+            @TestDataFile assertionFileName: String,
+            testReportName: String
+    ) {
+        val projectDir = project.projectDir
+        val testReportDir = projectDir.resolve("build/test-results/$testReportName")
+
+        if (!testReportDir.isDirectory) {
+            error("Test report dir was not created")
+        }
+
+        val actualTestResults = readAndCleanupTestResults(testReportDir, projectDir)
+        val expectedTestResults = resourcesRootFile.resolve(assertionFileName).readText()
+
+        assertEquals(
+                prettyPrintXml(expectedTestResults),
+                prettyPrintXml(actualTestResults)
+        )
+    }
+
+    private fun readAndCleanupTestResults(testReportDir: File, projectDir: File): String {
+        val files = testReportDir
+                .listFiles()
+                .filter { it.isFile && it.name.endsWith(".xml") }
+                .sortedBy {
+                    // let containing test suite be first
+                    it.name.replace(".xml", ".A.xml")
+                }
+
+        val xmlString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<results>\n" +
+                files.joinToString("") {
+                    it.readText()
+                            .replace(projectDir.absolutePath, "/\$PROJECT_DIR$")
+                            .replace(projectDir.name, "\$PROJECT_NAME$")
+                            .replace("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n", "")
+                } +
+                "</results>"
+
+        val doc = SAXBuilder().build(xmlString.reader())
+        val skipAttrs = setOf("timestamp", "hostname", "time", "message")
+        val skipContentsOf = setOf("failure")
+
+        fun cleanup(e: Element) {
+            if (e.name in skipContentsOf) e.text = "..."
+            e.attributes.forEach {
+                if (it.name in skipAttrs) {
+                    it.value = "..."
+                }
+            }
+
+            e.children.forEach {
+                cleanup(it)
+            }
+        }
+
+        cleanup(doc.rootElement)
+        return XMLOutputter(Format.getPrettyFormat()).outputString(doc)
+    }
+
+    private fun prettyPrintXml(uglyXml: String): String =
+            XMLOutputter(Format.getPrettyFormat()).outputString(SAXBuilder().build(uglyXml.reader()))
 
     private fun Project.createGradleTailParameters(options: BuildOptions, params: Array<out String> = arrayOf()): List<String> =
         params.toMutableList().apply {
             add("--stacktrace")
             when (minLogLevel) {
-            // Do not allow to configure Gradle project with `ERROR` log level (error logs visible on all log levels)
+                // Do not allow to configure Gradle project with `ERROR` log level (error logs visible on all log levels)
                 LogLevel.ERROR -> error("Log level ERROR is not supported by Gradle command-line")
-            // Omit log level argument for default `LIFECYCLE` log level,
-            // because there is no such command-line option `--lifecycle`
-            // see https://docs.gradle.org/current/userguide/logging.html#sec:choosing_a_log_level
+                // Omit log level argument for default `LIFECYCLE` log level,
+                // because there is no such command-line option `--lifecycle`
+                // see https://docs.gradle.org/current/userguide/logging.html#sec:choosing_a_log_level
                 LogLevel.LIFECYCLE -> Unit
-            //Command line option for other log levels
+                //Command line option for other log levels
                 else -> add("--${minLogLevel.name.toLowerCase()}")
             }
             if (options.daemonOptionSupported) {
@@ -529,7 +679,10 @@ abstract class BaseGradleIT {
             }
 
             add("-Pkotlin_version=" + options.kotlinVersion)
-            options.incremental?.let { add("-Pkotlin.incremental=$it") }
+            options.incremental?.let {
+                add("-Pkotlin.incremental=$it")
+            }
+            options.incrementalJs?.let { add("-Pkotlin.incremental.js=$it") }
             options.usePreciseJavaTracking?.let { add("-Pkotlin.incremental.usePreciseJavaTracking=$it") }
             options.androidGradlePluginVersion?.let { add("-Pandroid_tools_version=$it") }
             if (options.debug) {
@@ -552,11 +705,17 @@ abstract class BaseGradleIT {
             options.kaptOptions?.also { kaptOptions ->
                 add("-Pkapt.verbose=${kaptOptions.verbose}")
                 add("-Pkapt.use.worker.api=${kaptOptions.useWorkers}")
+                add("-Pkapt.incremental.apt=${kaptOptions.incrementalKapt}")
+                add("-Pkapt.include.compile.classpath=${kaptOptions.includeCompileClasspath}")
+            }
+
+            options.parallelTasksInProject?.let {
+                add("-Pkotlin.parallel.tasks.in.project=$it")
             }
 
             // Workaround: override a console type set in the user machine gradle.properties (since Gradle 4.3):
             add("--console=plain")
-
+            add("-Dkotlin.daemon.ea=true")
             addAll(options.freeCommandLineArgs)
         }
 

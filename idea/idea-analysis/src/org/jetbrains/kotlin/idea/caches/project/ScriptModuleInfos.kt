@@ -14,7 +14,9 @@ import com.intellij.psi.search.DelegatingGlobalSearchScope
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.NonClasspathDirectoriesScope
 import com.intellij.util.containers.SLRUCache
+import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesCache.Companion.MAX_SCRIPTS_CACHED
 import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesManager
+import org.jetbrains.kotlin.idea.core.script.dependencies.ScriptRelatedModulesProvider
 import org.jetbrains.kotlin.idea.stubindex.KotlinSourceFilterScope
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.script.KotlinScriptDefinition
@@ -35,18 +37,23 @@ data class ScriptModuleInfo(
     override val moduleOrigin: ModuleOrigin
         get() = ModuleOrigin.OTHER
 
-    val relatedModuleSourceInfo: ModuleSourceInfo?
-        get() = getScriptRelatedModuleInfo(project, scriptFile)
-
     override val name: Name = Name.special("<script ${scriptFile.name} ${scriptDefinition.name}>")
 
     override fun contentScope() = GlobalSearchScope.fileScope(project, scriptFile)
 
     override fun dependencies(): List<IdeaModuleInfo> {
         return arrayListOf<IdeaModuleInfo>(this).apply {
+            val scriptDependentModules = ScriptRelatedModulesProvider.getRelatedModules(scriptFile, project)
+            if (scriptDependentModules.isNotEmpty()) {
+                scriptDependentModules.mapNotNull { it.productionSourceInfo() ?: it.testSourceInfo() }.forEach {
+                    this@apply.add(it)
+                    this@apply.addAll(it.dependencies())
+                }
+            }
+
             val dependenciesInfo = ScriptDependenciesInfo.ForFile(project, scriptFile, scriptDefinition)
             add(dependenciesInfo)
-            relatedModuleSourceInfo?.let { addAll(it.dependencies()) }
+
             dependenciesInfo.sdk?.let { add(SdkInfo(project, it)) }
         }
     }
@@ -131,7 +138,7 @@ sealed class ScriptDependenciesSourceInfo(val project: Project) : IdeaModuleInfo
     class ForProject(project: Project) : ScriptDependenciesSourceInfo(project)
 }
 
-private class ScriptBinariesScopeCache(private val project: Project) : SLRUCache<ScriptDependencies, GlobalSearchScope>(6, 6) {
+private class ScriptBinariesScopeCache(private val project: Project) : SLRUCache<ScriptDependencies, GlobalSearchScope>(MAX_SCRIPTS_CACHED, MAX_SCRIPTS_CACHED) {
     override fun createValue(key: ScriptDependencies?): GlobalSearchScope {
         val roots = key?.classpath ?: emptyList()
         val classpath = ScriptDependenciesManager.toVfsRoots(roots)

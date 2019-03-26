@@ -11,10 +11,14 @@ package org.w3c.fetch
 
 import kotlin.js.*
 import org.khronos.webgl.*
+import org.w3c.css.masking.*
 import org.w3c.dom.*
+import org.w3c.dom.clipboard.*
 import org.w3c.dom.css.*
 import org.w3c.dom.events.*
+import org.w3c.dom.mediacapture.*
 import org.w3c.dom.parsing.*
+import org.w3c.dom.pointerevents.*
 import org.w3c.dom.svg.*
 import org.w3c.dom.url.*
 import org.w3c.files.*
@@ -112,7 +116,7 @@ public external interface RequestInit {
 }
 
 @kotlin.internal.InlineOnly
-public inline fun RequestInit(method: String? = null, headers: dynamic = null, body: dynamic = null, referrer: String? = null, referrerPolicy: dynamic = null, mode: RequestMode? = null, credentials: RequestCredentials? = null, cache: RequestCache? = null, redirect: RequestRedirect? = null, integrity: String? = null, keepalive: Boolean? = null, window: Any? = null): RequestInit {
+public inline fun RequestInit(method: String? = undefined, headers: dynamic = undefined, body: dynamic = undefined, referrer: String? = undefined, referrerPolicy: dynamic = undefined, mode: RequestMode? = undefined, credentials: RequestCredentials? = undefined, cache: RequestCache? = undefined, redirect: RequestRedirect? = undefined, integrity: String? = undefined, keepalive: Boolean? = undefined, window: Any? = undefined): RequestInit {
     val o = js("({})")
 
     o["method"] = method
@@ -171,7 +175,7 @@ public external interface ResponseInit {
 }
 
 @kotlin.internal.InlineOnly
-public inline fun ResponseInit(status: Short? = 200, statusText: String? = "OK", headers: dynamic = null): ResponseInit {
+public inline fun ResponseInit(status: Short? = 200, statusText: String? = "OK", headers: dynamic = undefined): ResponseInit {
     val o = js("({})")
 
     o["status"] = status

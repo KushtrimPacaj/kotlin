@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.asJava.classes.KtLightClassForFacade
 import org.jetbrains.kotlin.asJava.classes.KtLightClassForSourceDeclaration
 import org.jetbrains.kotlin.asJava.elements.*
 import org.jetbrains.kotlin.asJava.toLightClass
+import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
 import org.jetbrains.kotlin.idea.KotlinDaemonAnalyzerTestCase
 import org.jetbrains.kotlin.idea.caches.lightClasses.IDELightClassConstructionContext
 import org.jetbrains.kotlin.idea.caches.resolve.LightClassLazinessChecker.Tracker.Level.*
@@ -91,7 +92,8 @@ abstract class AbstractIdeCompiledLightClassTest : KotlinDaemonAnalyzerTestCase(
 
         Assert.assertNotNull("Test file not found!", testFile)
 
-        val libraryJar = MockLibraryUtil.compileJvmLibraryToJar(testFile!!.canonicalPath, libName())
+        val libraryJar = MockLibraryUtil.compileJvmLibraryToJar(testFile!!.canonicalPath, libName(),
+                                                                extraClasspath = listOf(ForTestCompileRuntime.jetbrainsAnnotationsForTests().path))
         val jarUrl = "jar://" + FileUtilRt.toSystemIndependentName(libraryJar.absolutePath) + "!/"
         ModuleRootModificationUtil.addModuleLibrary(module, jarUrl)
     }
@@ -270,7 +272,7 @@ object LightClassLazinessChecker {
             }
             clsAnnotations.zip(lightAnnotations).forEach {
                 (clsAnnotation, lightAnnotation) ->
-                if (lightAnnotation !is KtLightNullabilityAnnotation)
+                if (lightAnnotation !is KtLightNullabilityAnnotation<*>)
                     assertNotNull(
                         lightAnnotation!!.nameReferenceElement,
                         "nameReferenceElement should be not null for $lightAnnotation of ${lightAnnotation.javaClass}"

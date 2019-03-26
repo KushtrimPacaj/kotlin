@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -97,5 +97,15 @@ public class MoveLeftRightTestGenerated extends AbstractMoveLeftRightTest {
     @TestMetadata("typeArgs.kt")
     public void testTypeArgs() throws Exception {
         runTest("idea/testData/codeInsight/moveLeftRight/typeArgs.kt");
+    }
+
+    @TestMetadata("typeConstraints1.kt")
+    public void testTypeConstraints1() throws Exception {
+        runTest("idea/testData/codeInsight/moveLeftRight/typeConstraints1.kt");
+    }
+
+    @TestMetadata("typeConstraints2.kt")
+    public void testTypeConstraints2() throws Exception {
+        runTest("idea/testData/codeInsight/moveLeftRight/typeConstraints2.kt");
     }
 }

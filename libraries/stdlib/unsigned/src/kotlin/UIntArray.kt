@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -12,12 +12,25 @@ package kotlin
 public inline class UIntArray
 @Suppress("NON_PUBLIC_PRIMARY_CONSTRUCTOR_OF_INLINE_CLASS")
 @PublishedApi
-internal constructor(private val storage: IntArray) : Collection<UInt> {
+internal constructor(@PublishedApi internal val storage: IntArray) : Collection<UInt> {
 
-    /** Returns the array element at the given [index]. This method can be called using the index operator. */
+    /** Creates a new array of the specified [size], with all elements initialized to zero. */
+    public constructor(size: Int) : this(IntArray(size))
+
+    /**
+     * Returns the array element at the given [index]. This method can be called using the index operator.
+     *
+     * If the [index] is out of bounds of this array, throws an [IndexOutOfBoundsException] except in Kotlin/JS
+     * where the behavior is unspecified.
+     */
     public operator fun get(index: Int): UInt = storage[index].toUInt()
 
-    /** Sets the element at the given [index] to the given [value]. This method can be called using the index operator. */
+    /**
+     * Sets the element at the given [index] to the given [value]. This method can be called using the index operator.
+     *
+     * If the [index] is out of bounds of this array, throws an [IndexOutOfBoundsException] except in Kotlin/JS
+     * where the behavior is unspecified.
+     */
     public operator fun set(index: Int, value: UInt) {
         storage[index] = value.toInt()
     }
@@ -34,20 +47,29 @@ internal constructor(private val storage: IntArray) : Collection<UInt> {
         override fun nextUInt() = if (index < array.size) array[index++].toUInt() else throw NoSuchElementException(index.toString())
     }
 
-    override fun contains(element: UInt): Boolean = storage.contains(element.toInt())
+    override fun contains(element: UInt): Boolean {
+        // TODO: Eliminate this check after KT-30016 gets fixed.
+        // Currently JS BE does not generate special bridge method for this method.
+        if ((element as Any?) !is UInt) return false
 
-    override fun containsAll(elements: Collection<UInt>): Boolean = elements.all { storage.contains(it.toInt()) }
+        return storage.contains(element.toInt())
+    }
+
+    override fun containsAll(elements: Collection<UInt>): Boolean {
+        return (elements as Collection<*>).all { it is UInt && storage.contains(it.toInt()) }
+    }
 
     override fun isEmpty(): Boolean = this.storage.size == 0
 }
 
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
+@kotlin.internal.InlineOnly
 public inline fun UIntArray(size: Int, init: (Int) -> UInt): UIntArray {
     return UIntArray(IntArray(size) { index -> init(index).toInt() })
 }
 
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
-// TODO: @kotlin.internal.InlineOnly
+@kotlin.internal.InlineOnly
 public inline fun uintArrayOf(vararg elements: UInt): UIntArray = elements

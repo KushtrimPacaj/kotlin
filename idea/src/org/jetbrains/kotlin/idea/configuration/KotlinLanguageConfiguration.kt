@@ -19,25 +19,32 @@ class KotlinUpdatesSettingsConfigurable : SearchableConfigurable, Configurable.N
     companion object {
         const val ID = "preferences.language.Kotlin"
 
-        private fun saveSelectedChannel(channel: Int) {
+        private fun saveSelectedChannel(channelOrdinal: Int) {
             val hosts = UpdateSettings.getInstance().storedPluginHosts
             hosts.removeIf {
                 it.startsWith("https://plugins.jetbrains.com/plugins/") &&
                         (it.endsWith("/6954") || it.endsWith(KotlinPluginUtil.KOTLIN_PLUGIN_ID.idString))
             }
-            when (channel) {
-                EAPChannels.EAP_1_3.uiIndex -> hosts.add(EAPChannels.EAP_1_3.url)
-                EAPChannels.EAP_1_2.uiIndex -> hosts.add(EAPChannels.EAP_1_2.url)
+
+            UpdateChannel.values().find { it.ordinal == channelOrdinal }?.let { eapChannel ->
+                if (eapChannel != UpdateChannel.STABLE) {
+                    hosts.add(eapChannel.url ?: error("Shouldn't add null urls to custom repositories"))
+                }
             }
         }
 
-        enum class EAPChannels(val url: String, val uiIndex: Int) {
-            EAP_1_2("https://plugins.jetbrains.com/plugins/eap-1.2/${KotlinPluginUtil.KOTLIN_PLUGIN_ID.idString}", 1),
-            EAP_1_3("https://plugins.jetbrains.com/plugins/eap-next/${KotlinPluginUtil.KOTLIN_PLUGIN_ID.idString}", 2);
+        enum class UpdateChannel(val url: String?, val title: String) {
+            STABLE(null, "Stable"),
+            EAP("https://plugins.jetbrains.com/plugins/eap/${KotlinPluginUtil.KOTLIN_PLUGIN_ID.idString}", "Early Access Preview 1.3.x"),
+            EAP_NEXT(
+                "https://plugins.jetbrains.com/plugins/eap-next/${KotlinPluginUtil.KOTLIN_PLUGIN_ID.idString}",
+                "Early Access Preview 1.4.x"
+            );
 
-            private val hasChannel: Boolean get() = url in UpdateSettings.getInstance().pluginHosts
-
-            fun indexIfAvailable() = if (hasChannel) uiIndex else null
+            fun isInHosts(): Boolean {
+                if (this == STABLE) return false
+                return url in UpdateSettings.getInstance().pluginHosts
+            }
         }
     }
 
@@ -53,7 +60,7 @@ class KotlinUpdatesSettingsConfigurable : SearchableConfigurable, Configurable.N
 
     override fun getId(): String = ID
 
-    override fun getDisplayName(): String = "Kotlin Updates"
+    override fun getDisplayName(): String = "Kotlin"
 
     override fun isModified() = false
 
@@ -110,7 +117,9 @@ class KotlinUpdatesSettingsConfigurable : SearchableConfigurable, Configurable.N
             }
         }
 
-        savedChannel = EAPChannels.EAP_1_3.indexIfAvailable() ?: EAPChannels.EAP_1_2.indexIfAvailable() ?: 0
+        form.initChannels(UpdateChannel.values().map { it.title })
+
+        savedChannel = UpdateChannel.values().find { it.isInHosts() }?.ordinal ?: 0
         form.channelCombo.selectedIndex = savedChannel
 
         form.channelCombo.addActionListener {

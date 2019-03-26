@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.asJava
@@ -27,6 +16,7 @@ import com.intellij.testFramework.LightProjectDescriptor
 import com.intellij.testFramework.UsefulTestCase
 import junit.framework.TestCase
 import org.jetbrains.kotlin.asJava.elements.KtLightAnnotationForSourceEntry
+import org.jetbrains.kotlin.asJava.elements.KtLightPsiArrayInitializerMemberValue
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.idea.completion.test.assertInstanceOf
 import org.jetbrains.kotlin.idea.facet.configureFacet
@@ -239,6 +229,44 @@ class KtLightAnnotationTest : KotlinLightCodeInsightFixtureTestCase() {
         )
     }
 
+    fun testArrayOfClassLiterals() {
+        myFixture.addClass(
+            """
+            public @interface ClazzAnnotation {
+                  Class<?>[] cls();
+            }
+        """.trimIndent()
+        )
+
+        myFixture.configureByText(
+            "AnnotatedClass.kt", """
+            @ClazzAnnotation(cls = [String::class, Throwable::class, ShortArray::class, Array<Array<Int>>::class, Long::class, Unit::class])
+            class AnnotatedClass
+        """.trimIndent()
+        )
+        myFixture.testHighlighting("AnnotatedClass.kt")
+
+        val annotations = myFixture.findClass("AnnotatedClass").expectAnnotations(1)
+        val annotationAttributeVal = annotations.first().findAttributeValue("cls") as KtLightPsiArrayInitializerMemberValue
+        assertTextAndRange(
+            "[String::class, Throwable::class, ShortArray::class, Array<Array<Int>>::class, Long::class, Unit::class]",
+            annotationAttributeVal
+        )
+        val classLiterals = annotationAttributeVal.initializers.toList().map { it as PsiClassObjectAccessExpression }
+        val scope = GlobalSearchScope.everythingScope(project)
+        TestCase.assertEquals(
+            listOf(
+                PsiType.getJavaLangString(myFixture.psiManager, scope),
+                PsiType.getTypeByName("java.lang.Throwable", project, scope),
+                PsiType.SHORT.createArrayType(),
+                PsiType.getTypeByName("java.lang.Integer", project, scope).createArrayType().createArrayType(),
+                PsiType.LONG,
+                PsiType.getTypeByName("kotlin.Unit", project, scope)
+            ),
+            classLiterals.map { it.operand.type }
+        )
+    }
+
     fun testAnnotationsInAnnotationsArrayDeclarations() {
         myFixture.addClass("""
             public @interface OuterAnnotation {
@@ -434,6 +462,39 @@ class KtLightAnnotationTest : KotlinLightCodeInsightFixtureTestCase() {
         }
 
     }
+
+    private fun doVarargTest(type: String, parameters: List<String>) {
+        val paramsJoined = parameters.joinToString(", ")
+
+        myFixture.addClass(
+            """
+                public @interface Annotation {
+                    $type[] value() default {};
+                }
+            """.trimIndent()
+        )
+
+        myFixture.configureByText(
+            "AnnotatedClass.kt", """
+                @Annotation($paramsJoined)
+                open class AnnotatedClass
+            """.trimIndent()
+        )
+        myFixture.testHighlighting("Annotation.java", "AnnotatedClass.kt")
+
+        val annotations = myFixture.findClass("AnnotatedClass").expectAnnotations(1)
+        val annotationAttributeVal = annotations.first().findAttributeValue("value") as PsiArrayInitializerMemberValue
+        assertTextAndRange("($paramsJoined)", annotationAttributeVal)
+        UsefulTestCase.assertInstanceOf(annotationAttributeVal.parent, PsiNameValuePair::class.java)
+        for ((i, arg) in parameters.withIndex()) {
+            assertTextAndRange(arg, annotationAttributeVal.initializers[i])
+        }
+    }
+
+
+    fun testVarargInt() = doVarargTest("int", listOf("1", "2", "3"))
+
+    fun testVarargClasses() = doVarargTest("""Class<?>""", listOf("Any::class", "String::class", "Int::class"))
 
     fun testVarargWithSpread() {
         myFixture.addClass("""
@@ -686,10 +747,12 @@ class KtLightAnnotationTest : KotlinLightCodeInsightFixtureTestCase() {
     }
 
     private fun PsiModifierListOwner.expectAnnotations(number: Int): Array<PsiAnnotation> =
-            this.modifierList!!.annotations.apply {
-                TestCase.assertEquals("expected one annotation, found ${this.joinToString(", ") { it.qualifiedName ?: "unknown" }}",
-                                      number, size)
-            }
+        this.modifierList!!.annotations.apply {
+            assertEquals(
+                "expected $number annotation(s), found [${this.joinToString(", ") { it.qualifiedName ?: "unknown" }}]",
+                number, size
+            )
+        }
 
     private fun configureKotlinVersion(version: String) {
         WriteAction.run<Throwable> {

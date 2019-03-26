@@ -1,7 +1,4 @@
-// IGNORE_BACKEND: JS_IR
-// LANGUAGE_VERSION: 1.2
 // WITH_RUNTIME
-// IGNORE_BACKEND: NATIVE
 // FILE: lateinit.kt
 private lateinit var s: String
 

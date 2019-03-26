@@ -15,9 +15,10 @@ def builtinsSrcDir = "${buildDir}/builtin-sources"
 def builtinsSrcDir2 = "${buildDir}/builtin-sources-for-builtins"
 def commonSrcDir = "${projectDir}/../src/kotlin"
 def commonSrcDir2 = "${projectDir}/../common/src"
-def coroutinesJsSrcDir = "${projectDir}/../coroutines/js/src"
+def coroutinesExpJsSrcDir = "${rootDir}/libraries/stdlib/coroutines-experimental/js/src"
 
 def builtinsDir = "${rootDir}/core/builtins"
+def unsignedCommonSrcDir = "${rootDir}/libraries/stdlib/unsigned/src"
 def experimentalSrcDir = "${rootDir}/libraries/stdlib/experimental"
 def experimentalJsModuleName = 'kotlin-experimental'
 def coroutinesJsModuleName = 'kotlin-stdlib-coroutines'
@@ -62,23 +63,21 @@ sourceSets {
         }
     }
 
-    coroutines {
+    coroutinesExperimental {
         kotlin {
-            srcDir coroutinesJsSrcDir
+            srcDir coroutinesExpJsSrcDir
         }
     }
 }
 
 configurations {
-    merger
     commonSources
 }
 dependencies {
     expectedBy project(":kotlin-stdlib-common")
     commonSources project(path: ":kotlin-stdlib-common", configuration: "sources")
     testCompile project(':kotlin-test:kotlin-test-js')
-    merger project(":tools:kotlin-stdlib-js-merger")
-    coroutinesCompile project.files { sourceSets.main.output.files }.builtBy(compileKotlin2Js)
+    coroutinesExperimentalCompile project.files { sourceSets.main.output.files }.builtBy(compileKotlin2Js)
 }
 
 task prepareComparableSource(type: Copy) {
@@ -117,8 +116,6 @@ task prepareBuiltinsSources(type: Copy) {
     into builtinsSrcDir
 }
 
-kotlin.experimental.coroutines "enable"
-
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.Kotlin2JsCompile) {
     kotlinOptions {
         main = "noCall"
@@ -126,6 +123,7 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.Kotlin2JsCompile) {
         freeCompilerArgs = [
                 "-version",
                 "-Xallow-kotlin-package",
+                "-Xallow-result-return-type"
         ]
     }
 }
@@ -147,8 +145,11 @@ compileKotlin2Js {
         sourceMap = true
         sourceMapPrefix = "./"
         freeCompilerArgs += [
-            "-source-map-base-dirs", [builtinsSrcDir, jsSrcDir, commonSrcDir, commonSrcDir2].collect { file(it).absoluteFile }.join(File.pathSeparator),
-            "-Xuse-experimental=kotlin.Experimental"
+            "-source-map-base-dirs", [builtinsSrcDir, jsSrcDir, commonSrcDir, commonSrcDir2, unsignedCommonSrcDir].collect { file(it).absoluteFile }.join(File.pathSeparator),
+            "-Xuse-experimental=kotlin.Experimental",
+            "-Xuse-experimental=kotlin.ExperimentalMultiplatform",
+            "-Xuse-experimental=kotlin.contracts.ExperimentalContracts",
+            "-XXLanguage:+InlineClasses"
         ]
     }
 }
@@ -165,28 +166,37 @@ compileExperimentalKotlin2Js {
     }
 }
 
-compileCoroutinesKotlin2Js {
+compileCoroutinesExperimentalKotlin2Js {
     kotlinOptions {
         languageVersion = "1.3"
         apiVersion = "1.3"
-        outputFile = "${buildDir}/classes/coroutines/kotlin.js"
+        outputFile = "${buildDir}/classes/coroutinesExperimental/kotlin.js"
         sourceMap = true
         sourceMapPrefix = "./"
+        freeCompilerArgs += [
+            "-Xuse-experimental=kotlin.contracts.ExperimentalContracts",
+            "-Xuse-experimental=kotlin.Experimental",
+            "-Xcoroutines=enable",
+            "-XXLanguage:-ReleaseCoroutines"
+        ]
     }
 }
 
 compileTestKotlin2Js {
     kotlinOptions {
         moduleKind = "umd"
+        freeCompilerArgs += [
+            "-Xuse-experimental=kotlin.ExperimentalUnsignedTypes"
+        ]
     }
 }
 
-task compileJs(type: JavaExec) {
-    dependsOn compileBuiltinsKotlin2Js, compileKotlin2Js, compileExperimentalKotlin2Js, compileCoroutinesKotlin2Js
+task compileJs(type: NoDebugJavaExec) {
+    dependsOn compileBuiltinsKotlin2Js, compileKotlin2Js, compileExperimentalKotlin2Js, compileCoroutinesExperimentalKotlin2Js
     inputs.files(compileBuiltinsKotlin2Js.outputs.files)
     inputs.files(compileKotlin2Js.outputs.files)
     inputs.files(compileExperimentalKotlin2Js.outputs.files)
-    inputs.files(compileCoroutinesKotlin2Js.outputs.files)
+    inputs.files(compileCoroutinesExperimentalKotlin2Js.outputs.files)
     inputs.dir(jsSrcDir)
     outputs.file(jsOutputFile)
     outputs.file("${jsOutputFile}.map")
@@ -195,17 +205,17 @@ task compileJs(type: JavaExec) {
         include '**/*.js'
     }
 
-    main = "org.jetbrains.kotlin.js.FileMergerKt"
+    main = "org.jetbrains.kotlin.cli.js.internal.JSStdlibLinker"
     doFirst {
         args = [jsOutputFile, rootDir, "$jsSrcDir/wrapper.js"] + inputFiles.collect { it.path }.sort() +
                (compileBuiltinsKotlin2Js.outputs.files.collect { it.path }.sort() +
                 compileKotlin2Js.outputs.files.collect { it.path }.sort() +
-                compileCoroutinesKotlin2Js.outputs.files.collect { it.path }.sort() /* +
+                compileCoroutinesExperimentalKotlin2Js.outputs.files.collect { it.path }.sort() /* +
                 compileExperimentalKotlin2Js.outputs.files.collect { it.path }.sort() */).findAll {
                    it.endsWith(".js") && !it.endsWith(".meta.js")
                }
     }
-    classpath = configurations.merger
+    classpath = configurations.kotlinCompilerClasspath
 
     doLast {
         ant.replaceregexp(
@@ -237,7 +247,7 @@ task compileJs(type: JavaExec) {
             if (prefixToRemove != null) sourcePath.substring(prefixToRemove.length()) else sourcePath
         }
 
-        def sourceMapSourcesBaseDirs = [jsSrcDir, jsSrcJsDir, builtinsSrcDir, commonSrcDir, commonSrcDir2, projectDir, experimentalSrcDir]
+        def sourceMapSourcesBaseDirs = [jsSrcDir, jsSrcJsDir, builtinsSrcDir, commonSrcDir, commonSrcDir2, projectDir, experimentalSrcDir,  unsignedCommonSrcDir]
 
         sourceMap.sourcesContent = sourceMap.sources.collect { sourceName ->
             def text = sourceMapSourcesBaseDirs.collect { file("$it/$sourceName") }.find { it.exists() }?.text
@@ -248,7 +258,7 @@ task compileJs(type: JavaExec) {
         sourceMapFile.text = groovy.json.JsonOutput.toJson(sourceMap)
 
         file(jsOutputMetaFile).text = file(compileKotlin2Js.outputFile.path.replaceAll('\\.js$', '.meta.js')).text +
-                                      file(compileCoroutinesKotlin2Js.outputFile.path.replaceAll('\\.js$', '.meta.js')).text /* +
+                                      file(compileCoroutinesExperimentalKotlin2Js.outputFile.path.replaceAll('\\.js$', '.meta.js')).text /* +
                                       file(compileExperimentalKotlin2Js.outputFile.path.replaceAll('\\.js$', '.meta.js')).text
                                               .replaceFirst(experimentalJsModuleName, 'kotlin') */
     }
@@ -279,7 +289,7 @@ task mergedJar(type: Jar, dependsOn: compileJs) {
     from "${jsOutputFile}.map"
     from sourceSets.main.output
     from sourceSets.experimental.output
-    from("${buildDir}/classes/coroutines/kotlin") {
+    from("${buildDir}/classes/coroutinesExperimental/kotlin") {
         into coroutinesJsModuleName
     }
     exclude "${experimentalJsModuleName}.*"
@@ -303,7 +313,7 @@ task sourcesJar(type: Jar, dependsOn: compileJs) {
     from(sourceSets.experimental.allSource) {
         into 'kotlin'
     }
-    from(sourceSets.coroutines.allSource) {
+    from(sourceSets.coroutinesExperimental.allSource) {
         into 'kotlin'
     }
 }
@@ -322,7 +332,7 @@ task distSourcesJar(type: Jar) {
         into 'common'
     }
 
-    from(project(":kotlin-stdlib-common").sourceSets.coroutines.allSource) {
+    from(project(":kotlin-stdlib-common").sourceSets.coroutinesExperimental.allSource) {
         into 'kotlin'
     }
 }
@@ -333,8 +343,9 @@ artifacts {
     runtime mergedJar
     archives mergedJar
     archives sourcesJar
-    archives javadocJar
 }
+
+javadocJar()
 
 task distJs(type: Copy) {
     from(compileJs)
@@ -346,10 +357,6 @@ dist {
     [mergedJar, distSourcesJar].forEach {
         rename("dist-", "")
         from(it)
-        // legacy
-        from(it) {
-            rename("kotlin-stdlib-js", 'kotlin-jslib')
-        }
     }
 }
 

@@ -23,11 +23,12 @@ import org.jetbrains.kotlin.psi.KtObjectLiteralExpression
 import org.jetbrains.kotlin.psi.KtSuperTypeCallEntry
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.uast.*
+import org.jetbrains.uast.kotlin.internal.DelegatedMultiResolve
 
 class KotlinUObjectLiteralExpression(
     override val psi: KtObjectLiteralExpression,
     givenParent: UElement?
-) : KotlinAbstractUExpression(givenParent), UObjectLiteralExpression, UCallExpressionEx, KotlinUElementWithType {
+) : KotlinAbstractUExpression(givenParent), UObjectLiteralExpression, UCallExpressionEx, DelegatedMultiResolve, KotlinUElementWithType {
 
     override val declaration: UClass by lz {
         psi.objectDeclaration.toLightClass()
@@ -59,7 +60,7 @@ class KotlinUObjectLiteralExpression(
         psi.typeArguments.map { it.typeReference.toPsiType(this, boxed = true) }
     }
 
-    override fun resolve() = superClassConstructorCall?.resolveCallToDeclaration(this) as? PsiMethod
+    override fun resolve() = superClassConstructorCall?.resolveCallToDeclaration() as? PsiMethod
 
     override fun getArgumentForParameter(i: Int): UExpression? =
         superClassConstructorCall?.let { it.getResolvedCall(it.analyze()) }?.let { getArgumentExpressionByIndex(i, it, this) }
@@ -72,7 +73,7 @@ class KotlinUObjectLiteralExpression(
         override val javaPsi = null
         override val sourcePsi = psi
 
-        override fun resolve() = (psi.resolveCallToDeclaration(this) as? PsiMethod)?.containingClass
+        override fun resolve() = (psi.resolveCallToDeclaration() as? PsiMethod)?.containingClass
 
         override val annotations: List<UAnnotation>
             get() = emptyList()

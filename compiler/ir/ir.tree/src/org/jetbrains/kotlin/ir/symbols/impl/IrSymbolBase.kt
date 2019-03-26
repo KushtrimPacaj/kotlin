@@ -26,9 +26,9 @@ abstract class IrSymbolBase<out D : DeclarationDescriptor>(override val descript
 abstract class IrBindableSymbolBase<out D : DeclarationDescriptor, B : IrSymbolOwner>(descriptor: D) :
     IrBindableSymbol<D, B>, IrSymbolBase<D>(descriptor) {
     init {
-        assert(isOriginalDescriptor(descriptor)) {
-            "Substituted descriptor $descriptor for ${descriptor.original}"
-        }
+//        assert(isOriginalDescriptor(descriptor)) {
+//            "Substituted descriptor $descriptor for ${descriptor.original}"
+//        }
     }
 
     private fun isOriginalDescriptor(descriptor: DeclarationDescriptor): Boolean =
@@ -62,14 +62,13 @@ class IrExternalPackageFragmentSymbolImpl(descriptor: PackageFragmentDescriptor)
 
 class IrAnonymousInitializerSymbolImpl(descriptor: ClassDescriptor) :
     IrBindableSymbolBase<ClassDescriptor, IrAnonymousInitializer>(descriptor),
-    IrAnonymousInitializerSymbol
+    IrAnonymousInitializerSymbol {
+    constructor(irClassSymbol: IrClassSymbol) : this(irClassSymbol.descriptor) {}
+}
 
 class IrClassSymbolImpl(descriptor: ClassDescriptor) :
     IrBindableSymbolBase<ClassDescriptor, IrClass>(descriptor),
     IrClassSymbol
-
-fun createClassSymbolOrNull(descriptor: ClassDescriptor?) =
-    descriptor?.let { IrClassSymbolImpl(it) }
 
 class IrEnumEntrySymbolImpl(descriptor: ClassDescriptor) :
     IrBindableSymbolBase<ClassDescriptor, IrEnumEntry>(descriptor),
@@ -91,13 +90,6 @@ class IrVariableSymbolImpl(descriptor: VariableDescriptor) :
     IrBindableSymbolBase<VariableDescriptor, IrVariable>(descriptor),
     IrVariableSymbol
 
-fun createValueSymbol(descriptor: ValueDescriptor): IrValueSymbol =
-    when (descriptor) {
-        is ParameterDescriptor -> IrValueParameterSymbolImpl(descriptor)
-        is VariableDescriptor -> IrVariableSymbolImpl(descriptor)
-        else -> throw IllegalArgumentException("Unexpected descriptor kind: $descriptor")
-    }
-
 class IrSimpleFunctionSymbolImpl(descriptor: FunctionDescriptor) :
     IrBindableSymbolBase<FunctionDescriptor, IrSimpleFunction>(descriptor),
     IrSimpleFunctionSymbol
@@ -106,13 +98,14 @@ class IrConstructorSymbolImpl(descriptor: ClassConstructorDescriptor) :
     IrBindableSymbolBase<ClassConstructorDescriptor, IrConstructor>(descriptor),
     IrConstructorSymbol
 
-fun createFunctionSymbol(descriptor: CallableMemberDescriptor): IrFunctionSymbol =
-    when (descriptor) {
-        is ClassConstructorDescriptor -> IrConstructorSymbolImpl(descriptor.original)
-        is FunctionDescriptor -> IrSimpleFunctionSymbolImpl(descriptor.original)
-        else -> throw IllegalArgumentException("Unexpected descriptor kind: $descriptor")
-    }
-
 class IrReturnableBlockSymbolImpl(descriptor: FunctionDescriptor) :
     IrBindableSymbolBase<FunctionDescriptor, IrReturnableBlock>(descriptor),
     IrReturnableBlockSymbol
+
+class IrPropertySymbolImpl(descriptor: PropertyDescriptor) :
+    IrBindableSymbolBase<PropertyDescriptor, IrProperty>(descriptor),
+    IrPropertySymbol
+
+class IrLocalDelegatedPropertySymbolImpl(descriptor: VariableDescriptorWithAccessors) :
+    IrBindableSymbolBase<VariableDescriptorWithAccessors, IrLocalDelegatedProperty>(descriptor),
+    IrLocalDelegatedPropertySymbol

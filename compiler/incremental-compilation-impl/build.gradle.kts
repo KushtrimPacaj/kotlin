@@ -4,8 +4,6 @@ plugins {
     id("jps-compatible")
 }
 
-jvmTarget = "1.6"
-
 dependencies {
     compile(project(":core:descriptors"))
     compile(project(":core:descriptors.jvm"))
@@ -17,15 +15,14 @@ dependencies {
     compile(project(":kotlin-build-common"))
     compile(project(":compiler:daemon-common"))
     compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
-    compileOnly(intellijDep()) { includeJars("annotations") }
 
     testCompile(commonDep("junit:junit"))
-    testCompile(projectDist(":kotlin-test:kotlin-test-junit"))
-    testCompile(projectDist(":kotlin-stdlib"))
+    testCompile(project(":kotlin-test:kotlin-test-junit"))
+    testCompile(kotlinStdlib())
     testCompile(projectTests(":kotlin-build-common"))
     testCompile(projectTests(":compiler:tests-common"))
-    testCompile(intellijCoreDep()) { includeJars("intellij-core") }
-    testCompile(intellijDep()) { includeJars("annotations", "log4j", "jdom") }
+    testCompileOnly(intellijCoreDep()) { includeJars("intellij-core") }
+    testCompile(intellijDep()) { includeJars("log4j", "jdom") }
 }
 
 sourceSets {

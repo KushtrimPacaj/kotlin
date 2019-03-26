@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 inline class Foo(val x: Int) {
     inline fun inlineInc(): Foo = Foo(x + 1)
@@ -14,5 +15,5 @@ fun test(f: Foo) {
     f.notInlineInc() // one here
 }
 
-// 0 INVOKESTATIC Foo\$Erased.inlineInc
-// 1 INVOKESTATIC Foo\$Erased.notInlineInc
+// 0 INVOKESTATIC Foo\.inlineInc
+// 1 INVOKESTATIC Foo\.notInlineInc

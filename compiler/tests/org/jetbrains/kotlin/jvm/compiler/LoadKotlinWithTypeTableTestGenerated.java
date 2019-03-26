@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -54,6 +54,11 @@ public class LoadKotlinWithTypeTableTestGenerated extends AbstractLoadKotlinWith
         @TestMetadata("AnnotationInAnnotationArguments.kt")
         public void testAnnotationInAnnotationArguments() throws Exception {
             runTest("compiler/testData/loadJava/compiledKotlin/annotations/AnnotationInAnnotationArguments.kt");
+        }
+
+        @TestMetadata("ClassLiteralArguments.kt")
+        public void testClassLiteralArguments() throws Exception {
+            runTest("compiler/testData/loadJava/compiledKotlin/annotations/ClassLiteralArguments.kt");
         }
 
         @TestMetadata("EnumArgumentWithCustomToString.kt")
@@ -128,9 +133,19 @@ public class LoadKotlinWithTypeTableTestGenerated extends AbstractLoadKotlinWith
                 runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/Getter.kt");
             }
 
+            @TestMetadata("HiddenConstructorWithInlineClassParameters.kt")
+            public void testHiddenConstructorWithInlineClassParameters() throws Exception {
+                runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/HiddenConstructorWithInlineClassParameters.kt");
+            }
+
             @TestMetadata("PropertyField.kt")
             public void testPropertyField() throws Exception {
                 runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/PropertyField.kt");
+            }
+
+            @TestMetadata("PublishedApiAnnotationOnInlineClassCosntructor.kt")
+            public void testPublishedApiAnnotationOnInlineClassCosntructor() throws Exception {
+                runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/PublishedApiAnnotationOnInlineClassCosntructor.kt");
             }
 
             @TestMetadata("Setter.kt")
@@ -484,6 +499,11 @@ public class LoadKotlinWithTypeTableTestGenerated extends AbstractLoadKotlinWith
             @TestMetadata("FieldTarget.kt")
             public void testFieldTarget() throws Exception {
                 runTest("compiler/testData/loadJava/compiledKotlin/annotations/withUseSiteTarget/FieldTarget.kt");
+            }
+
+            @TestMetadata("PropertyAndAccessor.kt")
+            public void testPropertyAndAccessor() throws Exception {
+                runTest("compiler/testData/loadJava/compiledKotlin/annotations/withUseSiteTarget/PropertyAndAccessor.kt");
             }
 
             @TestMetadata("ReceiverTarget.kt")

@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 // FILE: util.kt
 
@@ -22,9 +23,9 @@ fun transformToNullableTarget(a: AsInt): AsInt? = a as AsInt? // box
 fun transformNullableToNullableTarget(a: AsInt?): AsInt? = a as AsInt?
 
 // @ReferenceKt.class:
-// 2 INVOKESTATIC AsAny\$Erased.box
+// 2 INVOKESTATIC AsAny\.box
 // 1 INVOKEVIRTUAL AsAny.unbox
 
 // @PrimitiveKt.class:
-// 2 INVOKESTATIC AsInt\$Erased.box
+// 2 INVOKESTATIC AsInt\.box
 // 1 INVOKEVIRTUAL AsInt.unbox

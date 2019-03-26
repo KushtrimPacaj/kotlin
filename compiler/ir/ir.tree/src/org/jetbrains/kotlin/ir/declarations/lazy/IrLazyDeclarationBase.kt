@@ -18,12 +18,11 @@ import org.jetbrains.kotlin.ir.util.DeclarationStubGenerator
 import org.jetbrains.kotlin.ir.util.TypeTranslator
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.types.KotlinType
-import kotlin.reflect.KProperty
 
 abstract class IrLazyDeclarationBase(
     startOffset: Int,
     endOffset: Int,
-    override val origin: IrDeclarationOrigin,
+    override var origin: IrDeclarationOrigin,
     private val stubGenerator: DeclarationStubGenerator,
     protected val typeTranslator: TypeTranslator
 ) : IrElementBase(startOffset, endOffset), IrDeclaration {
@@ -51,19 +50,29 @@ abstract class IrLazyDeclarationBase(
         createLazyParent()!!
     }
 
-    override val annotations: MutableList<IrCall> = arrayListOf()
+    override val annotations: MutableList<IrCall> by lazy {
+        descriptor.annotations.map {
+            typeTranslator.constantValueGenerator.generateAnnotationConstructorCall(it)
+        }.toMutableList()
+    }
+
+    override var metadata: Nothing?
+        get() = null
+        set(_) = error("We should never need to store metadata of external declarations.")
 
     private fun createLazyParent(): IrDeclarationParent? {
         val currentDescriptor = descriptor
 
         val containingDeclaration =
             ((currentDescriptor as? PropertyAccessorDescriptor)?.correspondingProperty ?: currentDescriptor).containingDeclaration
+
         return when (containingDeclaration) {
             is PackageFragmentDescriptor -> stubGenerator.generateOrGetEmptyExternalPackageFragmentStub(containingDeclaration).also {
                 it.declarations.add(this)
             }
             is ClassDescriptor -> stubGenerator.generateClassStub(containingDeclaration)
             is FunctionDescriptor -> stubGenerator.generateFunctionStub(containingDeclaration)
+            is PropertyDescriptor -> stubGenerator.generateFunctionStub(containingDeclaration.run { getter ?: setter!! })
             else -> throw AssertionError("Package or class expected: $containingDeclaration; for $currentDescriptor")
         }
     }

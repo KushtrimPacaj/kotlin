@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
 import org.jetbrains.kotlin.builtins.PrimitiveType;
+import org.jetbrains.kotlin.codegen.binding.CodegenBinding;
 import org.jetbrains.kotlin.codegen.coroutines.CoroutineCodegenUtilKt;
 import org.jetbrains.kotlin.codegen.intrinsics.IntrinsicMethods;
 import org.jetbrains.kotlin.codegen.pseudoInsns.PseudoInsnsKt;
@@ -25,7 +26,10 @@ import org.jetbrains.kotlin.load.java.JvmAbi;
 import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.psi.KtExpression;
 import org.jetbrains.kotlin.psi.ValueArgument;
-import org.jetbrains.kotlin.resolve.*;
+import org.jetbrains.kotlin.resolve.BindingContext;
+import org.jetbrains.kotlin.resolve.DescriptorUtils;
+import org.jetbrains.kotlin.resolve.ImportedFromObjectCallableDescriptor;
+import org.jetbrains.kotlin.resolve.InlineClassesUtilsKt;
 import org.jetbrains.kotlin.resolve.calls.model.DefaultValueArgument;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedValueArgument;
@@ -36,14 +40,18 @@ import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodParameterSignature
 import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue;
 import org.jetbrains.kotlin.types.KotlinType;
 import org.jetbrains.kotlin.types.SimpleType;
+import org.jetbrains.kotlin.types.TypeUtils;
 import org.jetbrains.org.objectweb.asm.Label;
 import org.jetbrains.org.objectweb.asm.Opcodes;
 import org.jetbrains.org.objectweb.asm.Type;
 import org.jetbrains.org.objectweb.asm.commons.InstructionAdapter;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.jetbrains.kotlin.codegen.AsmUtil.*;
+import static org.jetbrains.kotlin.codegen.binding.CodegenBinding.CLASS_FOR_CALLABLE;
+import static org.jetbrains.kotlin.codegen.binding.CodegenBinding.RECURSIVE_SUSPEND_CALLABLE_REFERENCE;
 import static org.jetbrains.kotlin.resolve.jvm.AsmTypes.*;
 import static org.jetbrains.org.objectweb.asm.Opcodes.*;
 
@@ -95,12 +103,16 @@ public abstract class StackValue {
         put(type, kotlinType, v);
     }
 
-    public void put(@NotNull Type type, @Nullable KotlinType kotlinType, @NotNull InstructionAdapter v) {
-        put(type, kotlinType, v, false);
+    public void put(@NotNull InstructionAdapter v) {
+        put(type, null, v, false);
     }
 
     public void put(@NotNull Type type, @NotNull InstructionAdapter v) {
         put(type, null, v, false);
+    }
+
+    public void put(@NotNull Type type, @Nullable KotlinType kotlinType, @NotNull InstructionAdapter v) {
+        put(type, kotlinType, v, false);
     }
 
     public void put(@NotNull Type type, @Nullable KotlinType kotlinType, @NotNull InstructionAdapter v, boolean skipReceiver) {
@@ -158,16 +170,26 @@ public abstract class StackValue {
 
     @NotNull
     public static StackValue local(int index, @NotNull Type type, @NotNull VariableDescriptor descriptor) {
+        return local(index, type, descriptor, null);
+    }
+
+    @NotNull
+    public static StackValue local(int index, @NotNull Type type, @NotNull VariableDescriptor descriptor, @Nullable KotlinType delegateKotlinType) {
         if (descriptor.isLateInit()) {
+            assert delegateKotlinType == null :
+                    "Delegated property can't be lateinit: " + descriptor + ", delegate type: " + delegateKotlinType;
             return new LateinitLocal(index, type, descriptor.getType(), descriptor.getName());
         }
         else {
-            return new Local(index, type, descriptor.getType());
+            return new Local(
+                    index, type,
+                    delegateKotlinType != null ? delegateKotlinType : descriptor.getType()
+            );
         }
     }
 
     @NotNull
-    public static Delegate delegate(
+    public static Delegate localDelegate(
             @NotNull Type type,
             @NotNull StackValue delegateValue,
             @NotNull StackValue metadataValue,
@@ -184,7 +206,16 @@ public abstract class StackValue {
 
     @NotNull
     public static StackValue shared(int index, @NotNull Type type, @NotNull VariableDescriptor descriptor) {
-        return new Shared(index, type, descriptor.getType(), descriptor.isLateInit(), descriptor.getName());
+        return shared(index, type, descriptor, null);
+    }
+
+    @NotNull
+    public static StackValue shared(int index, @NotNull Type type, @NotNull VariableDescriptor descriptor, @Nullable KotlinType delegateKotlinType) {
+        return new Shared(
+                index, type,
+                delegateKotlinType != null ? delegateKotlinType : descriptor.getType(),
+                descriptor.isLateInit(), descriptor.getName()
+        );
     }
 
     @NotNull
@@ -316,7 +347,19 @@ public abstract class StackValue {
 
     @NotNull
     public static Field field(@NotNull Type type, @NotNull Type owner, @NotNull String name, boolean isStatic, @NotNull StackValue receiver) {
-        return field(type, null, owner, name, isStatic, receiver, null);
+        return field(type, null, owner, name, isStatic, receiver);
+    }
+
+    @NotNull
+    public static Field field(
+            @NotNull Type type,
+            @Nullable KotlinType kotlinType,
+            @NotNull Type owner,
+            @NotNull String name,
+            boolean isStatic,
+            @NotNull StackValue receiver
+    ) {
+        return field(type, kotlinType, owner, name, isStatic, receiver, null);
     }
 
     @NotNull
@@ -339,7 +382,14 @@ public abstract class StackValue {
 
     @NotNull
     public static Field field(@NotNull FieldInfo info, @NotNull StackValue receiver) {
-        return field(info.getFieldType(), Type.getObjectType(info.getOwnerInternalName()), info.getFieldName(), info.isStatic(), receiver);
+        return field(
+                info.getFieldType(),
+                info.getFieldKotlinType(),
+                Type.getObjectType(info.getOwnerInternalName()),
+                info.getFieldName(),
+                info.isStatic(),
+                receiver
+        );
     }
 
     @NotNull
@@ -361,10 +411,11 @@ public abstract class StackValue {
             @NotNull StackValue receiver,
             @NotNull ExpressionCodegen codegen,
             @Nullable ResolvedCall resolvedCall,
-            boolean skipLateinitAssertion
+            boolean skipLateinitAssertion,
+            @Nullable KotlinType delegateKotlinType
     ) {
         return new Property(descriptor, backingFieldOwner, getter, setter, isStaticBackingField, fieldName, type, receiver, codegen,
-                            resolvedCall, skipLateinitAssertion);
+                            resolvedCall, skipLateinitAssertion, delegateKotlinType);
     }
 
     @NotNull
@@ -400,11 +451,24 @@ public abstract class StackValue {
 
     private static void boxInlineClass(@NotNull KotlinType kotlinType, @NotNull InstructionAdapter v) {
         Type boxedType = KotlinTypeMapper.mapInlineClassTypeAsDeclaration(kotlinType);
-        Type owner = KotlinTypeMapper.mapToErasedInlineClassType(kotlinType);
         Type underlyingType = KotlinTypeMapper.mapUnderlyingTypeOfInlineClassType(kotlinType);
+
+        if (TypeUtils.isNullableType(kotlinType) && !isPrimitive(underlyingType)) {
+            boxOrUnboxWithNullCheck(v, vv -> invokeBoxMethod(vv, boxedType, underlyingType));
+        }
+        else {
+            invokeBoxMethod(v, boxedType, underlyingType);
+        }
+    }
+
+    private static void invokeBoxMethod(
+            @NotNull InstructionAdapter v,
+            @NotNull Type boxedType,
+            @NotNull Type underlyingType
+    ) {
         v.invokestatic(
-                owner.getInternalName(),
-                InlineClassDescriptorResolver.BOX_METHOD_NAME.asString(),
+                boxedType.getInternalName(),
+                KotlinTypeMapper.BOX_JVM_METHOD_NAME,
                 Type.getMethodDescriptor(boxedType, underlyingType),
                 false
         );
@@ -416,12 +480,43 @@ public abstract class StackValue {
         coerce(type, owner, v);
 
         Type resultType = KotlinTypeMapper.mapUnderlyingTypeOfInlineClassType(targetInlineClassType);
+
+        if (TypeUtils.isNullableType(targetInlineClassType) && !isPrimitive(resultType)) {
+            boxOrUnboxWithNullCheck(v, vv -> invokeUnboxMethod(vv, owner, resultType));
+        }
+        else {
+            invokeUnboxMethod(v, owner, resultType);
+        }
+    }
+
+    private static void invokeUnboxMethod(
+            @NotNull InstructionAdapter v,
+            @NotNull Type owner,
+            @NotNull Type resultType
+    ) {
         v.invokevirtual(
                 owner.getInternalName(),
-                InlineClassDescriptorResolver.UNBOX_METHOD_NAME.asString(),
+                KotlinTypeMapper.UNBOX_JVM_METHOD_NAME,
                 "()" + resultType.getDescriptor(),
                 false
         );
+    }
+
+    private static void boxOrUnboxWithNullCheck(@NotNull InstructionAdapter v, @NotNull Consumer<InstructionAdapter> body) {
+        Label lNull = new Label();
+        Label lDone = new Label();
+        // NB The following piece of code looks sub-optimal (we have a 'null' value on stack and could just keep it there),
+        // but it is required, because bytecode verifier doesn't take into account null checks,
+        // and sees null-checked value on the top of the stack as a value of the source type (e.g., Ljava/lang/String;),
+        // which is not assignable to the expected type (destination type, e.g., LStr;).
+        v.dup();
+        v.ifnull(lNull);
+        body.accept(v);
+        v.goTo(lDone);
+        v.mark(lNull);
+        v.pop();
+        v.aconst(null);
+        v.mark(lDone);
     }
 
     protected void coerceTo(@NotNull Type toType, @Nullable KotlinType toKotlinType, @NotNull InstructionAdapter v) {
@@ -443,6 +538,33 @@ public abstract class StackValue {
         coerce(fromType, toType, v);
     }
 
+    public static boolean requiresInlineClassBoxingOrUnboxing(
+            @NotNull Type fromType,
+            @Nullable KotlinType fromKotlinType,
+            @NotNull Type toType,
+            @Nullable KotlinType toKotlinType
+    ) {
+        // NB see also coerceInlineClasses below
+
+        if (fromKotlinType == null || toKotlinType == null) return false;
+
+        boolean isFromTypeInlineClass = InlineClassesUtilsKt.isInlineClassType(fromKotlinType);
+        boolean isToTypeInlineClass = InlineClassesUtilsKt.isInlineClassType(toKotlinType);
+
+        if (!isFromTypeInlineClass && !isToTypeInlineClass) return false;
+
+        boolean isFromTypeUnboxed = isFromTypeInlineClass && isUnboxedInlineClass(fromKotlinType, fromType);
+        boolean isToTypeUnboxed = isToTypeInlineClass && isUnboxedInlineClass(toKotlinType, toType);
+
+        if (isFromTypeInlineClass && isToTypeInlineClass) {
+            return isFromTypeUnboxed != isToTypeUnboxed;
+        }
+        else {
+            return isFromTypeInlineClass /* && !isToTypeInlineClass */ && isFromTypeUnboxed ||
+                   isToTypeInlineClass /* && !isFromTypeInlineClass */ && isToTypeUnboxed;
+        }
+    }
+
     private static boolean coerceInlineClasses(
             @NotNull Type fromType,
             @Nullable KotlinType fromKotlinType,
@@ -450,6 +572,8 @@ public abstract class StackValue {
             @Nullable KotlinType toKotlinType,
             @NotNull InstructionAdapter v
     ) {
+        // NB see also requiresInlineClassBoxingOrUnboxing above
+
         if (fromKotlinType == null || toKotlinType == null) return false;
 
         boolean isFromTypeInlineClass = InlineClassesUtilsKt.isInlineClassType(fromKotlinType);
@@ -608,15 +732,20 @@ public abstract class StackValue {
             @NotNull Field refWrapper,
             @NotNull VariableDescriptor variableDescriptor
     ) {
-        return new FieldForSharedVar(localType, classType, fieldName, refWrapper,
-                                     variableDescriptor.isLateInit(), variableDescriptor.getName());
+        return new FieldForSharedVar(
+                localType, variableDescriptor.getType(), classType, fieldName, refWrapper,
+                variableDescriptor.isLateInit(), variableDescriptor.getName()
+        );
     }
 
     @NotNull
     public static FieldForSharedVar fieldForSharedVar(@NotNull FieldForSharedVar field, @NotNull StackValue newReceiver) {
         Field oldReceiver = (Field) field.receiver;
         Field newSharedVarReceiver = field(oldReceiver, newReceiver);
-        return new FieldForSharedVar(field.type, field.owner, field.name, newSharedVarReceiver, field.isLateinit, field.variableName);
+        return new FieldForSharedVar(
+                field.type, field.kotlinType,
+                field.owner, field.name, newSharedVarReceiver, field.isLateinit, field.variableName
+        );
     }
 
     public static StackValue coercion(@NotNull StackValue value, @NotNull Type castType, @Nullable KotlinType castKotlinType) {
@@ -646,7 +775,7 @@ public abstract class StackValue {
     ) {
         // Coerce 'this' for the case when it is smart cast.
         // Do not coerce for other cases due to the 'protected' access issues (JVMS 7, 4.9.2 Structural Constraints).
-        boolean coerceType = descriptor.getKind() == ClassKind.INTERFACE || (castReceiver && !isSuper);
+        boolean coerceType = descriptor.getKind() == ClassKind.INTERFACE || descriptor.isInline() || (castReceiver && !isSuper);
         return new ThisOuter(codegen, descriptor, isSuper, coerceType);
     }
 
@@ -654,8 +783,8 @@ public abstract class StackValue {
         return new PostIncrement(index, increment);
     }
 
-    public static StackValue preIncrementForLocalVar(int index, int increment) {
-        return new PreIncrementForLocalVar(index, increment);
+    public static StackValue preIncrementForLocalVar(int index, int increment, @Nullable KotlinType kotlinType) {
+        return new PreIncrementForLocalVar(index, increment, kotlinType);
     }
 
     public static StackValue preIncrement(
@@ -666,7 +795,7 @@ public abstract class StackValue {
             @NotNull ExpressionCodegen codegen
     ) {
         if (stackValue instanceof StackValue.Local && Type.INT_TYPE == stackValue.type) {
-            return preIncrementForLocalVar(((StackValue.Local) stackValue).index, delta);
+            return preIncrementForLocalVar(((StackValue.Local) stackValue).index, delta, stackValue.kotlinType);
         }
         return new PrefixIncrement(type, stackValue, resolvedCall, codegen);
     }
@@ -733,12 +862,7 @@ public abstract class StackValue {
                     SimpleFunctionDescriptor initial =
                             CoroutineCodegenUtilKt.unwrapInitialDescriptorForSuspendFunction((SimpleFunctionDescriptor) descriptor);
                     if (initial != null && initial.isSuspend()) {
-                        StackValue value = codegen.findLocalOrCapturedValue(initial.getOriginal());
-                        assert value != null : "Local suspend fun should be found in locals or in captured params: " +
-                                               descriptor +
-                                               " initial local suspend fun: " +
-                                               initial;
-                        return value;
+                        return putLocalSuspendFunctionOnStack(codegen, initial.getOriginal());
                     }
                 }
                 StackValue value = codegen.findLocalOrCapturedValue(descriptor.getOriginal());
@@ -754,6 +878,52 @@ public abstract class StackValue {
             return receiver;
         }
         return none();
+    }
+
+    private static StackValue putLocalSuspendFunctionOnStack(
+            @NotNull ExpressionCodegen codegen,
+            SimpleFunctionDescriptor callee
+    ) {
+        // There can be three types of suspend local function calls:
+        // 1) normal call: we first define it as a closure and then call it
+        // 2) call using callable reference: in this case it is not local, but rather captured value
+        // 3) recursive call: we are in the middle of defining it, but, thankfully, we can simply call `this.invoke` to
+        // create new coroutine
+        // 4) Normal call, but the value is captured
+
+        // First, check whether this is a normal call
+        int index = codegen.lookupLocalIndex(callee);
+        if (index >= 0) {
+            // This is a normal local call
+            return local(index, OBJECT_TYPE);
+        }
+
+        // Then check for call inside a callable reference
+        BindingContext bindingContext = codegen.getBindingContext();
+        Type calleeType = CodegenBinding.asmTypeForAnonymousClass(bindingContext, callee);
+        if (codegen.context.hasThisDescriptor()) {
+            ClassDescriptor thisDescriptor = codegen.context.getThisDescriptor();
+            ClassDescriptor classDescriptor = bindingContext.get(CLASS_FOR_CALLABLE, callee);
+            if (thisDescriptor instanceof SyntheticClassDescriptorForLambda &&
+                ((SyntheticClassDescriptorForLambda) thisDescriptor).isCallableReference()) {
+                // Call is inside a callable reference
+                // if it is call to recursive local, just return this$0
+                Boolean isRecursive = bindingContext.get(RECURSIVE_SUSPEND_CALLABLE_REFERENCE, thisDescriptor);
+                if (isRecursive != null && isRecursive) {
+                    assert classDescriptor != null : "No CLASS_FOR_CALLABLE" + callee;
+                    return thisOrOuter(codegen, classDescriptor, false, false);
+                }
+                // Otherwise, just call constructor of the closure
+                return codegen.findCapturedValue(callee);
+            }
+            if (classDescriptor == thisDescriptor) {
+                // Recursive suspend local function, just call invoke on this, it will create new coroutine automatically
+                codegen.v.visitVarInsn(ALOAD, 0);
+                return onStack(calleeType);
+            }
+        }
+        // Otherwise, this is captured value
+        return codegen.findCapturedValue(callee);
     }
 
     private static StackValue platformStaticCallIfPresent(@NotNull StackValue resultReceiver, @NotNull CallableDescriptor descriptor) {
@@ -1351,7 +1521,7 @@ public abstract class StackValue {
 
             Type lastParameterType = ArraysKt.last(setter.getParameterTypes());
             KotlinType lastParameterKotlinType =
-                    CollectionsKt.last(resolvedSetCall.getResultingDescriptor().getValueParameters()).getType();
+                    CollectionsKt.last(resolvedSetCall.getResultingDescriptor().getOriginal().getValueParameters()).getType();
 
             coerce(topOfStackType, topOfStackKotlinType, lastParameterType, lastParameterKotlinType, v);
 
@@ -1384,7 +1554,6 @@ public abstract class StackValue {
             }
         }
     }
-
 
     public static class Field extends StackValueWithSimpleReceiver {
         public final Type owner;
@@ -1433,12 +1602,13 @@ public abstract class StackValue {
         private final ExpressionCodegen codegen;
         private final ResolvedCall resolvedCall;
         private final boolean skipLateinitAssertion;
+        private final KotlinType delegateKotlinType;
 
         public Property(
                 @NotNull PropertyDescriptor descriptor, @Nullable Type backingFieldOwner, @Nullable CallableMethod getter,
                 @Nullable CallableMethod setter, boolean isStaticBackingField, @Nullable String fieldName, @NotNull Type type,
                 @NotNull StackValue receiver, @NotNull ExpressionCodegen codegen, @Nullable ResolvedCall resolvedCall,
-                boolean skipLateinitAssertion
+                boolean skipLateinitAssertion, @Nullable KotlinType delegateKotlinType
         ) {
             super(type, descriptor.getType(), isStatic(isStaticBackingField, getter), isStatic(isStaticBackingField, setter), receiver, true);
             this.backingFieldOwner = backingFieldOwner;
@@ -1449,6 +1619,44 @@ public abstract class StackValue {
             this.codegen = codegen;
             this.resolvedCall = resolvedCall;
             this.skipLateinitAssertion = skipLateinitAssertion;
+            this.delegateKotlinType = delegateKotlinType;
+        }
+
+        private static class DelegatePropertyConstructorMarker {
+            private DelegatePropertyConstructorMarker() {}
+            public static final DelegatePropertyConstructorMarker MARKER = new DelegatePropertyConstructorMarker();
+        }
+
+        /**
+         * Given a delegating property, create a "property" corresponding to the underlying delegate itself.
+         * This will take care of backing fields, accessors, and other such stuff.
+         * Note that we just replace <code>kotlinType</code> with the <code>delegateKotlinType</code>
+         * (so that type coercion will work properly),
+         * and <code>delegateKotlinType</code> with <code>null</code>
+         * (so that the resulting property has no underlying delegate of its own).
+         *
+         * @param delegating    delegating property
+         * @param marker        intent marker
+         */
+        @SuppressWarnings("unused")
+        private Property(@NotNull Property delegating, @NotNull DelegatePropertyConstructorMarker marker) {
+            super(delegating.type, delegating.delegateKotlinType,
+                  delegating.isStaticPut, delegating.isStaticStore, delegating.receiver, true);
+
+            this.backingFieldOwner = delegating.backingFieldOwner;
+            this.getter = delegating.getter;
+            this.setter = delegating.setter;
+            this.descriptor = delegating.descriptor;
+            this.fieldName = delegating.fieldName;
+            this.codegen = delegating.codegen;
+            this.resolvedCall = delegating.resolvedCall;
+            this.skipLateinitAssertion = delegating.skipLateinitAssertion;
+            this.delegateKotlinType = null;
+        }
+
+        public Property getDelegateOrNull() {
+            if (delegateKotlinType == null) return null;
+            return new Property(this, DelegatePropertyConstructorMarker.MARKER);
         }
 
         @Override
@@ -1460,8 +1668,14 @@ public abstract class StackValue {
 
                 v.visitFieldInsn(isStaticPut ? GETSTATIC : GETFIELD,
                                  backingFieldOwner.getInternalName(), fieldName, this.type.getDescriptor());
-                if (!skipLateinitAssertion) {
-                    genNotNullAssertionForLateInitIfNeeded(v);
+                if (!skipLateinitAssertion && descriptor.isLateInit()) {
+                    CallableMemberDescriptor contextDescriptor = codegen.context.getContextDescriptor();
+                    boolean isCompanionAccessor =
+                            contextDescriptor instanceof AccessorForPropertyBackingField &&
+                            ((AccessorForPropertyBackingField) contextDescriptor).getAccessorKind() == AccessorKind.IN_CLASS_COMPANION;
+                    if (!isCompanionAccessor) {
+                        genNonNullAssertForLateinit(v, this.descriptor.getName().asString());
+                    }
                 }
                 coerceTo(type, kotlinType, v);
             }
@@ -1493,6 +1707,19 @@ public abstract class StackValue {
                 }
 
                 coerce(typeOfValueOnStack, kotlinTypeOfValueOnStack, type, kotlinType, v);
+
+                // For non-private lateinit properties in companion object, the assertion is generated in the public getFoo method
+                // in the companion and _not_ in the synthetic accessor access$getFoo$cp in the outer class. The reason is that this way,
+                // the synthetic accessor can be reused for isInitialized checks, which require there to be no assertion.
+                // For lateinit properties that are accessed via the backing field directly (or via the synthetic accessor, if the access
+                // is from a different context), the assertion will be generated on each access, see KT-28331.
+                if (descriptor instanceof AccessorForPropertyBackingField) {
+                    PropertyDescriptor property = ((AccessorForPropertyBackingField) descriptor).getCalleeDescriptor();
+                    if (!skipLateinitAssertion && property.isLateInit() && JvmAbi.isPropertyWithBackingFieldInOuterClass(property) &&
+                        !JvmCodegenUtil.couldUseDirectAccessToProperty(property, true, false, codegen.context, false)) {
+                        genNonNullAssertForLateinit(v, property.getName().asString());
+                    }
+                }
 
                 KotlinType returnType = descriptor.getReturnType();
                 if (returnType != null && KotlinBuiltIns.isNothing(returnType)) {
@@ -1532,12 +1759,6 @@ public abstract class StackValue {
             return true;
         }
 
-        private void genNotNullAssertionForLateInitIfNeeded(@NotNull InstructionAdapter v) {
-            if (!descriptor.isLateInit()) return;
-
-            StackValue.genNonNullAssertForLateinit(v, descriptor.getName().asString());
-        }
-
         @Override
         public void store(@NotNull StackValue rightSide, @NotNull InstructionAdapter v, boolean skipReceiver) {
             PropertySetterDescriptor setterDescriptor = descriptor.getSetter();
@@ -1548,7 +1769,10 @@ public abstract class StackValue {
                     putReceiver(v, false);
                 }
                 callGenerator.processAndPutHiddenParameters(true);
-                callGenerator.putValueIfNeeded(new JvmKotlinType(rightSide.type, rightSide.kotlinType), rightSide);
+                callGenerator.putValueIfNeeded(new JvmKotlinType(
+                                                       CollectionsKt.last(setter.getValueParameters()).getAsmType(),
+                                                       CollectionsKt.last(setterDescriptor.getValueParameters()).getType()),
+                                               rightSide);
                 callGenerator.putHiddenParamsIntoLocals();
                 callGenerator.genCall(setter, resolvedCall, false, codegen);
             }
@@ -1702,10 +1926,11 @@ public abstract class StackValue {
         final Name variableName;
 
         public FieldForSharedVar(
-                Type type, Type owner, String name, StackValue.Field receiver,
+                Type type, KotlinType kotlinType,
+                Type owner, String name, StackValue.Field receiver,
                 boolean isLateinit, Name variableName
         ) {
-            super(type, null, false, false, receiver, receiver.canHaveSideEffects());
+            super(type, kotlinType, false, false, receiver, receiver.canHaveSideEffects());
 
             if (isLateinit && variableName == null) {
                 throw new IllegalArgumentException("variableName should be non-null for captured lateinit variable " + name);
@@ -1790,8 +2015,8 @@ public abstract class StackValue {
         private final int index;
         private final int increment;
 
-        public PreIncrementForLocalVar(int index, int increment) {
-            super(Type.INT_TYPE);
+        public PreIncrementForLocalVar(int index, int increment, @Nullable KotlinType kotlinType) {
+            super(Type.INT_TYPE, kotlinType);
             this.index = index;
             this.increment = increment;
         }
@@ -1817,7 +2042,7 @@ public abstract class StackValue {
                 ResolvedCall resolvedCall,
                 @NotNull ExpressionCodegen codegen
         ) {
-            super(type);
+            super(type, value.kotlinType);
             this.value = value;
             this.resolvedCall = resolvedCall;
             this.codegen = codegen;

@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 // FILE: utils.kt
 
@@ -27,6 +28,7 @@ fun test(asInt: Result<Int>, asString: Result<String>, asResult: Result<Result<I
 
 // @TestKt.class:
 // 0 INVOKESTATIC Result\$Erased.box
+// 0 INVOKESTATIC Result\.box
 // 3 INVOKEVIRTUAL Result.unbox
 
 // 0 valueOf

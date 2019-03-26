@@ -1,5 +1,8 @@
-// WITH_UNSIGNED
-// IGNORE_BACKEND: JS_IR, JVM_IR, JS
+// WITH_RUNTIME
+// KJS_WITH_FULL_RUNTIME
+// IGNORE_BACKEND: JS_IR, JVM_IR
+
+@file:Suppress("SIGNED_CONSTANT_CONVERTED_TO_UNSIGNED")
 
 fun takeUByte(u: UByte) = u.toByte()
 fun takeUShort(u: UShort) = u.toShort()

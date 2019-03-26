@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -27,6 +27,11 @@ public class FileRankingTestGenerated extends AbstractFileRankingTest {
 
     public void testAllFilesPresentInFileRanking() throws Exception {
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/debugger/fileRanking"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+    }
+
+    @TestMetadata("anonymousClasses.kt")
+    public void testAnonymousClasses() throws Exception {
+        runTest("idea/testData/debugger/fileRanking/anonymousClasses.kt");
     }
 
     @TestMetadata("differentFlags.kt")

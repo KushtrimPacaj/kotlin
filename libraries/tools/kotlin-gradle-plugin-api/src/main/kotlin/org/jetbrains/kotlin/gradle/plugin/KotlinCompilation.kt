@@ -5,28 +5,58 @@
 
 package org.jetbrains.kotlin.gradle.plugin
 
+import groovy.lang.Closure
 import org.gradle.api.Named
+import org.gradle.api.attributes.AttributeContainer
 import org.gradle.api.attributes.HasAttributes
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.FileCollection
-import org.gradle.api.tasks.SourceSetOutput
-import org.jetbrains.kotlin.gradle.plugin.source.KotlinSourceSet
+import org.gradle.util.ConfigureUtil
+import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
+import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
+import java.io.File
 
-interface KotlinCompilation: Named, HasAttributes, HasKotlinDependencies {
+interface KotlinCompilationOutput {
+    var resourcesDirProvider: Any
+    val resourcesDir: File
+    val classesDirs: ConfigurableFileCollection
+
+    val allOutputs: FileCollection
+}
+
+interface KotlinCompilation<out T : KotlinCommonOptions> : Named, HasAttributes, HasKotlinDependencies {
     val target: KotlinTarget
 
     val compilationName: String
 
     val kotlinSourceSets: Set<KotlinSourceSet>
 
+    val allKotlinSourceSets: Set<KotlinSourceSet>
+
+    val defaultSourceSet: KotlinSourceSet
+
+    fun defaultSourceSet(configure: KotlinSourceSet.() -> Unit)
+    fun defaultSourceSet(configure: Closure<*>) = defaultSourceSet { ConfigureUtil.configure(configure, this) }
+
     val compileDependencyConfigurationName: String
 
     var compileDependencyFiles: FileCollection
 
-    val output: SourceSetOutput
+    val output: KotlinCompilationOutput
 
     val platformType get() = target.platformType
 
     val compileKotlinTaskName: String
+
+    val compileKotlinTask: KotlinCompile<T>
+
+    val kotlinOptions: T
+
+    fun kotlinOptions(configure: T.() -> Unit)
+    fun kotlinOptions(configure: Closure<*>) = kotlinOptions { ConfigureUtil.configure(configure, this) }
+
+    fun attributes(configure: AttributeContainer.() -> Unit) = configure(attributes)
+    fun attributes(configure: Closure<*>) = attributes { ConfigureUtil.configure(configure, this) }
 
     val compileAllTaskName: String
 
@@ -43,7 +73,7 @@ interface KotlinCompilation: Named, HasAttributes, HasKotlinDependencies {
         get() = super.relatedConfigurationNames + compileDependencyConfigurationName
 }
 
-interface KotlinCompilationToRunnableFiles : KotlinCompilation {
+interface KotlinCompilationToRunnableFiles<T : KotlinCommonOptions> : KotlinCompilation<T> {
     val runtimeDependencyConfigurationName: String
 
     var runtimeDependencyFiles: FileCollection
@@ -52,6 +82,6 @@ interface KotlinCompilationToRunnableFiles : KotlinCompilation {
         get() = super.relatedConfigurationNames + runtimeDependencyConfigurationName
 }
 
-interface KotlinCompilationWithResources : KotlinCompilation {
+interface KotlinCompilationWithResources<T : KotlinCommonOptions> : KotlinCompilation<T> {
     val processResourcesTaskName: String
 }

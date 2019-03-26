@@ -5,127 +5,161 @@
 
 package org.jetbrains.kotlin.idea.core.script.dependencies
 
+import com.intellij.openapi.application.runReadAction
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.Task
+import com.intellij.openapi.progress.util.BackgroundTaskUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
-import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.idea.core.script.settings.KotlinScriptingSettings
-import org.jetbrains.kotlin.idea.core.util.cancelOnDisposal
 import org.jetbrains.kotlin.script.KotlinScriptDefinition
 import org.jetbrains.kotlin.script.LegacyResolverWrapper
 import org.jetbrains.kotlin.script.asResolveFailure
-import java.util.concurrent.Executors
+import org.jetbrains.kotlin.scripting.shared.definitions.findScriptDefinition
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.write
 import kotlin.script.experimental.dependencies.AsyncDependenciesResolver
 import kotlin.script.experimental.dependencies.DependenciesResolver
 
-@Suppress("EXPERIMENTAL_FEATURE_WARNING")
-class AsyncScriptDependenciesLoader(
-    file: VirtualFile,
-    scriptDef: KotlinScriptDefinition,
-    project: Project
-) : ScriptDependenciesLoader(file, scriptDef, project, true) {
+class AsyncScriptDependenciesLoader internal constructor(project: Project) : ScriptDependenciesLoader(project) {
+    private val lock = ReentrantReadWriteLock()
 
-    override fun loadDependencies() {
-        if (!shouldSendNewRequest(lastRequest)) {
-            return
-        }
+    private var notifyRootChange: Boolean = false
+    private var backgroundTasksQueue: LoaderBackgroundTask? = null
 
-        lastRequest?.cancel()
-        lastRequest = sendRequest().stampBy(file)
-
-        if (shouldUseBackgroundThread()) {
-            runBlocking {
-                lastRequest?.job?.actualJob?.join()
+    override fun loadDependencies(file: VirtualFile, scriptDef: KotlinScriptDefinition) {
+        lock.write {
+            if (backgroundTasksQueue == null) {
+                backgroundTasksQueue = LoaderBackgroundTask()
+                backgroundTasksQueue!!.addTask(file)
+                backgroundTasksQueue!!.start()
+            } else {
+                backgroundTasksQueue!!.addTask(file)
             }
         }
     }
 
-    override fun shouldUseBackgroundThread() = KotlinScriptingSettings.getInstance(project).isAutoReloadEnabled
     override fun shouldShowNotification(): Boolean = !KotlinScriptingSettings.getInstance(project).isAutoReloadEnabled
 
-    private var lastRequest: ModStampedRequest? = null
+    override fun notifyRootsChanged(): Boolean {
+        lock.write {
+            if (notifyRootChange) return false
 
-    private val asyncUpdatesDispatcher = Executors.newFixedThreadPool(1).asCoroutineDispatcher()
-    private val legacyUpdatesDispatcher =
-        Executors.newFixedThreadPool(
-            (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
-        ).asCoroutineDispatcher()
+            if (backgroundTasksQueue == null) {
+                submitMakeRootsChange()
+                return true
+            }
 
-    private fun shouldSendNewRequest(previousRequest: ModStampedRequest?): Boolean {
-        if (previousRequest == null) return true
-        return file.modificationStamp != previousRequest.modificationStamp
+            notifyRootChange = true
+
+            backgroundTasksQueue!!.addOnFinishTask {
+                lock.write {
+                    notifyRootChange = false
+                }
+                submitMakeRootsChange()
+            }
+        }
+
+        return false
     }
 
-    private fun sendRequest(): TimeStampedJob {
-        val currentTimeStamp = TimeStamps.next()
+    private fun runDependenciesUpdate(file: VirtualFile) {
+        val scriptDef = runReadAction { file.findScriptDefinition(project) } ?: return
+        // runBlocking is using there to avoid loading dependencies asynchronously
+        // because it leads to starting more than one gradle daemon in case of resolving dependencies in build.gradle.kts
+        // It is more efficient to use one hot daemon consistently than multiple daemon in parallel
+        val result = runBlocking {
+            try {
+                resolveDependencies(file, scriptDef)
+            } catch (t: Throwable) {
+                t.asResolveFailure(scriptDef)
+            }
+        }
+        processResult(result, file, scriptDef)
+    }
 
+    private suspend fun resolveDependencies(file: VirtualFile, scriptDef: KotlinScriptDefinition): DependenciesResolver.ResolveResult {
         val dependenciesResolver = scriptDef.dependencyResolver
         val scriptContents = contentLoader.getScriptContents(scriptDef, file)
         val environment = contentLoader.getEnvironment(scriptDef)
-        val newJob = if (dependenciesResolver is AsyncDependenciesResolver) {
-            launchAsyncUpdate(asyncUpdatesDispatcher, currentTimeStamp) {
-                dependenciesResolver.resolveAsync(scriptContents, environment)
-            }
+        return if (dependenciesResolver is AsyncDependenciesResolver) {
+            dependenciesResolver.resolveAsync(scriptContents, environment)
         } else {
             assert(dependenciesResolver is LegacyResolverWrapper)
-            launchAsyncUpdate(legacyUpdatesDispatcher, currentTimeStamp) {
-                dependenciesResolver.resolve(scriptContents, environment)
+            dependenciesResolver.resolve(scriptContents, environment)
+        }
+    }
+
+    private inner class LoaderBackgroundTask {
+        private val sequenceOfFiles: ConcurrentLinkedQueue<VirtualFile> = ConcurrentLinkedQueue()
+        private var forceStop : Boolean = false
+        private var startedSilently : Boolean = false
+
+        private var onFinish: (() -> Unit)? = null
+
+        fun start() {
+            if (shouldShowNotification()) {
+                startSilently()
+            } else {
+                startWithProgress()
             }
         }
 
-        return TimeStampedJob(newJob, currentTimeStamp)
-    }
-
-    private fun launchAsyncUpdate(
-        dispatcher: CoroutineDispatcher,
-        currentTimeStamp: TimeStamp,
-        doResolve: suspend () -> DependenciesResolver.ResolveResult
-    ): Job = launch(dispatcher + project.cancelOnDisposal) {
-        val result = try {
-            doResolve()
-        } catch (t: Throwable) {
-            t.asResolveFailure(scriptDef)
+        private fun restartWithProgress() {
+            forceStop = true
+            startWithProgress()
+            forceStop = false
         }
 
-        processResult(currentTimeStamp, result)
-    }
+        private fun startSilently() {
+            startedSilently = true
+            BackgroundTaskUtil.executeOnPooledThread(project, Runnable {
+                loadDependencies(EmptyProgressIndicator())
+            })
+        }
 
-    private fun processResult(
-        currentTimeStamp: TimeStamp,
-        result: DependenciesResolver.ResolveResult
-    ) {
-        val lastTimeStamp = lastRequest?.job?.timeStamp
-        val isLastSentRequest = lastTimeStamp == null || lastTimeStamp == currentTimeStamp
-        if (isLastSentRequest) {
-            if (lastRequest != null) {
-                // no job running atm unless there is a job started while we process this result
-                lastRequest = ModStampedRequest(lastRequest!!.modificationStamp, job = null)
+        private fun startWithProgress() {
+            startedSilently = false
+            object : Task.Backgroundable(project, "Kotlin: Loading script dependencies...", true) {
+                override fun run(indicator: ProgressIndicator) {
+                    loadDependencies(indicator)
+                }
+
+            }.queue()
+        }
+
+        fun addTask(file: VirtualFile) {
+            if (sequenceOfFiles.contains(file)) return
+
+            sequenceOfFiles.add(file)
+
+            // If the queue is longer than 3, show progress and cancel button
+            if (sequenceOfFiles.size > 3 && startedSilently) {
+                restartWithProgress()
             }
-
-            processResult(result)
         }
-    }
 
-    private class ModStampedRequest(val modificationStamp: Long, val job: TimeStampedJob?) {
-        fun cancel() = job?.actualJob?.cancel()
-    }
+        fun addOnFinishTask(task: () -> Unit) {
+            onFinish = task
+        }
 
-    private class TimeStampedJob(val actualJob: Job, val timeStamp: TimeStamp) {
-        fun stampBy(virtualFile: VirtualFile) =
-            ModStampedRequest(
-                virtualFile.modificationStamp,
-                this
-            )
-    }
-
-    private data class TimeStamp(private val stamp: Long) {
-        operator fun compareTo(other: TimeStamp) = this.stamp.compareTo(other.stamp)
-    }
-
-    private object TimeStamps {
-        private var current: Long = 0
-
-        fun next() =
-            TimeStamp(current++)
+        private fun loadDependencies(indicator: ProgressIndicator?) {
+            while (true) {
+                if (forceStop) return
+                if (indicator?.isCanceled == true || sequenceOfFiles.isEmpty()) {
+                    lock.write {
+                        onFinish?.invoke()
+                        backgroundTasksQueue = null
+                    }
+                    return
+                }
+                runDependenciesUpdate(sequenceOfFiles.poll())
+            }
+        }
     }
 }
 

@@ -66,4 +66,25 @@ class StringBuilderTest {
             assertEquals("content", sb.toString())
         }
     }
+
+    @Test fun clear() {
+        val sb = StringBuilder()
+        sb.append("test")
+        val s = sb.toString()
+        sb.clear()
+        assertTrue(sb.isEmpty())
+        assertEquals("test", s)
+    }
+
+    @Test fun get() {
+        val sb = StringBuilder()
+        sb.append("test")
+        assertEquals('t', sb[0])
+        assertEquals('e', sb[1])
+        assertEquals('s', sb[2])
+        assertEquals('t', sb[3])
+
+        assertFailsWith<IndexOutOfBoundsException> { assertEquals('t', sb[-1]) }
+        assertFailsWith<IndexOutOfBoundsException> { assertEquals('t', sb[4]) }
+    }
 }

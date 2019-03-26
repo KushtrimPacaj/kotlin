@@ -20,7 +20,6 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptorImpl
-import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.metadata.ProtoBuf.Annotation
 import org.jetbrains.kotlin.metadata.ProtoBuf.Annotation.Argument
 import org.jetbrains.kotlin.metadata.ProtoBuf.Annotation.Argument.Value
@@ -31,9 +30,11 @@ import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.constants.*
-import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.ErrorUtils
+import org.jetbrains.kotlin.types.KotlinType
+import org.jetbrains.kotlin.types.SimpleType
+import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
-import org.jetbrains.kotlin.types.typeUtil.replaceArgumentsWithStarProjections
 
 class AnnotationDeserializer(private val module: ModuleDescriptor, private val notFoundClasses: NotFoundClasses) {
     private val builtIns: KotlinBuiltIns
@@ -79,7 +80,7 @@ class AnnotationDeserializer(private val module: ModuleDescriptor, private val n
                 StringValue(nameResolver.getString(value.stringValue))
             }
             Type.CLASS -> {
-                resolveClassLiteralValue(nameResolver.getClassId(value.classId))
+                KClassValue(nameResolver.getClassId(value.classId), value.arrayDimensionCount)
             }
             Type.ENUM -> {
                 EnumValue(nameResolver.getClassId(value.classId), nameResolver.getName(value.enumValueId))
@@ -118,22 +119,15 @@ class AnnotationDeserializer(private val module: ModuleDescriptor, private val n
         return if (result.getType(module).isSubtypeOf(expectedType)) {
             result
         } else {
-            // This means that an annotation class has been changed incompatibly without recompiling clients
-            ErrorValue.create("Unexpected argument value")
+            // This usually means that an annotation class has been changed incompatibly without recompiling clients
+            ErrorValue.create(
+                "Unexpected argument value: type ${result.getType(module)} is not a subtype of $expectedType (value.type = ${value.type})"
+            )
         }
     }
 
     private inline fun <T, R> T.letIf(predicate: Boolean, f: (T) -> R, g: (T) -> R): R =
         if (predicate) f(this) else g(this)
-
-    private fun resolveClassLiteralValue(classId: ClassId): ConstantValue<*> {
-        // If value refers to a class named test.Foo.Bar where both Foo and Bar have generic type parameters,
-        // we're constructing a type `KClass<test.Foo<*>.Bar<*>>` below
-        val starProjectedType = resolveClass(classId).defaultType.replaceArgumentsWithStarProjections()
-        val kClass = resolveClass(ClassId.topLevel(KotlinBuiltIns.FQ_NAMES.kClass.toSafe()))
-        val type = KotlinTypeFactory.simpleNotNullType(Annotations.EMPTY, kClass, listOf(TypeProjectionImpl(starProjectedType)))
-        return KClassValue(type)
-    }
 
     private fun resolveArrayElementType(value: Value, nameResolver: NameResolver): SimpleType =
         with(builtIns) {

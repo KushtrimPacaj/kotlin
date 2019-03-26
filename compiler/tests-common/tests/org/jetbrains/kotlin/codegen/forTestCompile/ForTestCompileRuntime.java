@@ -19,24 +19,10 @@ import java.util.List;
 public class ForTestCompileRuntime {
     private static volatile SoftReference<ClassLoader> reflectJarClassLoader = new SoftReference<>(null);
     private static volatile SoftReference<ClassLoader> runtimeJarClassLoader = new SoftReference<>(null);
-    private static volatile SoftReference<ClassLoader> coroutinesJarClassLoader = new SoftReference<>(null);
-    private static volatile SoftReference<ClassLoader> unsignedTypesJarClassLoader = new SoftReference<>(null);
-    private static volatile SoftReference<ClassLoader> unsignedTypesAndReflectJarClassLoader = new SoftReference<>(null);
-    private static volatile SoftReference<ClassLoader> coroutinesAndReflectJarClassLoader = new SoftReference<>(null);
 
     @NotNull
     public static File runtimeJarForTests() {
         return assertExists(new File("dist/kotlinc/lib/kotlin-stdlib.jar"));
-    }
-
-    @NotNull
-    public static File coroutinesJarForTests() {
-        return assertExists(new File("dist/kotlin-stdlib-coroutines.jar"));
-    }
-
-    @NotNull
-    public static File unsignedTypesJarForTests() {
-        return assertExists(new File("dist/kotlin-stdlib-unsigned.jar"));
     }
 
     @NotNull
@@ -75,13 +61,28 @@ public class ForTestCompileRuntime {
     }
 
     @NotNull
+    public static File stdlibMavenSourcesJarForTests() {
+        return assertExists(new File("dist/maven/kotlin-stdlib-sources.jar"));
+    }
+
+    @NotNull
     public static File stdlibCommonForTests() {
         return assertExists(new File("dist/common/kotlin-stdlib-common.jar"));
     }
 
     @NotNull
+    public static File stdlibCommonSourcesForTests() {
+        return assertExists(new File("dist/common/kotlin-stdlib-common-sources.jar"));
+    }
+
+    @NotNull
     public static File stdlibJsForTests() {
         return assertExists(new File("dist/kotlinc/lib/kotlin-stdlib-js.jar"));
+    }
+
+    @NotNull
+    public static File jetbrainsAnnotationsForTests() {
+        return assertExists(new File("dist/kotlinc/lib/annotations-13.0.jar"));
     }
 
     @NotNull
@@ -97,7 +98,7 @@ public class ForTestCompileRuntime {
     @NotNull
     private static File assertExists(@NotNull File file) {
         if (!file.exists()) {
-            throw new IllegalStateException(file + " does not exist. Run 'ant dist'");
+            throw new IllegalStateException(file + " does not exist. Run 'gradlew dist'");
         }
         return file;
     }
@@ -106,55 +107,8 @@ public class ForTestCompileRuntime {
     public static synchronized ClassLoader runtimeAndReflectJarClassLoader() {
         ClassLoader loader = reflectJarClassLoader.get();
         if (loader == null) {
-            loader = createClassLoader(runtimeJarForTests(), coroutinesJarForTests(), reflectJarForTests(), scriptRuntimeJarForTests(),
-                                       kotlinTestJarForTests());
+            loader = createClassLoader(runtimeJarForTests(), reflectJarForTests(), scriptRuntimeJarForTests(), kotlinTestJarForTests());
             reflectJarClassLoader = new SoftReference<>(loader);
-        }
-        return loader;
-    }
-
-    @NotNull
-    public static synchronized ClassLoader runtimeAndCoroutinesJarClassLoader() {
-        ClassLoader loader = coroutinesJarClassLoader.get();
-        if (loader == null) {
-            loader = createClassLoader(runtimeJarForTests(), coroutinesJarForTests(), scriptRuntimeJarForTests(), kotlinTestJarForTests());
-            coroutinesJarClassLoader = new SoftReference<>(loader);
-        }
-        return loader;
-    }
-
-    @NotNull
-    public static synchronized ClassLoader runtimeAndUnsignedTypesJarClassLoader() {
-        ClassLoader loader = unsignedTypesJarClassLoader.get();
-        if (loader == null) {
-            loader = createClassLoader(runtimeJarForTests(), unsignedTypesJarForTests(), scriptRuntimeJarForTests(), kotlinTestJarForTests());
-            unsignedTypesJarClassLoader = new SoftReference<>(loader);
-        }
-        return loader;
-    }
-
-    @NotNull
-    public static synchronized ClassLoader reflectAndUnsignedTypesJarClassLoader() {
-        ClassLoader loader = unsignedTypesAndReflectJarClassLoader.get();
-        if (loader == null) {
-            loader = createClassLoader(
-                    runtimeJarForTests(), reflectJarForTests(), unsignedTypesJarForTests(),
-                    scriptRuntimeJarForTests(), kotlinTestJarForTests()
-            );
-            unsignedTypesAndReflectJarClassLoader = new SoftReference<>(loader);
-        }
-        return loader;
-    }
-
-    @NotNull
-    public static synchronized ClassLoader reflectAndCoroutinesJarClassLoader() {
-        ClassLoader loader = coroutinesAndReflectJarClassLoader.get();
-        if (loader == null) {
-            loader = createClassLoader(
-                    runtimeJarForTests(), reflectJarForTests(), coroutinesJarForTests(),
-                    scriptRuntimeJarForTests(), kotlinTestJarForTests()
-            );
-            coroutinesAndReflectJarClassLoader = new SoftReference<>(loader);
         }
         return loader;
     }

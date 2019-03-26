@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -124,9 +124,24 @@ public class JavaAgainstKotlinBinariesCheckerTestGenerated extends AbstractJavaA
         runTest("idea/testData/kotlinAndJavaChecker/javaAgainstKotlin/KotlinAnnotations.kt");
     }
 
+    @TestMetadata("MyFunctionType.kt")
+    public void testMyFunctionType() throws Exception {
+        runTest("idea/testData/kotlinAndJavaChecker/javaAgainstKotlin/MyFunctionType.kt");
+    }
+
+    @TestMetadata("OverridesAmbiguity.kt")
+    public void testOverridesAmbiguity() throws Exception {
+        runTest("idea/testData/kotlinAndJavaChecker/javaAgainstKotlin/OverridesAmbiguity.kt");
+    }
+
     @TestMetadata("ReturnInnerClasses.kt")
     public void testReturnInnerClasses() throws Exception {
         runTest("idea/testData/kotlinAndJavaChecker/javaAgainstKotlin/ReturnInnerClasses.kt");
+    }
+
+    @TestMetadata("ThrowsOnGenericMethod.kt")
+    public void testThrowsOnGenericMethod() throws Exception {
+        runTest("idea/testData/kotlinAndJavaChecker/javaAgainstKotlin/ThrowsOnGenericMethod.kt");
     }
 
     @TestMetadata("TopLevelFunctionInDataFlowInspection.kt")

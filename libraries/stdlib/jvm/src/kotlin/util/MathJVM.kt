@@ -8,14 +8,12 @@
 
 package kotlin.math
 
-import kotlin.*
 import kotlin.internal.InlineOnly
 import kotlin.math.Constants.LN2
 import kotlin.math.Constants.taylor_2_bound
 import kotlin.math.Constants.taylor_n_bound
 import kotlin.math.Constants.upper_taylor_2_bound
 import kotlin.math.Constants.upper_taylor_n_bound
-
 
 import java.lang.Math as nativeMath
 
@@ -38,7 +36,7 @@ private object Constants {
 
 }
 
-// ================ Double Math ========================================
+// region ================ Double Math ========================================
 
 /** Computes the sine of the angle [x] given in radians.
  *
@@ -373,7 +371,7 @@ public actual inline fun ln1p(x: Double): Double = nativeMath.log1p(x)
 /**
  * Rounds the given value [x] to an integer towards positive infinity.
 
- * @return the smallest double value that is greater than the given value [x] and is a mathematical integer.
+ * @return the smallest double value that is greater than or equal to the given value [x] and is a mathematical integer.
  *
  * Special cases:
  *   - `ceil(x)` is `x` where `x` is `NaN` or `+Inf` or `-Inf` or already a mathematical integer.
@@ -385,7 +383,7 @@ public actual inline fun ceil(x: Double): Double = nativeMath.ceil(x)
 /**
  * Rounds the given value [x] to an integer towards negative infinity.
 
- * @return the largest double value that is smaller than the given value [x] and is a mathematical integer.
+ * @return the largest double value that is smaller than or equal to the given value [x] and is a mathematical integer.
  *
  * Special cases:
  *   - `floor(x)` is `x` where `x` is `NaN` or `+Inf` or `-Inf` or already a mathematical integer.
@@ -621,8 +619,11 @@ public actual fun Double.roundToInt(): Int = when {
 public actual fun Double.roundToLong(): Long =
     if (isNaN()) throw IllegalArgumentException("Cannot round NaN value.") else nativeMath.round(this)
 
+// endregion
 
-// ================ Float Math ========================================
+
+
+// region ================ Float Math ========================================
 
 /** Computes the sine of the angle [x] given in radians.
  *
@@ -900,7 +901,7 @@ public actual inline fun ln1p(x: Float): Float = nativeMath.log1p(x.toDouble()).
 /**
  * Rounds the given value [x] to an integer towards positive infinity.
 
- * @return the smallest Float value that is greater than the given value [x] and is a mathematical integer.
+ * @return the smallest Float value that is greater than or equal to the given value [x] and is a mathematical integer.
  *
  * Special cases:
  *   - `ceil(x)` is `x` where `x` is `NaN` or `+Inf` or `-Inf` or already a mathematical integer.
@@ -912,7 +913,7 @@ public actual inline fun ceil(x: Float): Float = nativeMath.ceil(x.toDouble()).t
 /**
  * Rounds the given value [x] to an integer towards negative infinity.
 
- * @return the largest Float value that is smaller than the given value [x] and is a mathematical integer.
+ * @return the largest Float value that is smaller than or equal to the given value [x] and is a mathematical integer.
  *
  * Special cases:
  *   - `floor(x)` is `x` where `x` is `NaN` or `+Inf` or `-Inf` or already a mathematical integer.
@@ -1144,8 +1145,10 @@ public actual fun Float.roundToInt(): Int =
 public actual fun Float.roundToLong(): Long = toDouble().roundToLong()
 
 
+// endregion
 
-// ================== Integer math functions =====================================
+// region ================ Integer Math ========================================
+
 
 /**
  * Returns the absolute value of the given value [n].
@@ -1251,3 +1254,5 @@ public actual val Long.sign: Int get() = when {
     else -> 0
 }
 
+
+// endregion

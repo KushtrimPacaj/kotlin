@@ -7,14 +7,13 @@ package org.jetbrains.kotlin.serialization.deserialization
 
 import org.jetbrains.kotlin.builtins.*
 import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationWithTarget
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.*
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameOrNull
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
-import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedAnnotationsWithPossibleTargets
+import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedAnnotations
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedTypeParameterDescriptor
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.typeUtil.builtIns
@@ -26,6 +25,7 @@ class TypeDeserializer(
     private val parent: TypeDeserializer?,
     typeParameterProtos: List<ProtoBuf.TypeParameter>,
     private val debugName: String,
+    private val containerPresentableName: String,
     var experimentalSuspendFunctionTypeEncountered: Boolean = false
 ) {
     private val classDescriptors: (Int) -> ClassDescriptor? = c.storageManager.createMemoizedFunctionWithNullableValues { fqNameIndex ->
@@ -52,18 +52,18 @@ class TypeDeserializer(
         get() = typeParameterDescriptors.values.toList()
 
     // TODO: don't load identical types from TypeTable more than once
-    fun type(proto: ProtoBuf.Type, additionalAnnotations: Annotations = Annotations.EMPTY): KotlinType {
+    fun type(proto: ProtoBuf.Type): KotlinType {
         if (proto.hasFlexibleTypeCapabilitiesId()) {
             val id = c.nameResolver.getString(proto.flexibleTypeCapabilitiesId)
-            val lowerBound = simpleType(proto, additionalAnnotations)
-            val upperBound = simpleType(proto.flexibleUpperBound(c.typeTable)!!, additionalAnnotations)
+            val lowerBound = simpleType(proto)
+            val upperBound = simpleType(proto.flexibleUpperBound(c.typeTable)!!)
             return c.components.flexibleTypeDeserializer.create(proto, id, lowerBound, upperBound)
         }
 
-        return simpleType(proto, additionalAnnotations)
+        return simpleType(proto)
     }
 
-    fun simpleType(proto: ProtoBuf.Type, additionalAnnotations: Annotations = Annotations.EMPTY): SimpleType {
+    fun simpleType(proto: ProtoBuf.Type): SimpleType {
         val localClassifierType = when {
             proto.hasClassName() -> computeLocalClassifierReplacementType(proto.className)
             proto.hasTypeAliasName() -> computeLocalClassifierReplacementType(proto.typeAliasName)
@@ -77,11 +77,8 @@ class TypeDeserializer(
             return ErrorUtils.createErrorTypeWithCustomConstructor(constructor.toString(), constructor)
         }
 
-        val annotations = DeserializedAnnotationsWithPossibleTargets(c.storageManager) {
+        val annotations = DeserializedAnnotations(c.storageManager) {
             c.components.annotationAndConstantLoader.loadTypeAnnotations(proto, c.nameResolver)
-                .map { AnnotationWithTarget(it, null) }
-                .plus(additionalAnnotations.getAllAnnotations())
-                .toList()
         }
 
         fun ProtoBuf.Type.collectAllArguments(): List<ProtoBuf.Type.Argument> =
@@ -98,7 +95,7 @@ class TypeDeserializer(
         }
 
         val abbreviatedTypeProto = proto.abbreviatedType(c.typeTable) ?: return simpleType
-        return simpleType.withAbbreviation(simpleType(abbreviatedTypeProto, additionalAnnotations))
+        return simpleType.withAbbreviation(simpleType(abbreviatedTypeProto))
     }
 
     private fun typeConstructor(proto: ProtoBuf.Type): TypeConstructor {
@@ -116,7 +113,9 @@ class TypeDeserializer(
             proto.hasClassName() -> (classDescriptors(proto.className) ?: notFoundClass(proto.className)).typeConstructor
             proto.hasTypeParameter() ->
                 typeParameterTypeConstructor(proto.typeParameter)
-                    ?: ErrorUtils.createErrorTypeConstructor("Unknown type parameter ${proto.typeParameter}")
+                    ?: ErrorUtils.createErrorTypeConstructor(
+                        "Unknown type parameter ${proto.typeParameter}. Please try recompiling module containing \"$containerPresentableName\""
+                    )
             proto.hasTypeParameterName() -> {
                 val container = c.containingDeclaration
                 val name = c.nameResolver.getString(proto.typeParameterName)

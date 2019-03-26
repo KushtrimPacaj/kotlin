@@ -9,8 +9,9 @@ plugins {
     id("jps-compatible")
 }
 
-
-jvmTarget = "1.6"
+repositories {
+    maven("https://jetbrains.bintray.com/intellij-third-party-dependencies")
+}
 
 val jflexPath by configurations.creating
 
@@ -22,7 +23,7 @@ dependencies {
     compile(project(":compiler:util"))
     compile(project(":kotlin-script-runtime"))
 
-    compileOnly(intellijCoreDep()) { includeJars("intellij-core", "annotations") }
+    compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
     compileOnly(intellijDep()) { includeJars("guava", "trove4j", rootProject = rootProject) }
 
     jflexPath(commonDep("org.jetbrains.intellij.deps.jflex", "jflex"))

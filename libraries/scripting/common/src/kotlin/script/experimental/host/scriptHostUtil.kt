@@ -6,19 +6,15 @@
 package kotlin.script.experimental.host
 
 import java.io.File
+import java.io.IOError
+import java.io.IOException
 import java.net.URL
 import kotlin.script.experimental.api.*
 
-fun ScriptSource.getScriptText(): String = when {
-    text != null -> text!!
-    location != null ->
-        location!!.openStream().bufferedReader().readText()
-    else -> throw RuntimeException("unable to get text from null script")
-}
-
-fun getMergedScriptText(script: ScriptSource, configuration: ScriptCompileConfiguration): String {
-    val originalScriptText = script.getScriptText()
-    val sourceFragments = configuration.getOrNull(ScriptCompileConfigurationProperties.sourceFragments)
+// helper function
+fun getMergedScriptText(script: SourceCode, configuration: ScriptCompilationConfiguration?): String {
+    val originalScriptText = script.text
+    val sourceFragments = configuration?.get(ScriptCompilationConfiguration.sourceFragments)
     return if (sourceFragments == null || sourceFragments.isEmpty()) {
         originalScriptText
     } else {
@@ -45,16 +41,64 @@ fun getMergedScriptText(script: ScriptSource, configuration: ScriptCompileConfig
     }
 }
 
-open class FileScriptSource(val file: File) : ScriptSource {
-    override val location: URL? get() = file.toURI().toURL()
-    override val text: String? get() = null
+/**
+ * The implementation of the SourceCode for a script located in a file
+ */
+open class FileScriptSource(val file: File, private val preloadedText: String? = null) : ExternalSourceCode {
+    override val externalLocation: URL get() = file.toURI().toURL()
+    override val text: String by lazy { preloadedText ?: file.readText() }
+    override val name: String? get() = file.name
+    override val locationId: String? get() = file.path
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other as? FileScriptSource)?.let { file.absolutePath == it.file.absolutePath && textSafe == it.textSafe } == true
+
+    override fun hashCode(): Int = file.absolutePath.hashCode() + textSafe.hashCode() * 23
 }
 
-fun File.toScriptSource(): ScriptSource = FileScriptSource(this)
+/**
+ * The implementation of the SourceCode for a script location pointed by the URL
+ */
+open class UrlScriptSource(override val externalLocation: URL) : ExternalSourceCode {
+    override val text: String by lazy { externalLocation.readText() }
+    override val name: String? get() = externalLocation.file
+    override val locationId: String? get() = externalLocation.toString()
 
-open class StringScriptSource(val source: String) : ScriptSource {
-    override val location: URL? get() = null
-    override val text: String? get() = source
+    override fun equals(other: Any?): Boolean =
+        this === other || (other as? UrlScriptSource)?.let { externalLocation == it.externalLocation && textSafe == it.textSafe } == true
+
+    override fun hashCode(): Int = externalLocation.hashCode() + textSafe.hashCode() * 17
 }
 
-fun String.toScriptSource(): ScriptSource = StringScriptSource(this)
+/**
+ * Converts the file into the SourceCode
+ */
+fun File.toScriptSource(): SourceCode = FileScriptSource(this)
+
+/**
+ * The implementation of the ScriptSource for a script in a String
+ */
+open class StringScriptSource(val source: String, override val name: String? = null) : SourceCode {
+
+    override val text: String get() = source
+
+    override val locationId: String? = null
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other as? StringScriptSource)?.let { text == it.text && name == it.name && locationId == it.locationId } == true
+
+    override fun hashCode(): Int = text.hashCode() + name.hashCode() * 17 + locationId.hashCode() * 23
+}
+
+/**
+ * Converts the String into the SourceCode
+ */
+fun String.toScriptSource(name: String? = null): SourceCode = StringScriptSource(this, name)
+
+private val ExternalSourceCode.textSafe: String?
+    get() =
+        try {
+            text
+        } catch (e: Throwable) {
+            null
+        }

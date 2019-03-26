@@ -11,7 +11,8 @@ dependencies {
     compileOnly(project(":idea:idea-jvm"))
 
     compile(intellijDep())
-    
+
+    runtimeOnly(intellijRuntimeAnnotations())
     runtimeOnly(files(toolsJar()))
 }
 

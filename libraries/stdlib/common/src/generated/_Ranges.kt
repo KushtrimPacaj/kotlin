@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -13,9 +13,115 @@ package kotlin.ranges
 // See: https://github.com/JetBrains/kotlin/tree/master/libraries/stdlib
 //
 
-import kotlin.*
-import kotlin.text.*
-import kotlin.comparisons.*
+import kotlin.random.*
+
+/**
+ * Returns a random element from this range.
+ * 
+ * @throws IllegalArgumentException if this range is empty.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline fun IntRange.random(): Int {
+    return random(Random)
+}
+
+/**
+ * Returns a random element from this range.
+ * 
+ * @throws IllegalArgumentException if this range is empty.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline fun LongRange.random(): Long {
+    return random(Random)
+}
+
+/**
+ * Returns a random element from this range.
+ * 
+ * @throws IllegalArgumentException if this range is empty.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline fun CharRange.random(): Char {
+    return random(Random)
+}
+
+/**
+ * Returns a random element from this range using the specified source of randomness.
+ * 
+ * @throws IllegalArgumentException if this range is empty.
+ */
+@SinceKotlin("1.3")
+public fun IntRange.random(random: Random): Int {
+    try {
+        return random.nextInt(this)
+    } catch(e: IllegalArgumentException) {
+        throw NoSuchElementException(e.message)
+    }
+}
+
+/**
+ * Returns a random element from this range using the specified source of randomness.
+ * 
+ * @throws IllegalArgumentException if this range is empty.
+ */
+@SinceKotlin("1.3")
+public fun LongRange.random(random: Random): Long {
+    try {
+        return random.nextLong(this)
+    } catch(e: IllegalArgumentException) {
+        throw NoSuchElementException(e.message)
+    }
+}
+
+/**
+ * Returns a random element from this range using the specified source of randomness.
+ * 
+ * @throws IllegalArgumentException if this range is empty.
+ */
+@SinceKotlin("1.3")
+public fun CharRange.random(random: Random): Char {
+    try {
+        return random.nextInt(first.toInt(), last.toInt() + 1).toChar()
+    } catch(e: IllegalArgumentException) {
+        throw NoSuchElementException(e.message)
+    }
+}
+
+/**
+ * Returns `true` if this range contains the specified [element].
+ * 
+ * Always returns `false` if the [element] is `null`.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline operator fun IntRange.contains(element: Int?): Boolean {
+    return element != null && contains(element)
+}
+
+/**
+ * Returns `true` if this range contains the specified [element].
+ * 
+ * Always returns `false` if the [element] is `null`.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline operator fun LongRange.contains(element: Long?): Boolean {
+    return element != null && contains(element)
+}
+
+/**
+ * Returns `true` if this range contains the specified [element].
+ * 
+ * Always returns `false` if the [element] is `null`.
+ */
+@SinceKotlin("1.3")
+@kotlin.internal.InlineOnly
+public inline operator fun CharRange.contains(element: Char?): Boolean {
+    return element != null && contains(element)
+}
 
 /**
  * Checks if the specified [value] belongs to this range.
@@ -44,6 +150,7 @@ public operator fun ClosedRange<Short>.contains(value: Byte): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("doubleRangeContains")
 public operator fun ClosedRange<Double>.contains(value: Byte): Boolean {
     return contains(value.toDouble())
@@ -52,6 +159,7 @@ public operator fun ClosedRange<Double>.contains(value: Byte): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("floatRangeContains")
 public operator fun ClosedRange<Float>.contains(value: Byte): Boolean {
     return contains(value.toFloat())
@@ -60,6 +168,7 @@ public operator fun ClosedRange<Float>.contains(value: Byte): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("intRangeContains")
 public operator fun ClosedRange<Int>.contains(value: Double): Boolean {
     return value.toIntExactOrNull().let { if (it != null) contains(it) else false }
@@ -68,6 +177,7 @@ public operator fun ClosedRange<Int>.contains(value: Double): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("longRangeContains")
 public operator fun ClosedRange<Long>.contains(value: Double): Boolean {
     return value.toLongExactOrNull().let { if (it != null) contains(it) else false }
@@ -76,6 +186,7 @@ public operator fun ClosedRange<Long>.contains(value: Double): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("byteRangeContains")
 public operator fun ClosedRange<Byte>.contains(value: Double): Boolean {
     return value.toByteExactOrNull().let { if (it != null) contains(it) else false }
@@ -84,6 +195,7 @@ public operator fun ClosedRange<Byte>.contains(value: Double): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("shortRangeContains")
 public operator fun ClosedRange<Short>.contains(value: Double): Boolean {
     return value.toShortExactOrNull().let { if (it != null) contains(it) else false }
@@ -100,6 +212,7 @@ public operator fun ClosedRange<Float>.contains(value: Double): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("intRangeContains")
 public operator fun ClosedRange<Int>.contains(value: Float): Boolean {
     return value.toIntExactOrNull().let { if (it != null) contains(it) else false }
@@ -108,6 +221,7 @@ public operator fun ClosedRange<Int>.contains(value: Float): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("longRangeContains")
 public operator fun ClosedRange<Long>.contains(value: Float): Boolean {
     return value.toLongExactOrNull().let { if (it != null) contains(it) else false }
@@ -116,6 +230,7 @@ public operator fun ClosedRange<Long>.contains(value: Float): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("byteRangeContains")
 public operator fun ClosedRange<Byte>.contains(value: Float): Boolean {
     return value.toByteExactOrNull().let { if (it != null) contains(it) else false }
@@ -124,6 +239,7 @@ public operator fun ClosedRange<Byte>.contains(value: Float): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("shortRangeContains")
 public operator fun ClosedRange<Short>.contains(value: Float): Boolean {
     return value.toShortExactOrNull().let { if (it != null) contains(it) else false }
@@ -164,6 +280,7 @@ public operator fun ClosedRange<Short>.contains(value: Int): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("doubleRangeContains")
 public operator fun ClosedRange<Double>.contains(value: Int): Boolean {
     return contains(value.toDouble())
@@ -172,6 +289,7 @@ public operator fun ClosedRange<Double>.contains(value: Int): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("floatRangeContains")
 public operator fun ClosedRange<Float>.contains(value: Int): Boolean {
     return contains(value.toFloat())
@@ -204,6 +322,7 @@ public operator fun ClosedRange<Short>.contains(value: Long): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("doubleRangeContains")
 public operator fun ClosedRange<Double>.contains(value: Long): Boolean {
     return contains(value.toDouble())
@@ -212,6 +331,7 @@ public operator fun ClosedRange<Double>.contains(value: Long): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("floatRangeContains")
 public operator fun ClosedRange<Float>.contains(value: Long): Boolean {
     return contains(value.toFloat())
@@ -244,6 +364,7 @@ public operator fun ClosedRange<Byte>.contains(value: Short): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("doubleRangeContains")
 public operator fun ClosedRange<Double>.contains(value: Short): Boolean {
     return contains(value.toDouble())
@@ -252,6 +373,7 @@ public operator fun ClosedRange<Double>.contains(value: Short): Boolean {
 /**
  * Checks if the specified [value] belongs to this range.
  */
+@Deprecated("This `contains` operation mixing integer and floating point arguments has ambiguous semantics and is going to be removed.")
 @kotlin.jvm.JvmName("floatRangeContains")
 public operator fun ClosedRange<Float>.contains(value: Short): Boolean {
     return contains(value.toFloat())
@@ -531,7 +653,7 @@ internal fun Float.toShortExactOrNull(): Short? {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Int.until(to: Byte): IntRange {
     return this .. (to.toInt() - 1).toInt()
@@ -540,7 +662,7 @@ public infix fun Int.until(to: Byte): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Long.until(to: Byte): LongRange {
     return this .. (to.toLong() - 1).toLong()
@@ -549,7 +671,7 @@ public infix fun Long.until(to: Byte): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Byte.until(to: Byte): IntRange {
     return this.toInt() .. (to.toInt() - 1).toInt()
@@ -558,7 +680,7 @@ public infix fun Byte.until(to: Byte): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Short.until(to: Byte): IntRange {
     return this.toInt() .. (to.toInt() - 1).toInt()
@@ -567,9 +689,7 @@ public infix fun Short.until(to: Byte): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to `'\u0000'` the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Char.until(to: Char): CharRange {
     if (to <= '\u0000') return CharRange.EMPTY
@@ -579,9 +699,7 @@ public infix fun Char.until(to: Char): CharRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Int.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Int.until(to: Int): IntRange {
     if (to <= Int.MIN_VALUE) return IntRange.EMPTY
@@ -591,7 +709,7 @@ public infix fun Int.until(to: Int): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Long.until(to: Int): LongRange {
     return this .. (to.toLong() - 1).toLong()
@@ -600,9 +718,7 @@ public infix fun Long.until(to: Int): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Int.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Byte.until(to: Int): IntRange {
     if (to <= Int.MIN_VALUE) return IntRange.EMPTY
@@ -612,9 +728,7 @@ public infix fun Byte.until(to: Int): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Int.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Short.until(to: Int): IntRange {
     if (to <= Int.MIN_VALUE) return IntRange.EMPTY
@@ -624,9 +738,7 @@ public infix fun Short.until(to: Int): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Long.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Int.until(to: Long): LongRange {
     if (to <= Long.MIN_VALUE) return LongRange.EMPTY
@@ -636,9 +748,7 @@ public infix fun Int.until(to: Long): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Long.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Long.until(to: Long): LongRange {
     if (to <= Long.MIN_VALUE) return LongRange.EMPTY
@@ -648,9 +758,7 @@ public infix fun Long.until(to: Long): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Long.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Byte.until(to: Long): LongRange {
     if (to <= Long.MIN_VALUE) return LongRange.EMPTY
@@ -660,9 +768,7 @@ public infix fun Byte.until(to: Long): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
- * 
- * If the [to] value is less than or equal to [Long.MIN_VALUE] the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Short.until(to: Long): LongRange {
     if (to <= Long.MIN_VALUE) return LongRange.EMPTY
@@ -672,7 +778,7 @@ public infix fun Short.until(to: Long): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Int.until(to: Short): IntRange {
     return this .. (to.toInt() - 1).toInt()
@@ -681,7 +787,7 @@ public infix fun Int.until(to: Short): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Long.until(to: Short): LongRange {
     return this .. (to.toLong() - 1).toLong()
@@ -690,7 +796,7 @@ public infix fun Long.until(to: Short): LongRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Byte.until(to: Short): IntRange {
     return this.toInt() .. (to.toInt() - 1).toInt()
@@ -699,7 +805,7 @@ public infix fun Byte.until(to: Short): IntRange {
 /**
  * Returns a range from this value up to but excluding the specified [to] value.
  * 
- * If the [to] value is less than or equal to `this` value the returned range is empty.
+ * If the [to] value is less than or equal to `this` value, then the returned range is empty.
  */
 public infix fun Short.until(to: Short): IntRange {
     return this.toInt() .. (to.toInt() - 1).toInt()

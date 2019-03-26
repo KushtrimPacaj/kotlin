@@ -1,5 +1,5 @@
-// IGNORE_BACKEND: JS_IR
-// EXPECTED_REACHABLE_NODES: 1177
+// DONT_TARGET_EXACT_BACKEND: JS_IR
+// EXPECTED_REACHABLE_NODES: 1331
 package foo
 
 class undefined
@@ -10,6 +10,7 @@ class Outer {
     inner class Inner
 }
 
+@Suppress("DEPRECATION_ERROR")
 fun testWithInstance() {
     assertEquals("A", A().jsClass.simpleName)
     assertEquals("B", B().jsClass.simpleName)
@@ -23,6 +24,7 @@ fun testWithInstance() {
     assertEquals("Inner", Outer().Inner().jsClass.simpleName)
 }
 
+@Suppress("DEPRECATION_ERROR")
 fun testWithClassReference() {
     assertEquals("A", jsClass<A>().simpleName)
     assertEquals("B", jsClass<B>().simpleName)

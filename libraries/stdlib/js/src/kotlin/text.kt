@@ -24,7 +24,8 @@ public actual class StringBuilder(content: String = "") : Appendable, CharSequen
     actual override val length: Int
         get() = string.asDynamic().length
 
-    actual override fun get(index: Int): Char = string[index]
+    actual override fun get(index: Int): Char =
+        string.getOrElse(index) { throw IndexOutOfBoundsException("index: $index, length: $length}") }
 
     actual override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = string.substring(startIndex, endIndex)
 
@@ -53,5 +54,27 @@ public actual class StringBuilder(content: String = "") : Appendable, CharSequen
         return this
     }
 
+    /**
+     * Clears the content of this string builder making it empty.
+     *
+     * @sample samples.text.Strings.clearStringBuilder
+     */
+    @SinceKotlin("1.3")
+    public fun clear(): StringBuilder {
+        string = ""
+        return this
+    }
+
     override fun toString(): String = string
 }
+
+
+
+/**
+ * Clears the content of this string builder making it empty.
+ *
+ * @sample samples.text.Strings.clearStringBuilder
+ */
+@SinceKotlin("1.3")
+@Suppress("EXTENSION_SHADOWED_BY_MEMBER", "NOTHING_TO_INLINE")
+public actual inline fun StringBuilder.clear(): StringBuilder = this.clear()

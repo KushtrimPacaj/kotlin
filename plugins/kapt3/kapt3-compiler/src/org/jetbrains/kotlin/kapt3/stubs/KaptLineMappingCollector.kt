@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.kapt3.stubs
 
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.sun.tools.javac.tree.JCTree
@@ -47,8 +48,8 @@ class KaptLineMappingCollector(private val kaptContext: KaptContextForStubGenera
         register(field, clazz.name + "#" + field.name)
     }
 
-    fun registerSignature(decl: JCTree.JCMethodDecl, method: MethodNode) {
-        signatureInfo[decl.getJavacSignature()] = method.name + method.desc
+    fun registerSignature(declaration: JCTree.JCMethodDecl, method: MethodNode) {
+        signatureInfo[declaration.getJavacSignature()] = method.name + method.desc
     }
 
     private fun register(asmNode: Any, fqName: String) {
@@ -57,6 +58,11 @@ class KaptLineMappingCollector(private val kaptContext: KaptContextForStubGenera
     }
 
     private fun register(fqName: String, psiElement: PsiElement) {
+        val containingVirtualFile = psiElement.containingFile.virtualFile
+        if (containingVirtualFile == null || FileDocumentManager.getInstance().getDocument(containingVirtualFile) == null) {
+            return
+        }
+
         val textRange = psiElement.textRange ?: return
 
         val (path, isRelative) = getFilePathRelativePreferred(psiElement.containingFile)

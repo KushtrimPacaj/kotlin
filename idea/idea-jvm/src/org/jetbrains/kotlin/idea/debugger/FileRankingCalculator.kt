@@ -6,11 +6,10 @@
 package org.jetbrains.kotlin.idea.debugger
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.psi.PsiElement
 import com.sun.jdi.*
-import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.codegen.ClassBuilderMode
-import org.jetbrains.kotlin.codegen.state.IncompatibleClassTracker
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.diagnostics.DiagnosticUtils
@@ -27,10 +26,9 @@ import org.jetbrains.kotlin.psi.psiUtil.getParentOfTypes2
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfTypes3
 import org.jetbrains.kotlin.psi.psiUtil.isAncestor
 import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.descriptorUtil.varargParameterPosition
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
-import org.jetbrains.kotlin.types.KotlinType
-import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.utils.keysToMap
 import kotlin.jvm.internal.FunctionBase
 import org.jetbrains.org.objectweb.asm.Type as AsmType
@@ -39,28 +37,18 @@ object FileRankingCalculatorForIde : FileRankingCalculator() {
     override fun analyze(element: KtElement) = element.analyze(BodyResolveMode.PARTIAL)
 }
 
-abstract class FileRankingCalculator(
-    private val checkClassFqName: Boolean = true,
-    private val strictMode: Boolean = false
-) {
+abstract class FileRankingCalculator(private val checkClassFqName: Boolean = true) {
     abstract fun analyze(element: KtElement): BindingContext
 
     fun findMostAppropriateSource(files: Collection<KtFile>, location: Location): KtFile {
-        assert(files.isNotEmpty())
-
-        val fileWithRankings = files.keysToMap { fileRankingSafe(it, location) }
+        val fileWithRankings: Map<KtFile, Int> = rankFiles(files, location)
         val fileWithMaxScore = fileWithRankings.maxBy { it.value }!!
-
-        if (strictMode) {
-            require(fileWithMaxScore.value.value >= 0) { "Max score is negative" }
-
-            // Allow only one element with max ranking
-            require(fileWithRankings.count { it.value == fileWithMaxScore.value } == 1) {
-                "Score is the same for several files"
-            }
-        }
-
         return fileWithMaxScore.key
+    }
+
+    fun rankFiles(files: Collection<KtFile>, location: Location): Map<KtFile, Int> {
+        assert(files.isNotEmpty())
+        return files.keysToMap { fileRankingSafe(it, location).value }
     }
 
     private class Ranking(val value: Int) : Comparable<Ranking> {
@@ -118,6 +106,8 @@ abstract class FileRankingCalculator(
     }
 
     private fun rankingForClassName(fqName: String, descriptor: ClassDescriptor, bindingContext: BindingContext): Ranking {
+        if (DescriptorUtils.isLocal(descriptor)) return Ranking.ZERO
+
         val expectedFqName = makeTypeMapper(bindingContext).mapType(descriptor).className
         return when {
             checkClassFqName -> if (expectedFqName == fqName) MAJOR else LOW
@@ -140,8 +130,7 @@ abstract class FileRankingCalculator(
             method.isFinal && descriptor.modality == Modality.FINAL,
             method.isVarArgs && descriptor.varargParameterPosition() >= 0,
             rankingForVisibility(descriptor, method),
-            rankingForType(descriptor.returnType, method.safeReturnType(), typeMapper),
-            rankingForValueParameters(descriptor.valueParameters, method.safeArguments(), typeMapper)
+            descriptor.valueParameters.size == (method.safeArguments()?.size ?: 0)
         )
     }
 
@@ -162,18 +151,7 @@ abstract class FileRankingCalculator(
         }
 
         val actualPropertyName = getPropertyName(methodName, accessor.isSetter)
-        if (expectedPropertyName != actualPropertyName)
-            return -NORMAL
-
-        val bindingContext = analyze(accessor.property)
-        val descriptor = bindingContext[BindingContext.PROPERTY_ACCESSOR, accessor] ?: return ZERO
-
-        val jdiPropertyType = when {
-            accessor.isGetter -> method.safeReturnType()
-            else -> method.safeArguments()?.map { it.safeType() }?.singleOrNull()
-        }
-
-        return rankingForType(descriptor.returnType, jdiPropertyType, makeTypeMapper(bindingContext))
+        return if (expectedPropertyName == actualPropertyName) NORMAL else -NORMAL
     }
 
     private fun getPropertyName(accessorMethodName: String, isSetter: Boolean): String {
@@ -200,70 +178,11 @@ abstract class FileRankingCalculator(
         return if (methodName.drop(3) == propertyName.capitalize()) MAJOR else -NORMAL
     }
 
-    private fun rankingForValueParameters(
-        ktParameters: List<ValueParameterDescriptor>,
-        jdiParameters: List<LocalVariable>?,
-        typeMapper: KotlinTypeMapper
-    ): Ranking {
-        if (jdiParameters == null)
-            return ZERO
-
-        if (ktParameters.size != jdiParameters.size)
-            return -NORMAL
-
-        return ktParameters.zip(jdiParameters).fold(ZERO) { sum, (ktParameter, jdiParameter) ->
-            sum + rankingForValueParameter(ktParameter, jdiParameter, typeMapper)
-        }
-    }
-
-    private fun rankingForValueParameter(
-        ktParameter: ValueParameterDescriptor,
-        jdiParameter: LocalVariable,
-        typeMapper: KotlinTypeMapper
-    ): Ranking {
-        return collect(
-            ktParameter.name.asString() == jdiParameter.name(),
-            rankingForType(ktParameter.type, jdiParameter.safeType(), typeMapper)
-        )
-    }
-
     private fun rankingForVisibility(descriptor: DeclarationDescriptorWithVisibility, accessible: Accessible): Ranking {
         return collect(
             accessible.isPublic && descriptor.visibility == Visibilities.PUBLIC,
             accessible.isProtected && descriptor.visibility == Visibilities.PROTECTED,
             accessible.isPrivate && descriptor.visibility == Visibilities.PRIVATE
-        )
-    }
-
-    private fun rankingForType(ktType: KotlinType?, jdiType: Type?, typeMapper: KotlinTypeMapper): Ranking {
-        if (jdiType == null)
-            return ZERO
-
-        if (ktType == null)
-            return Ranking.minor(jdiType is VoidType)
-
-        val asmType = typeMapper.mapType(ktType)
-        return Ranking.minor(
-            when (jdiType) {
-                is VoidType -> asmType == AsmType.VOID_TYPE
-                is LongType -> asmType == AsmType.LONG_TYPE
-                is DoubleType -> asmType == AsmType.DOUBLE_TYPE
-                is CharType -> asmType == AsmType.CHAR_TYPE
-                is FloatType -> asmType == AsmType.FLOAT_TYPE
-                is ByteType -> asmType == AsmType.BYTE_TYPE
-                is IntegerType -> asmType == AsmType.INT_TYPE
-                is BooleanType -> asmType == AsmType.BOOLEAN_TYPE
-                is ShortType -> asmType == AsmType.SHORT_TYPE
-                is ArrayType -> {
-                    asmType.sort == AsmType.ARRAY && KotlinBuiltIns.isArrayOrPrimitiveArray(ktType) && run {
-                        val ktElementType = ktType.builtIns.getArrayElementType(ktType)
-                        val jdiElementType = jdiType.componentType()
-                        rankingForType(ktElementType, jdiElementType, typeMapper) > ZERO
-                    }
-                }
-                is ReferenceType -> asmType.className == jdiType.name()
-                else -> false
-            }
         )
     }
 
@@ -276,6 +195,11 @@ abstract class FileRankingCalculator(
         } catch (e: AbsentInformationException) {
             ZERO
         } catch (e: InternalException) {
+            ZERO
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: RuntimeException) {
+            LOG.error("Exception during Kotlin sources ranking", e)
             ZERO
         }
     }
@@ -417,7 +341,12 @@ abstract class FileRankingCalculator(
     }
 
     private fun makeTypeMapper(bindingContext: BindingContext): KotlinTypeMapper {
-        return KotlinTypeMapper(bindingContext, ClassBuilderMode.LIGHT_CLASSES, IncompatibleClassTracker.DoNothing, "debugger", false)
+        return KotlinTypeMapper(
+            bindingContext,
+            ClassBuilderMode.LIGHT_CLASSES,
+            "debugger",
+            KotlinTypeMapper.LANGUAGE_VERSION_SETTINGS_DEFAULT // TODO use proper LanguageVersionSettings
+        )
     }
 
     companion object {

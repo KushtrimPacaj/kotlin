@@ -72,7 +72,7 @@ internal abstract class AbstractScopeTowerLevel(
                 )?.let { diagnostics.add(VisibilityError(it)) }
             }
         }
-        return CandidateWithBoundDispatchReceiverImpl(dispatchReceiver, descriptor, diagnostics)
+        return CandidateWithBoundDispatchReceiver(dispatchReceiver, descriptor, diagnostics)
     }
 
 }
@@ -142,11 +142,11 @@ internal class MemberScopeTowerLevel(
                 Variance.INVARIANT -> null
                 Variance.OUT_VARIANCE -> approximator.approximateToSuperType(
                     topLevelType.unwrap(),
-                    TypeApproximatorConfiguration.CapturedTypesApproximation
+                    TypeApproximatorConfiguration.CapturedAndIntegerLiteralsTypesApproximation
                 )
                 Variance.IN_VARIANCE -> approximator.approximateToSubType(
                     topLevelType.unwrap(),
-                    TypeApproximatorConfiguration.CapturedTypesApproximation
+                    TypeApproximatorConfiguration.CapturedAndIntegerLiteralsTypesApproximation
                 )
             } ?: topLevelType
         }

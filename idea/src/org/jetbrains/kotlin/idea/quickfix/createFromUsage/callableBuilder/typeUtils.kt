@@ -333,7 +333,7 @@ private fun TypePredicate.getRepresentativeTypes(): Set<KotlinType> {
         is AllSubtypes -> Collections.singleton(upperBound)
         is ForAllTypes -> {
             if (typeSets.isEmpty()) AllTypes.getRepresentativeTypes()
-            else typeSets.map { it.getRepresentativeTypes() }.reduce { a, b -> a.intersect(b) }
+            else typeSets.asSequence().map { it.getRepresentativeTypes() }.reduce { a, b -> a.intersect(b) }
         }
         is ForSomeType -> typeSets.flatMapTo(LinkedHashSet<KotlinType>()) { it.getRepresentativeTypes() }
         is AllTypes -> emptySet()
@@ -349,10 +349,9 @@ fun getDataFlowAwareTypes(
     if (originalType == null) return emptyList()
     val dataFlowInfo = bindingContext.getDataFlowInfoAfter(expression)
     val dataFlowValueFactory = expression.getResolutionFacade().frontendService<DataFlowValueFactory>()
+    val expressionType = bindingContext.getType(expression) ?: return listOf(originalType)
     val dataFlowValue = dataFlowValueFactory.createDataFlowValue(
-            expression,
-            bindingContext.getType(expression)!!,
-            bindingContext, expression.getResolutionFacade().moduleDescriptor
+        expression, expressionType, bindingContext, expression.getResolutionFacade().moduleDescriptor
     )
     return dataFlowInfo.getCollectedTypes(dataFlowValue, expression.languageVersionSettings).ifEmpty { listOf(originalType) }
 }

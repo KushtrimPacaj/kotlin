@@ -7,11 +7,17 @@ plugins {
     `java-base`
 }
 
-// Do not rename, used in JPS importer
+repositories {
+    maven("https://jetbrains.bintray.com/markdown")
+}
+
+// Do not rename, used in pill importer
 val projectsToShadow by extra(listOf(
         ":plugins:annotation-based-compiler-plugins-ide-support",
+        ":core:type-system",
         ":compiler:backend",
         ":compiler:backend-common",
+        ":compiler:backend.jvm",
         ":compiler:ir.backend.common",
         ":kotlin-build-common",
         ":compiler:cli-common",
@@ -22,16 +28,31 @@ val projectsToShadow by extra(listOf(
         ":core:descriptors",
         ":core:descriptors.jvm",
         ":core:deserialization",
-        ":eval4j",
+        ":idea:eval4j",
         ":idea:formatter",
         ":compiler:psi",
+        *if (project.findProperty("fir.enabled") == "true") {
+            arrayOf(
+                ":compiler:fir:cones",
+                ":compiler:fir:resolve",
+                ":compiler:fir:tree",
+                ":compiler:fir:java",
+                ":compiler:fir:psi2fir",
+                ":idea:fir-view"
+            )
+        } else {
+            emptyArray()
+        },
         ":compiler:frontend",
+        ":compiler:frontend.common",
         ":compiler:frontend.java",
         ":compiler:frontend.script",
         ":idea:ide-common",
         ":idea",
+        ":idea:idea-native",
         ":idea:idea-core",
         ":idea:idea-gradle",
+        ":idea:idea-gradle-native",
         //":idea-ultimate",
         ":compiler:ir.psi2ir",
         ":compiler:ir.tree",
@@ -39,6 +60,9 @@ val projectsToShadow by extra(listOf(
         ":js:js.frontend",
         ":js:js.parser",
         ":js:js.serializer",
+        ":js:js.translator",
+        ":kotlin-native:kotlin-native-utils",
+        ":kotlin-native:kotlin-native-library-reader",
         ":compiler:light-classes",
         ":compiler:plugin-api",
         ":kotlin-preloader",
@@ -47,17 +71,19 @@ val projectsToShadow by extra(listOf(
         ":compiler:util",
         ":core:util.runtime"))
 
-// Do not rename, used in JPS importer
+// Do not rename, used in pill importer
 val packedJars by configurations.creating
 
 val sideJars by configurations.creating
 
 dependencies {
     packedJars(protobufFull())
-    packedJars(project(":core:builtins", configuration = "builtins"))
-    sideJars(projectDist(":kotlin-script-runtime"))
-    sideJars(projectDist(":kotlin-stdlib"))
-    sideJars(projectDist(":kotlin-reflect"))
+    packedJars(project(":core:builtins"))
+    sideJars(project(":kotlin-script-runtime"))
+    sideJars(kotlinStdlib())
+    sideJars(kotlinStdlib("jdk7"))
+    sideJars(kotlinStdlib("jdk8"))
+    sideJars(project(":kotlin-reflect"))
     sideJars(project(":kotlin-compiler-client-embeddable"))
     sideJars(commonDep("io.javaslang", "javaslang"))
     sideJars(commonDep("javax.inject"))

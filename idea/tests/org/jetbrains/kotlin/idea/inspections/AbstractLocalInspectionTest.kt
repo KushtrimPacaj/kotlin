@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections
@@ -31,6 +20,7 @@ import junit.framework.TestCase
 import org.jetbrains.kotlin.idea.test.DirectiveBasedActionUtils
 import org.jetbrains.kotlin.idea.test.KotlinLightCodeInsightFixtureTestCase
 import org.jetbrains.kotlin.idea.test.configureCompilerOptions
+import org.jetbrains.kotlin.idea.test.rollbackCompilerOptions
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.test.InTextDirectivesUtils
@@ -90,35 +80,49 @@ abstract class AbstractLocalInspectionTest : KotlinLightCodeInsightFixtureTestCa
         val fileText = FileUtil.loadFile(mainFile, true)
         TestCase.assertTrue("\"<caret>\" is missing in file \"$mainFile\"", fileText.contains("<caret>"))
 
-        configureCompilerOptions(fileText, project, module)
+        val configured = configureCompilerOptions(fileText, project, module)
 
-        val minJavaVersion = InTextDirectivesUtils.findStringWithPrefixes(fileText, "// MIN_JAVA_VERSION: ")
-        if (minJavaVersion != null && !SystemInfo.isJavaVersionAtLeast(minJavaVersion)) return
+        try {
+            val minJavaVersion = InTextDirectivesUtils.findStringWithPrefixes(fileText, "// MIN_JAVA_VERSION: ")
+            if (minJavaVersion != null && !SystemInfo.isJavaVersionAtLeast(minJavaVersion)) return
 
-        if (file is KtFile && !InTextDirectivesUtils.isDirectiveDefined(fileText, "// SKIP_ERRORS_BEFORE")) {
-            DirectiveBasedActionUtils.checkForUnexpectedErrors(file as KtFile)
-        }
+            if (file is KtFile && !InTextDirectivesUtils.isDirectiveDefined(fileText, "// SKIP_ERRORS_BEFORE")) {
+                DirectiveBasedActionUtils.checkForUnexpectedErrors(file as KtFile)
+            }
 
-        var i = 1
-        val extraFileNames = mutableListOf<String>()
-        extraFileLoop@ while (true) {
-            for (extension in EXTENSIONS) {
-                val extraFile = File(mainFile.parent, FileUtil.getNameWithoutExtension(mainFile) + "." + i + extension)
-                if (extraFile.exists()) {
-                    extraFileNames += extraFile.name
-                    i++
-                    continue@extraFileLoop
+            var i = 1
+            val extraFileNames = mutableListOf<String>()
+            extraFileLoop@ while (true) {
+                for (extension in EXTENSIONS) {
+                    val extraFile = File(mainFile.parent, FileUtil.getNameWithoutExtension(mainFile) + "." + i + extension)
+                    if (extraFile.exists()) {
+                        extraFileNames += extraFile.name
+                        i++
+                        continue@extraFileLoop
+                    }
+                }
+                break
+            }
+            val parentFile = mainFile.parentFile
+            if (parentFile != null) {
+                for (file in parentFile.walkTopDown().maxDepth(1)) {
+                    if (file.name.endsWith(".lib.kt")) {
+                        extraFileNames += file.name
+                    }
                 }
             }
-            break
-        }
 
-        myFixture.configureByFiles(*(listOf(mainFile.name) + extraFileNames).toTypedArray()).first()
+            myFixture.configureByFiles(*(listOf(mainFile.name) + extraFileNames).toTypedArray()).first()
 
-        doTestFor(mainFile.name, inspection, fileText)
+            doTestFor(mainFile.name, inspection, fileText)
 
-        if (file is KtFile && !InTextDirectivesUtils.isDirectiveDefined(fileText, "// SKIP_ERRORS_AFTER")) {
-            DirectiveBasedActionUtils.checkForUnexpectedErrors(file as KtFile)
+            if (file is KtFile && !InTextDirectivesUtils.isDirectiveDefined(fileText, "// SKIP_ERRORS_AFTER")) {
+                DirectiveBasedActionUtils.checkForUnexpectedErrors(file as KtFile)
+            }
+        } finally {
+            if (configured) {
+                rollbackCompilerOptions(project, module)
+            }
         }
     }
 
@@ -146,7 +150,7 @@ abstract class AbstractLocalInspectionTest : KotlinLightCodeInsightFixtureTestCa
                 Pass.UPDATE_ALL,
                 Pass.UPDATE_FOLDING,
                 Pass.WOLF
-            ), false
+            ), (file as? KtFile)?.isScript() == true
         ).filter { it.description != null && caretOffset in it.startOffset..it.endOffset }
 
         Assert.assertTrue(
@@ -190,7 +194,12 @@ abstract class AbstractLocalInspectionTest : KotlinLightCodeInsightFixtureTestCa
 
         val allLocalFixActions = highlightInfos.flatMap { it.quickFixActionMarkers ?: emptyList() }.map { it.first.action }
 
-        val localFixActions = allLocalFixActions.filter { fix -> localFixTextString == null || fix.text == localFixTextString }
+        val localFixActions = if (localFixTextString == null || localFixTextString == "none") {
+            allLocalFixActions
+        } else {
+            allLocalFixActions.filter { fix -> fix.text == localFixTextString }
+        }
+
         val availableDescription = allLocalFixActions.joinToString { it.text }
 
         val fixDescription = localFixTextString?.let { "with specified text '$localFixTextString'" } ?: ""
@@ -201,6 +210,10 @@ abstract class AbstractLocalInspectionTest : KotlinLightCodeInsightFixtureTestCa
         )
 
         val localFixAction = localFixActions.singleOrNull { it !is EmptyIntentionAction }
+        if (localFixTextString == "none") {
+            Assert.assertTrue("Expected no fix action", localFixAction == null)
+            return false
+        }
         TestCase.assertTrue(
             "More than one fix action $fixDescription\n" +
                     "Available actions: $availableDescription",

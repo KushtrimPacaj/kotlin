@@ -17,18 +17,24 @@
 package org.jetbrains.kotlin.ir.declarations
 
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
+import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
+import org.jetbrains.kotlin.name.Name
 
 interface IrSymbolOwner : IrElement {
     val symbol: IrSymbol
 }
 
-interface IrDeclaration : IrStatement, IrAnnotationContainer {
+interface IrMetadataSourceOwner : IrElement {
+    val metadata: MetadataSource?
+}
+
+interface IrDeclaration : IrStatement, IrAnnotationContainer, IrMetadataSourceOwner {
     val descriptor: DeclarationDescriptor
-    val origin: IrDeclarationOrigin
+    var origin: IrDeclarationOrigin
 
     var parent: IrDeclarationParent
 
@@ -39,3 +45,16 @@ interface IrDeclaration : IrStatement, IrAnnotationContainer {
 interface IrSymbolDeclaration<out S : IrSymbol> : IrDeclaration, IrSymbolOwner {
     override val symbol: S
 }
+
+interface IrOverridableDeclaration<S : IrSymbol> : IrDeclaration {
+    val overriddenSymbols: MutableList<S>
+}
+
+interface IrDeclarationWithVisibility : IrDeclaration {
+    val visibility: Visibility
+}
+
+interface IrDeclarationWithName : IrDeclaration {
+    val name: Name
+}
+

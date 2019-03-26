@@ -6,8 +6,6 @@ plugins {
     id("jps-compatible")
 }
 
-jvmTarget = "1.6"
-
 dependencies {
     testRuntime(intellijDep())
 
@@ -30,19 +28,23 @@ dependencies {
     testCompile(projectTests(":compiler:tests-common"))
     testCompile(projectTests(":idea"))
     testCompile(projectTests(":idea:idea-android"))
-    testCompile(projectDist(":kotlin-test:kotlin-test-jvm"))
+    testCompile(project(":kotlin-test:kotlin-test-jvm"))
     testCompile(commonDep("junit:junit"))
-    testRuntime(projectDist(":kotlin-reflect"))
+    testCompile(project(":idea:idea-native")) { isTransitive = false }
+    testCompile(project(":idea:idea-gradle-native")) { isTransitive = false }
+    testRuntime(project(":kotlin-native:kotlin-native-library-reader")) { isTransitive = false }
+    testRuntime(project(":kotlin-native:kotlin-native-utils")) { isTransitive = false }
+    testRuntime(project(":kotlin-reflect"))
     testCompile(intellijPluginDep("android"))
     testCompile(intellijPluginDep("Groovy"))
     testCompile(intellijDep())
 
     testRuntime(project(":idea:idea-jvm"))
-    testRuntime(project(":plugins:android-extensions-jps"))
     testRuntime(project(":sam-with-receiver-ide-plugin"))
     testRuntime(project(":noarg-ide-plugin"))
     testRuntime(project(":allopen-ide-plugin"))
     testRuntime(project(":kotlin-scripting-idea"))
+    testRuntime(project(":kotlinx-serialization-ide-plugin"))
     testRuntime(project(":plugins:lint"))
     testRuntime(intellijPluginDep("junit"))
     testRuntime(intellijPluginDep("IntelliLang"))
@@ -51,14 +53,23 @@ dependencies {
     testRuntime(intellijPluginDep("gradle"))
     testRuntime(intellijPluginDep("Groovy"))
     testRuntime(intellijPluginDep("java-decompiler"))
-    testRuntime(intellijPluginDep("maven"))
+    Ide.IJ {
+        testRuntime(intellijPluginDep("maven"))
+    }
     testRuntime(intellijPluginDep("android"))
-    testRuntime(intellijPluginDep("smali"))
+    if (Platform[181].orHigher()) {
+        testRuntime(intellijPluginDep("smali"))
+    }
 }
 
 sourceSets {
-    "main" { projectDefault() }
-    "test" { projectDefault() }
+    if (Ide.AS33.orHigher() || Ide.IJ191.orHigher()) {
+        "main" { }
+        "test" { }
+    } else {
+        "main" { projectDefault() }
+        "test" { projectDefault() }
+    }
 }
 
 testsJar {}

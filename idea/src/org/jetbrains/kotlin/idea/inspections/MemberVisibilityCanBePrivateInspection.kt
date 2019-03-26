@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.descriptors.DeclarationDescriptorWithVisibility
 import org.jetbrains.kotlin.descriptors.EffectiveVisibility
 import org.jetbrains.kotlin.descriptors.effectiveVisibility
 import org.jetbrains.kotlin.idea.caches.resolve.resolveToCall
+import org.jetbrains.kotlin.idea.core.canBePrivate
 import org.jetbrains.kotlin.idea.core.isInheritable
 import org.jetbrains.kotlin.idea.core.isOverridable
 import org.jetbrains.kotlin.idea.core.toDescriptor
@@ -42,7 +43,7 @@ import org.jetbrains.kotlin.idea.search.isCheapEnoughToSearchConsideringOperator
 import org.jetbrains.kotlin.idea.search.usagesSearch.dataClassComponentFunction
 import org.jetbrains.kotlin.idea.search.usagesSearch.descriptor
 import org.jetbrains.kotlin.idea.stubindex.KotlinSourceFilterScope
-import org.jetbrains.kotlin.idea.util.isExpectDeclaration
+import org.jetbrains.kotlin.idea.util.compat.psiSearchHelperInstance
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.*
@@ -77,19 +78,16 @@ class MemberVisibilityCanBePrivateInspection : AbstractKotlinInspection() {
     private fun canBePrivate(declaration: KtNamedDeclaration): Boolean {
         if (declaration.hasModifier(KtTokens.PRIVATE_KEYWORD) || declaration.hasModifier(KtTokens.OVERRIDE_KEYWORD)) return false
         if (declaration.annotationEntries.isNotEmpty()) return false
-        if (declaration.hasActualModifier() || declaration.isExpectDeclaration()) return false
+
+        val classOrObject = declaration.containingClassOrObject ?: return false
+        val inheritable = classOrObject is KtClass && classOrObject.isInheritable()
+        if (!inheritable && declaration.hasModifier(KtTokens.PROTECTED_KEYWORD)) return false //reported by ProtectedInFinalInspection
+        if (declaration.isOverridable()) return false
 
         val descriptor = (declaration.toDescriptor() as? DeclarationDescriptorWithVisibility) ?: return false
         when (descriptor.effectiveVisibility()) {
             EffectiveVisibility.Private, EffectiveVisibility.Local -> return false
         }
-
-        val classOrObject = declaration.containingClassOrObject ?: return false
-        if (classOrObject.isAnnotation()) return false
-
-        val inheritable = classOrObject is KtClass && classOrObject.isInheritable()
-        if (!inheritable && declaration.hasModifier(KtTokens.PROTECTED_KEYWORD)) return false //reported by ProtectedInFinalInspection
-        if (declaration.isOverridable()) return false
 
         val entryPointsManager = EntryPointsManager.getInstance(declaration.project) as EntryPointsManagerBase
         if (UnusedSymbolInspection.checkAnnotatedUsingPatterns(
@@ -100,10 +98,12 @@ class MemberVisibilityCanBePrivateInspection : AbstractKotlinInspection() {
             )
         ) return false
 
+        if (!declaration.canBePrivate()) return false
+
         // properties can be referred by component1/component2, which is too expensive to search, don't analyze them
         if (declaration is KtParameter && declaration.dataClassComponentFunction() != null) return false
 
-        val psiSearchHelper = PsiSearchHelper.SERVICE.getInstance(declaration.project)
+        val psiSearchHelper = psiSearchHelperInstance(declaration.project)
         val useScope = declaration.useScope
         val name = declaration.name ?: return false
         val restrictedScope = if (useScope is GlobalSearchScope) {
@@ -134,7 +134,7 @@ class MemberVisibilityCanBePrivateInspection : AbstractKotlinInspection() {
             val function = usage.getParentOfTypesAndPredicate<KtDeclarationWithBody>(
                 true, KtNamedFunction::class.java, KtPropertyAccessor::class.java
             ) { true }
-            val insideInlineFun = function?.let { it.hasModifier(KtTokens.INLINE_KEYWORD) && !function.isPrivate() } ?: false
+            val insideInlineFun = function.insideInline() || (function as? KtPropertyAccessor)?.property.insideInline()
             if (insideInlineFun) {
                 otherUsageFound = true
                 false
@@ -145,6 +145,8 @@ class MemberVisibilityCanBePrivateInspection : AbstractKotlinInspection() {
         })
         return inClassUsageFound && !otherUsageFound
     }
+
+    private fun KtModifierListOwner?.insideInline() = this?.let { it.hasModifier(KtTokens.INLINE_KEYWORD) && !it.isPrivate() } ?: false
 
     private fun registerProblem(holder: ProblemsHolder, declaration: KtDeclaration) {
         val modifierListOwner = declaration.getParentOfType<KtModifierListOwner>(false) ?: return

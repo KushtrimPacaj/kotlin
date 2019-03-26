@@ -40,7 +40,11 @@ class ReformatInspection : LocalInspectionTool() {
     override fun runForWholeFile(): Boolean = true
 
     override fun checkFile(file: PsiFile, manager: InspectionManager, isOnTheFly: Boolean): Array<out ProblemDescriptor>? {
-        if (file !is KtFile || !ProjectRootsUtil.isInProjectSource(file)) {
+        return checkFile(file, isOnTheFly)?.toTypedArray()
+    }
+
+    private fun checkFile(file: PsiFile, isOnTheFly: Boolean): List<ProblemDescriptor>? {
+        if (file !is KtFile || !file.isWritable || !ProjectRootsUtil.isInProjectSource(file)) {
             return null
         }
 
@@ -51,7 +55,7 @@ class ReformatInspection : LocalInspectionTool() {
         val changes = collectFormattingChanges(file)
         if (changes.isEmpty()) return null
 
-        val elements = changes.map {
+        val elements = changes.asSequence().map {
             val rangeOffset = when (it) {
                 is ShiftIndentInsideRange -> it.range.startOffset
                 is ReplaceWhiteSpace -> it.textRange.startOffset
@@ -62,7 +66,7 @@ class ReformatInspection : LocalInspectionTool() {
             if (leaf is PsiWhiteSpace && isEmptyLineReformat(leaf, it)) return@map null
 
             leaf
-        }.filterNotNull()
+        }.filterNotNull().toList()
 
         return elements.map {
             ProblemDescriptorImpl(
@@ -72,7 +76,7 @@ class ReformatInspection : LocalInspectionTool() {
                 ProblemHighlightType.GENERIC_ERROR_OR_WARNING, false, null,
                 isOnTheFly
             )
-        }.toTypedArray()
+        }
     }
 
     override fun createOptionsPanel(): JComponent? {

@@ -13,10 +13,12 @@ import org.jetbrains.kotlin.config.LanguageFeature;
 import org.jetbrains.kotlin.config.LanguageVersionSettings;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.annotations.Annotations;
+import org.jetbrains.kotlin.descriptors.impl.LocalVariableDescriptor;
 import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor;
 import org.jetbrains.kotlin.descriptors.impl.ValueParameterDescriptorImpl;
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation;
 import org.jetbrains.kotlin.js.backend.ast.*;
+import org.jetbrains.kotlin.js.backend.ast.metadata.LocalAlias;
 import org.jetbrains.kotlin.js.backend.ast.metadata.MetadataProperties;
 import org.jetbrains.kotlin.js.backend.ast.metadata.SpecialFunction;
 import org.jetbrains.kotlin.js.config.JsConfig;
@@ -41,6 +43,7 @@ import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
 import org.jetbrains.kotlin.resolve.inline.InlineUtil;
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExtensionReceiver;
 import org.jetbrains.kotlin.serialization.js.ModuleKind;
+import org.jetbrains.kotlin.types.expressions.PreliminaryDeclarationVisitor;
 
 import java.util.*;
 
@@ -50,6 +53,8 @@ import static org.jetbrains.kotlin.js.translate.context.UsageTrackerKt.getNameFo
 import static org.jetbrains.kotlin.js.translate.utils.AnnotationsUtils.isNativeObject;
 import static org.jetbrains.kotlin.js.translate.utils.BindingUtils.getDescriptorForElement;
 import static org.jetbrains.kotlin.js.translate.utils.JsAstUtils.pureFqn;
+import static org.jetbrains.kotlin.resolve.BindingContextUtils.isCapturedInClosure;
+import static org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowValueKindUtilsKt.hasNoWritersInClosures;
 
 /**
  * All the info about the state of the translation process.
@@ -311,7 +316,7 @@ public class TranslationContext {
 
         JsName result = JsScope.declareTemporaryName(StaticContext.getSuggestedName(descriptor));
         if (isFromCurrentModule(descriptor) && !AnnotationsUtils.isNativeObject(descriptor)) {
-            MetadataProperties.setLocalAlias(result, getInnerNameForDescriptor(descriptor));
+            MetadataProperties.setLocalAlias(result, new LocalAlias(getInnerNameForDescriptor(descriptor), staticContext.getTag(descriptor)));
         }
         MetadataProperties.setDescriptor(result, descriptor);
         MetadataProperties.setStaticRef(result, imported);
@@ -415,15 +420,15 @@ public class TranslationContext {
         if (suggested != null && getConfig().getModuleKind() != ModuleKind.PLAIN && isPublicInlineFunction()) {
             String moduleId = AnnotationsUtils.getModuleName(suggested.getDescriptor());
             if (moduleId != null) {
-                JsExpression replacement = staticContext.exportModuleForInline(moduleId, name);
+                JsExpression replacement = staticContext.exportModuleForInline(moduleId, new JsImportedModule(moduleId, name, null));
                 result = replaceModuleReference(result, name, replacement);
             }
             else if (isNativeObject(suggested.getDescriptor()) && DescriptorUtils.isTopLevelDeclaration(suggested.getDescriptor())) {
                 String fileModuleId = AnnotationsUtils.getFileModuleName(bindingContext(), suggested.getDescriptor());
                 if (fileModuleId != null) {
-                    JsName fileModuleName = staticContext.getImportedModule(fileModuleId, null).getInternalName();
+                    JsImportedModule fileModuleName = staticContext.getImportedModule(fileModuleId, null);
                     JsExpression replacement = staticContext.exportModuleForInline(fileModuleId, fileModuleName);
-                    result = replaceModuleReference(staticContext.getQualifiedReference(descriptor), fileModuleName, replacement);
+                    result = replaceModuleReference(staticContext.getQualifiedReference(descriptor), fileModuleName.getInternalName(), replacement);
                 }
             }
         }
@@ -793,6 +798,25 @@ public class TranslationContext {
         return staticContext.getDeferredCallSites().containsKey(classDescriptor);
     }
 
+    private boolean isValWithWriterInDifferentScope(VariableDescriptor descriptor) {
+        //TODO: Simplify this code once KT-17694 is fixed
+        if (!(descriptor instanceof LocalVariableDescriptor)) {
+            return false;
+        }
+        PreliminaryDeclarationVisitor preliminaryVisitor =
+                PreliminaryDeclarationVisitor.Companion.getVisitorByVariable(descriptor, bindingContext());
+        return (preliminaryVisitor == null ||
+                !hasNoWritersInClosures(descriptor.getContainingDeclaration(), preliminaryVisitor.writers(descriptor), bindingContext()));
+    }
+
+    public boolean isBoxedLocalCapturedInClosure(CallableDescriptor descriptor) {
+        if (isCapturedInClosure(bindingContext(), descriptor)) {
+            VariableDescriptor localVariable = (VariableDescriptor) descriptor;
+            return localVariable.isVar() || isValWithWriterInDifferentScope(localVariable);
+        }
+        return false;
+    }
+
     public void deferConstructorCall(@NotNull ClassConstructorDescriptor constructor, @NotNull List<JsExpression> invocationArgs) {
         ClassDescriptor classDescriptor = constructor.getContainingDeclaration();
         List<DeferredCallSite> callSites = staticContext.getDeferredCallSites().get(classDescriptor);
@@ -885,11 +909,16 @@ public class TranslationContext {
         String tag = Objects.requireNonNull(staticContext.getTag(descriptor));
         String suggestedName = StaticContext.getSuggestedName(descriptor);
 
-        return declareConstantValue(suggestedName, tag, value);
+        return declareConstantValue(suggestedName, tag, value, descriptor);
     }
 
     @NotNull
-    public JsExpression declareConstantValue(@NotNull String suggestedName, @NotNull String tag, @NotNull JsExpression value) {
+    public JsExpression declareConstantValue(
+            @NotNull String suggestedName,
+            @NotNull String tag,
+            @NotNull JsExpression value,
+            @Nullable DeclarationDescriptor descriptor
+    ) {
         if (inlineFunctionContext == null || !isPublicInlineFunction()) {
             return staticContext.importDeclaration(suggestedName, tag, value).makeRef();
         }
@@ -897,6 +926,9 @@ public class TranslationContext {
             return inlineFunctionContext.getImports().computeIfAbsent(tag, t -> {
                 JsName result = JsScope.declareTemporaryName(suggestedName);
                 MetadataProperties.setImported(result, true);
+                if (descriptor != null && isFromCurrentModule(descriptor) && !AnnotationsUtils.isNativeObject(descriptor)) {
+                    MetadataProperties.setLocalAlias(result, new LocalAlias(getInnerNameForDescriptor(descriptor), tag));
+                }
                 inlineFunctionContext.getImportBlock().getStatements().add(JsAstUtils.newVar(result, value));
                 return result;
             }).makeRef();
@@ -934,5 +966,9 @@ public class TranslationContext {
     @NotNull
     public LanguageVersionSettings getLanguageVersionSettings() {
         return CommonConfigurationKeysKt.getLanguageVersionSettings(staticContext.getConfig().getConfiguration());
+    }
+
+    public void reportInlineFunctionTag(@NotNull String tag) {
+        staticContext.reportInlineFunctionTag(tag);
     }
 }

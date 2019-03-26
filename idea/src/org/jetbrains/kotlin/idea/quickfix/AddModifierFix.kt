@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.idea.quickfix
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNameIdentifierOwner
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
@@ -45,7 +46,7 @@ import org.jetbrains.kotlin.types.TypeUtils
 open class AddModifierFix(
     element: KtModifierListOwner,
     protected val modifier: KtModifierKeywordToken
-) : KotlinQuickFixAction<KtModifierListOwner>(element), KotlinUniversalQuickFix {
+) : KotlinCrossLanguageQuickFixAction<KtModifierListOwner>(element), KotlinUniversalQuickFix {
     override fun getText(): String {
         val element = element ?: return ""
         if (modifier in modalityModifiers || modifier in KtTokens.VISIBILITY_MODIFIERS || modifier == KtTokens.CONST_KEYWORD) {
@@ -68,7 +69,7 @@ open class AddModifierFix(
         }
     }
 
-    override fun invoke(project: Project, editor: Editor?, file: KtFile) {
+    override fun invokeImpl(project: Project, editor: Editor?, file: PsiFile) {
         val originalElement = element
         if (originalElement is KtDeclaration && modifier.isMultiplatformPersistent()) {
             originalElement.runOnExpectAndAllActuals { invokeOnElement(it) }
@@ -76,7 +77,7 @@ open class AddModifierFix(
         invokeOnElement(originalElement)
     }
 
-    override fun isAvailable(project: Project, editor: Editor?, file: KtFile): Boolean {
+    override fun isAvailableImpl(project: Project, editor: Editor?, file: PsiFile): Boolean {
         val element = element ?: return false
         return element.canRefactor()
     }
@@ -130,6 +131,10 @@ open class AddModifierFix(
                         if (parentClassOrObject is KtObjectDeclaration) return null
                         if (parentClassOrObject is KtEnumEntry) return null
                     }
+                    if (modifier == ABSTRACT_KEYWORD
+                        && modifierListOwner is KtClass
+                        && modifierListOwner.hasModifier(KtTokens.INLINE_KEYWORD)
+                    ) return null
                 }
                 INNER_KEYWORD -> {
                     if (modifierListOwner is KtObjectDeclaration) return null
@@ -151,12 +156,8 @@ open class AddModifierFix(
     object MakeClassOpenFactory : KotlinSingleIntentionActionFactory() {
         override fun createAction(diagnostic: Diagnostic): IntentionAction? {
             val typeReference = diagnostic.psiElement as KtTypeReference
-            val bindingContext = typeReference.analyze(BodyResolveMode.PARTIAL)
-            val type = bindingContext[BindingContext.TYPE, typeReference] ?: return null
-            val classDescriptor = type.constructor.declarationDescriptor as? ClassDescriptor ?: return null
-            val declaration = DescriptorToSourceUtils.descriptorToDeclaration(classDescriptor) as? KtClass ?: return null
-            if (!declaration.canRefactor()) return null
-            if (declaration.isEnum()) return null
+            val declaration = typeReference.classForRefactor() ?: return null
+            if (declaration.isEnum() || declaration.isData()) return null
             return AddModifierFix(declaration, KtTokens.OPEN_KEYWORD)
         }
     }
@@ -175,4 +176,13 @@ open class AddModifierFix(
             return AddModifierFix(property, KtTokens.LATEINIT_KEYWORD)
         }
     }
+}
+
+fun KtTypeReference.classForRefactor(): KtClass? {
+    val bindingContext = analyze(BodyResolveMode.PARTIAL)
+    val type = bindingContext[BindingContext.TYPE, this] ?: return null
+    val classDescriptor = type.constructor.declarationDescriptor as? ClassDescriptor ?: return null
+    val declaration = DescriptorToSourceUtils.descriptorToDeclaration(classDescriptor) as? KtClass ?: return null
+    if (!declaration.canRefactor()) return null
+    return declaration
 }

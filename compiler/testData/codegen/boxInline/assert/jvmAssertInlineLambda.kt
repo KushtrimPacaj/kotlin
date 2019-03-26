@@ -1,8 +1,11 @@
 // IGNORE_BACKEND: JVM_IR
+// TARGET_BACKEND: JVM
 // FILE: inline.kt
 // KOTLIN_CONFIGURATION_FLAGS: ASSERTIONS_MODE=jvm
 // WITH_RUNTIME
 // NO_CHECK_LAMBDA_INLINING
+
+package test
 
 inline fun call(c: () -> Unit) {
     c()
@@ -10,6 +13,8 @@ inline fun call(c: () -> Unit) {
 
 // FILE: inlineSite.kt
 // KOTLIN_CONFIGURATION_FLAGS: ASSERTIONS_MODE=jvm
+
+import test.*
 
 interface Checker {
     fun checkTrue(): Boolean
@@ -96,7 +101,8 @@ class ShouldBeEnabled : Checker {
 
 fun setDesiredAssertionStatus(v: Boolean): Checker {
     val loader = Checker::class.java.classLoader
-    loader.setDefaultAssertionStatus(v)
+    loader.setClassAssertionStatus("ShouldBeEnabled", true)
+    loader.setClassAssertionStatus("ShouldBeDisabled", false)
     val c = loader.loadClass(if (v) "ShouldBeEnabled" else "ShouldBeDisabled")
     return c.newInstance() as Checker
 }
@@ -120,6 +126,5 @@ fun box(): String {
         return "FAIL 7"
     } catch (ignore: AssertionError) {
     }
-
     return "OK"
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -388,6 +388,24 @@ public class CompileJavaAgainstKotlinTestGenerated extends AbstractCompileJavaAg
                 @TestMetadata("OverrideInJava.kt")
                 public void testOverrideInJava() throws Exception {
                     runTest("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverride/OverrideInJava.kt");
+                }
+            }
+
+            @TestMetadata("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverrideWithInlineClass")
+            @TestDataPath("$PROJECT_ROOT")
+            @RunWith(JUnit3RunnerWithInners.class)
+            public static class PrimitiveOverrideWithInlineClass extends AbstractCompileJavaAgainstKotlinTest {
+                private void runTest(String testDataFilePath) throws Exception {
+                    KotlinTestUtils.runTest(this::doTestWithoutJavac, TargetBackend.ANY, testDataFilePath);
+                }
+
+                public void testAllFilesPresentInPrimitiveOverrideWithInlineClass() throws Exception {
+                    KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverrideWithInlineClass"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+                }
+
+                @TestMetadata("InlineIntOverridesObject.kt")
+                public void testInlineIntOverridesObject() throws Exception {
+                    runTest("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverrideWithInlineClass/InlineIntOverridesObject.kt");
                 }
             }
 
@@ -995,6 +1013,24 @@ public class CompileJavaAgainstKotlinTestGenerated extends AbstractCompileJavaAg
                 @TestMetadata("OverrideInJava.kt")
                 public void testOverrideInJava() throws Exception {
                     runTest("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverride/OverrideInJava.kt");
+                }
+            }
+
+            @TestMetadata("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverrideWithInlineClass")
+            @TestDataPath("$PROJECT_ROOT")
+            @RunWith(JUnit3RunnerWithInners.class)
+            public static class PrimitiveOverrideWithInlineClass extends AbstractCompileJavaAgainstKotlinTest {
+                private void runTest(String testDataFilePath) throws Exception {
+                    KotlinTestUtils.runTest(this::doTestWithJavac, TargetBackend.ANY, testDataFilePath);
+                }
+
+                public void testAllFilesPresentInPrimitiveOverrideWithInlineClass() throws Exception {
+                    KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverrideWithInlineClass"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+                }
+
+                @TestMetadata("InlineIntOverridesObject.kt")
+                public void testInlineIntOverridesObject() throws Exception {
+                    runTest("compiler/testData/compileJavaAgainstKotlin/method/primitiveOverrideWithInlineClass/InlineIntOverridesObject.kt");
                 }
             }
 

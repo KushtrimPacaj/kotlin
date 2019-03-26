@@ -6,16 +6,14 @@
 package org.jetbrains.kotlin.ir.backend.js.lower.inline
 
 import org.jetbrains.kotlin.backend.common.DeclarationContainerLoweringPass
-import org.jetbrains.kotlin.ir.backend.js.utils.isReified
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationContainer
 import org.jetbrains.kotlin.ir.declarations.IrFunction
-import org.jetbrains.kotlin.ir.util.deepCopyOld
-import org.jetbrains.kotlin.ir.util.transformFlat
+import org.jetbrains.kotlin.ir.util.transformDeclarationsFlat
 
 
-object RemoveInlineFunctionsWithReifiedTypeParametersLowering: DeclarationContainerLoweringPass {
+class RemoveInlineFunctionsWithReifiedTypeParametersLowering: DeclarationContainerLoweringPass {
     override fun lower(irDeclarationContainer: IrDeclarationContainer) {
-        irDeclarationContainer.declarations.transformFlat {
+        irDeclarationContainer.transformDeclarationsFlat {
             if (it is IrFunction && it.isInline && it.typeParameters.any { it.isReified }) listOf() else null
         }
     }

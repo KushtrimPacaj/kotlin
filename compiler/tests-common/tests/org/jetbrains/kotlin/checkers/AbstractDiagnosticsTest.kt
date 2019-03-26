@@ -10,6 +10,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.search.GlobalSearchScope
 import junit.framework.TestCase
+import org.jetbrains.kotlin.TestsCompilerError
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.analyzer.common.CommonAnalyzerFacade
 import org.jetbrains.kotlin.builtins.jvm.JvmBuiltIns
@@ -64,6 +65,16 @@ import java.util.regex.Pattern
 
 abstract class AbstractDiagnosticsTest : BaseDiagnosticsTest() {
     override fun analyzeAndCheck(testDataFile: File, files: List<TestFile>) {
+        try {
+            analyzeAndCheckUnhandled(testDataFile, files)
+        } catch (t: AssertionError) {
+            throw t
+        } catch (t: Throwable) {
+            throw TestsCompilerError(t)
+        }
+    }
+
+    private fun analyzeAndCheckUnhandled(testDataFile: File, files: List<TestFile>) {
         val groupedByModule = files.groupBy(TestFile::module)
 
         var lazyOperationsLog: LazyOperationsLog? = null
@@ -73,11 +84,11 @@ abstract class AbstractDiagnosticsTest : BaseDiagnosticsTest() {
         if (files.any(TestFile::checkLazyLog)) {
             lazyOperationsLog = LazyOperationsLog(HASH_SANITIZER)
             storageManager = LoggingStorageManager(
-                LockBasedStorageManager.createWithExceptionHandling(tracker),
+                LockBasedStorageManager.createWithExceptionHandling("AbstractDiagnosticTest", tracker),
                 lazyOperationsLog.addRecordFunction
             )
         } else {
-            storageManager = LockBasedStorageManager.createWithExceptionHandling(tracker)
+            storageManager = LockBasedStorageManager.createWithExceptionHandling("AbstractDiagnosticTest", tracker)
         }
 
         val context = SimpleGlobalContext(storageManager, tracker)
@@ -164,9 +175,15 @@ abstract class AbstractDiagnosticsTest : BaseDiagnosticsTest() {
                 if (platform is MultiTargetPlatform.Specific) platform to moduleBindings[testModule]!!
                 else null
             }
+            val moduleDescriptor = modules[module]!!
+
             ok = ok and testFile.getActualText(
-                moduleBindings[module]!!, implementingModulesBindings, actualText,
-                shouldSkipJvmSignatureDiagnostics(groupedByModule) || isCommonModule
+                moduleBindings[module]!!,
+                implementingModulesBindings,
+                actualText,
+                shouldSkipJvmSignatureDiagnostics(groupedByModule) || isCommonModule,
+                languageVersionSettingsByModule[module]!!,
+                moduleDescriptor
             )
         }
 
@@ -269,7 +286,7 @@ abstract class AbstractDiagnosticsTest : BaseDiagnosticsTest() {
             }
         }
 
-        return result ?: JvmTarget.JVM_1_6
+        return result ?: JvmTarget.DEFAULT
     }
 
     private fun checkDynamicCallDescriptors(expectedFile: File, testFiles: List<TestFile>) {
@@ -366,6 +383,7 @@ abstract class AbstractDiagnosticsTest : BaseDiagnosticsTest() {
             ExpectActualTracker.DoNothing,
             environment.createPackagePartProvider(moduleContentScope),
             moduleClassResolver,
+            CompilerEnvironment,
             jvmTarget,
             languageVersionSettings
         )
@@ -569,7 +587,8 @@ abstract class AbstractDiagnosticsTest : BaseDiagnosticsTest() {
         val platform =
             if (nameSuffix.isEmpty()) null
             else if (nameSuffix == "common") MultiTargetPlatform.Common else MultiTargetPlatform.Specific(nameSuffix.toUpperCase())
-        return ModuleDescriptorImpl(Name.special("<$moduleName>"), storageManager, JvmBuiltIns(storageManager), platform)
+        val builtIns = JvmBuiltIns(storageManager, JvmBuiltIns.Kind.FROM_CLASS_LOADER)
+        return ModuleDescriptorImpl(Name.special("<$moduleName>"), storageManager, builtIns, platform)
     }
 
     protected open fun createSealedModule(storageManager: StorageManager): ModuleDescriptorImpl =

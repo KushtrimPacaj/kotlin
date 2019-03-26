@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -222,6 +222,24 @@ public class JoinLinesTestGenerated extends AbstractJoinLinesTest {
         @TestMetadata("simpleInitWithType2.kt")
         public void testSimpleInitWithType2() throws Exception {
             runTest("idea/testData/joinLines/declarationAndAssignment/simpleInitWithType2.kt");
+        }
+    }
+
+    @TestMetadata("idea/testData/joinLines/initializerAndIfToElvis")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class InitializerAndIfToElvis extends AbstractJoinLinesTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+        }
+
+        public void testAllFilesPresentInInitializerAndIfToElvis() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/joinLines/initializerAndIfToElvis"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+        }
+
+        @TestMetadata("simple.kt")
+        public void testSimple() throws Exception {
+            runTest("idea/testData/joinLines/initializerAndIfToElvis/simple.kt");
         }
     }
 

@@ -1,5 +1,5 @@
-// IGNORE_BACKEND: JS_IR
-// EXPECTED_REACHABLE_NODES: 1393
+// KJS_WITH_FULL_RUNTIME
+// EXPECTED_REACHABLE_NODES: 1535
 
 interface Tr {
     fun extra(): String = "_"

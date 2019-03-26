@@ -7,8 +7,8 @@ plugins {
 jvmTarget = "1.6"
 
 dependencies {
-    compile(projectDist(":kotlin-stdlib"))
-    testCompile(projectDist(":kotlin-test:kotlin-test-jvm"))
+    compile(kotlinStdlib())
+    testCompile(project(":kotlin-test:kotlin-test-jvm"))
 }
 
 sourceSets {

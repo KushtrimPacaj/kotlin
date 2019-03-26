@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.incremental.record
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.resolve.DescriptorFactory
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.scopes.*
 import org.jetbrains.kotlin.storage.StorageManager
@@ -91,7 +92,7 @@ interface SyntheticJavaPropertyDescriptor : PropertyDescriptor, SyntheticPropert
     }
 }
 
-class JavaSyntheticPropertiesScope(storageManager: StorageManager, private val lookupTracker: LookupTracker) : SyntheticScope {
+class JavaSyntheticPropertiesScope(storageManager: StorageManager, private val lookupTracker: LookupTracker) : SyntheticScope.Default() {
     private val syntheticPropertyInClass =
         storageManager.createMemoizedFunction<Pair<ClassDescriptor, Name>, SyntheticPropertyHolder> { pair ->
             syntheticPropertyInClassNotCached(pair.first, pair.second)
@@ -204,18 +205,6 @@ class JavaSyntheticPropertiesScope(storageManager: StorageManager, private val l
         }
     }
 
-    override fun getSyntheticStaticFunctions(scope: ResolutionScope, name: Name, location: LookupLocation): Collection<FunctionDescriptor> =
-        emptyList()
-
-    override fun getSyntheticConstructors(scope: ResolutionScope, name: Name, location: LookupLocation): Collection<FunctionDescriptor> =
-        emptyList()
-
-    override fun getSyntheticStaticFunctions(scope: ResolutionScope): Collection<FunctionDescriptor> = emptyList()
-
-    override fun getSyntheticConstructors(scope: ResolutionScope): Collection<FunctionDescriptor> = emptyList()
-
-    override fun getSyntheticConstructor(constructor: ConstructorDescriptor): ConstructorDescriptor? = null
-
     private fun collectSyntheticPropertiesByName(
         result: SmartList<PropertyDescriptor>?,
         type: TypeConstructor,
@@ -238,7 +227,10 @@ class JavaSyntheticPropertiesScope(storageManager: StorageManager, private val l
         return result
     }
 
-    override fun getSyntheticExtensionProperties(receiverTypes: Collection<KotlinType>): Collection<PropertyDescriptor> {
+    override fun getSyntheticExtensionProperties(
+        receiverTypes: Collection<KotlinType>,
+        location: LookupLocation
+    ): Collection<PropertyDescriptor> {
         val result = ArrayList<PropertyDescriptor>()
         val processedTypes = HashSet<TypeConstructor>()
         receiverTypes.forEach { result.collectSyntheticProperties(it.constructor, processedTypes) }
@@ -337,7 +329,10 @@ class JavaSyntheticPropertiesScope(storageManager: StorageManager, private val l
 
                 val propertyType = typeSubstitutor.safeSubstitute(type, Variance.INVARIANT)
                 val receiverType = typeSubstitutor.safeSubstitute(ownerClass.defaultType, Variance.INVARIANT)
-                descriptor.setType(propertyType, typeParameters, null, receiverType)
+                descriptor.setType(
+                    propertyType, typeParameters, null,
+                    DescriptorFactory.createExtensionReceiverParameterForCallable(descriptor, receiverType, Annotations.EMPTY)
+                )
 
                 val getter = PropertyGetterDescriptorImpl(
                     descriptor,

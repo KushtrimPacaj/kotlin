@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.script
@@ -34,10 +23,13 @@ import com.intellij.testFramework.exceptionCases.AbstractExceptionCase
 import com.intellij.util.ui.UIUtil
 import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
 import org.jetbrains.kotlin.idea.completion.test.KotlinCompletionTestCase
+import org.jetbrains.kotlin.idea.core.script.IdeScriptReportSink
 import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionContributor
 import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionsManager
 import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesManager.Companion.updateScriptDependenciesSynchronously
 import org.jetbrains.kotlin.idea.core.script.isScriptDependenciesUpdaterDisabled
+import org.jetbrains.kotlin.idea.core.script.settings.KotlinScriptingSettings
+import org.jetbrains.kotlin.idea.highlighter.KotlinHighlightingUtil
 import org.jetbrains.kotlin.idea.navigation.GotoCheck
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.test.InTextDirectivesUtils
@@ -55,6 +47,7 @@ import org.junit.ComparisonFailure
 import java.io.File
 import java.util.regex.Pattern
 import kotlin.script.dependencies.Environment
+import kotlin.script.experimental.dependencies.ScriptReport
 
 
 abstract class AbstractScriptConfigurationHighlightingTest : AbstractScriptConfigurationTest() {
@@ -106,8 +99,46 @@ abstract class AbstractScriptConfigurationNavigationTest : AbstractScriptConfigu
     }
 }
 
-private val validKeys = setOf("sources", "classpath", "imports")
+
+abstract class AbstractScriptDefinitionsOrderTest : AbstractScriptConfigurationTest() {
+    fun doTest(path: String) {
+        configureScriptFile(path)
+
+        assertException(object : AbstractExceptionCase<ComparisonFailure>() {
+            override fun getExpectedExceptionClass(): Class<ComparisonFailure> = ComparisonFailure::class.java
+
+            override fun tryClosure() {
+                checkHighlighting(editor, false, false)
+            }
+        })
+
+        val definitions = InTextDirectivesUtils
+            .findStringWithPrefixes(myFile.text, "// SCRIPT DEFINITIONS: ")
+            ?.split(";")
+            ?.map { it.substringBefore(":").trim() to it.substringAfter(":").trim() }
+            ?: error("SCRIPT DEFINITIONS directive should be defined")
+
+        val allDefinitions = ScriptDefinitionsManager.getInstance(project).getAllDefinitions()
+        for ((definitionName, action) in definitions) {
+            val scriptDefinition = allDefinitions
+                .find { it.name == definitionName }
+                ?: error("Unknown script definition name in SCRIPT DEFINITIONS directive: name=$definitionName, all={${allDefinitions.joinToString { it.name }}}")
+            when (action) {
+                "off" -> KotlinScriptingSettings.getInstance(project).setEnabled(scriptDefinition, false)
+                else -> KotlinScriptingSettings.getInstance(project).setOrder(scriptDefinition, action.toInt())
+            }
+        }
+
+        ScriptDefinitionsManager.getInstance(project).reorderScriptDefinitions()
+        updateScriptDependenciesSynchronously(myFile.virtualFile, project)
+
+        checkHighlighting(editor, false, false)
+    }
+}
+
+private val validKeys = setOf("sources", "classpath", "imports", "template-classes-names")
 private const val useDefaultTemplate = "// DEPENDENCIES:"
+private const val templatesSettings = "// TEMPLATES: "
 // some bugs can only be reproduced when some module and script have intersecting library dependencies
 private const val configureConflictingModule = "// CONFLICTING_MODULE"
 
@@ -190,7 +221,12 @@ abstract class AbstractScriptConfigurationTest : KotlinCompletionTestCase() {
 
     private fun createTestModuleByName(name: String): Module {
         val newModuleDir = runWriteAction { VfsUtil.createDirectoryIfMissing(project.baseDir, name) }
-        val newModule = createModuleAtWrapper(name, project, JavaModuleType.getModuleType(), newModuleDir.path)
+
+        // BUNCH: 181
+        @Suppress("IncompatibleAPI") val newModule = createModuleAt(name, project, JavaModuleType.getModuleType(), newModuleDir.path)
+
+        // Return type was changed, but it's not used. BUNCH: 183
+        @Suppress("MissingRecentApi")
         PsiTestUtil.addSourceContentToRoots(newModule, newModuleDir)
         return newModule
     }
@@ -205,20 +241,32 @@ abstract class AbstractScriptConfigurationTest : KotlinCompletionTestCase() {
         val defaultEnvironment = defaultEnvironment(scriptFile.parent + File.separator)
         val env = mutableMapOf<String, Any?>()
         scriptFile.forEachLine { line ->
-            line.trim().takeIf { useDefaultTemplate in it }?.substringAfter(useDefaultTemplate)?.split(";")?.forEach { entry ->
-                val (key, values) = entry.splitOrEmpty(":").map { it.trim() }
-                assert(key in validKeys) { "Unexpected key: $key" }
-                env[key] = values.split(",").map {
-                    val str = it.trim()
-                    defaultEnvironment[str] ?: str
+
+            fun iterateKeysInLine(prefix: String) {
+                if (line.contains(prefix)) {
+                    line.trim().substringAfter(prefix).split(";").forEach { entry ->
+                        val (key, values) = entry.splitOrEmpty(":").map { it.trim() }
+                        assert(key in validKeys) { "Unexpected key: $key" }
+                        env[key] = values.split(",").map {
+                            val str = it.trim()
+                            defaultEnvironment[str] ?: str
+                        }
+                    }
                 }
             }
+
+            iterateKeysInLine(useDefaultTemplate)
+            iterateKeysInLine(templatesSettings)
 
             switches.forEach {
                 if (it in line) {
                     env[it] = true
                 }
             }
+        }
+
+        if (env[useDefaultTemplate] != true && env["template-classes-names"] == null) {
+            env["template-classes-names"] = listOf("custom.scriptDefinition.Template")
         }
 
         env.putAll(defaultEnvironment)
@@ -264,7 +312,7 @@ abstract class AbstractScriptConfigurationTest : KotlinCompletionTestCase() {
         if (script == null) {
             val target = File(project.basePath, scriptFile.name)
             scriptFile.copyTo(target)
-            script = LocalFileSystem.getInstance().findFileByPath(target.path)
+            script = VfsUtil.findFileByIoFile(target, true)
         }
 
         if (script == null) error("Test file with script couldn't be found in test project")
@@ -275,6 +323,11 @@ abstract class AbstractScriptConfigurationTest : KotlinCompletionTestCase() {
         VfsUtil.markDirtyAndRefresh(false, true, true, project.baseDir)
         // This is needed because updateScriptDependencies invalidates psiFile that was stored in myFile field
         myFile = psiManager.findFile(script)
+
+        val isFatalErrorPresent = myFile.virtualFile.getUserData(IdeScriptReportSink.Reports)?.any { it.severity == ScriptReport.Severity.FATAL } == true
+        assert(isFatalErrorPresent || KotlinHighlightingUtil.shouldHighlight(myFile)) {
+            "Highlighting is switched off for ${myFile.virtualFile.path}"
+        }
     }
 
     private fun compileLibToDir(srcDir: File, vararg classpath: String): File {

@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 // FILE: utils.kt
 
@@ -12,6 +13,7 @@ fun f() {
 
 // @TestKt.class:
 // 0 INVOKESTATIC UInt\$Erased.box
+// 0 INVOKESTATIC UInt\.box
 // 0 INVOKEVIRTUAL UInt.unbox
 // 0 valueOf
 // 0 intValue

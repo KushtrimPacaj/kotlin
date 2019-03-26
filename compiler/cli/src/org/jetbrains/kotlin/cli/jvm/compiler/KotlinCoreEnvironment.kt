@@ -25,9 +25,9 @@ import com.intellij.core.CoreJavaFileManager
 import com.intellij.core.JavaCoreApplicationEnvironment
 import com.intellij.core.JavaCoreProjectEnvironment
 import com.intellij.ide.highlighter.JavaFileType
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.lang.MetaLanguage
 import com.intellij.lang.java.JavaParserDefinition
+import com.intellij.mock.MockProject
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.TransactionGuard
 import com.intellij.openapi.application.TransactionGuardImpl
@@ -39,6 +39,9 @@ import com.intellij.openapi.fileTypes.FileTypeExtensionPoint
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.JDOMUtil
+import com.intellij.openapi.util.NotNullLazyValue
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileUtilRt
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.*
@@ -69,14 +72,13 @@ import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
 import org.jetbrains.kotlin.cli.common.CliModuleVisibilityManagerImpl
 import org.jetbrains.kotlin.cli.common.KOTLIN_COMPILER_ENVIRONMENT_KEEPALIVE_PROPERTY
 import org.jetbrains.kotlin.cli.common.config.ContentRoot
+import org.jetbrains.kotlin.cli.common.config.KotlinSourceRoot
 import org.jetbrains.kotlin.cli.common.config.kotlinSourceRoots
+import org.jetbrains.kotlin.cli.common.extensions.ScriptEvaluationExtension
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity.ERROR
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity.STRONG_WARNING
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
-import org.jetbrains.kotlin.cli.common.script.CliScriptDefinitionProvider
-import org.jetbrains.kotlin.cli.common.script.CliScriptDependenciesProvider
-import org.jetbrains.kotlin.cli.common.script.CliScriptReportSink
 import org.jetbrains.kotlin.cli.common.toBooleanLenient
 import org.jetbrains.kotlin.cli.jvm.JvmRuntimeVersionsConsistencyChecker
 import org.jetbrains.kotlin.cli.jvm.config.*
@@ -103,6 +105,7 @@ import org.jetbrains.kotlin.parsing.KotlinParserDefinition
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.CodeAnalyzerInitializer
 import org.jetbrains.kotlin.resolve.ModuleAnnotationsResolver
+import org.jetbrains.kotlin.resolve.extensions.ExtraImportsProviderExtension
 import org.jetbrains.kotlin.resolve.extensions.SyntheticResolveExtension
 import org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade
 import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisHandlerExtension
@@ -110,13 +113,12 @@ import org.jetbrains.kotlin.resolve.jvm.extensions.PackageFragmentProviderExtens
 import org.jetbrains.kotlin.resolve.jvm.modules.JavaModuleResolver
 import org.jetbrains.kotlin.resolve.lazy.declarations.CliDeclarationProviderFactoryService
 import org.jetbrains.kotlin.resolve.lazy.declarations.DeclarationProviderFactoryService
-import org.jetbrains.kotlin.script.ScriptDefinitionProvider
-import org.jetbrains.kotlin.script.ScriptDependenciesProvider
-import org.jetbrains.kotlin.script.ScriptReportSink
-import org.jetbrains.kotlin.script.StandardScriptDefinition
 import org.jetbrains.kotlin.utils.PathUtil
 import java.io.File
+import java.lang.reflect.Field
+import java.lang.reflect.Modifier
 import java.util.zip.ZipFile
+import javax.xml.stream.XMLInputFactory
 
 class KotlinCoreEnvironment private constructor(
     parentDisposable: Disposable,
@@ -137,23 +139,10 @@ class KotlinCoreEnvironment private constructor(
                         ServiceManager.getService(this, JavaFileManager::class.java) as CoreJavaFileManager
                     )
 
-                    val traceHolder = CliTraceHolder()
-                    val cliLightClassGenerationSupport = CliLightClassGenerationSupport(traceHolder)
-                    val kotlinAsJavaSupport = CliKotlinAsJavaSupport(this, traceHolder)
-                    registerService(LightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
-                    registerService(CliLightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
-                    registerService(KotlinAsJavaSupport::class.java, kotlinAsJavaSupport)
-                    registerService(CodeAnalyzerInitializer::class.java, traceHolder)
+                    registerKotlinLightClassSupport(project)
 
                     registerService(ExternalAnnotationsManager::class.java, MockExternalAnnotationsManager())
                     registerService(InferredAnnotationsManager::class.java, MockInferredAnnotationsManager())
-
-                    val area = Extensions.getArea(this)
-
-                    area.getExtensionPoint(PsiElementFinder.EP_NAME).registerExtension(JavaElementFinder(this, kotlinAsJavaSupport))
-                    area.getExtensionPoint(PsiElementFinder.EP_NAME).registerExtension(
-                        PsiElementFinderImpl(this, ServiceManager.getService(this, JavaFileManager::class.java))
-                    )
                 }
 
                 super.registerJavaPsiFacade()
@@ -176,17 +165,7 @@ class KotlinCoreEnvironment private constructor(
 
         val project = projectEnvironment.project
 
-        ExpressionCodegenExtension.registerExtensionPoint(project)
-        SyntheticResolveExtension.registerExtensionPoint(project)
-        ClassBuilderInterceptorExtension.registerExtensionPoint(project)
-        AnalysisHandlerExtension.registerExtensionPoint(project)
-        PackageFragmentProviderExtension.registerExtensionPoint(project)
-        StorageComponentContainerContributor.registerExtensionPoint(project)
-        DeclarationAttributeAltererExtension.registerExtensionPoint(project)
-        PreprocessedVirtualFileFactoryExtension.registerExtensionPoint(project)
-        JsSyntheticTranslateExtension.registerExtensionPoint(project)
-        CompilerConfigurationExtension.registerExtensionPoint(project)
-        IrGenerationExtension.registerExtensionPoint(project)
+        registerPluginExtensionPoints(project)
 
         val messageCollector = configuration.get(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY)
 
@@ -212,34 +191,17 @@ class KotlinCoreEnvironment private constructor(
 
         registerProjectServicesForCLI(projectEnvironment)
 
-        registerProjectServices(projectEnvironment, messageCollector)
+        registerProjectServices(projectEnvironment.project)
 
         for (extension in CompilerConfigurationExtension.getInstances(project)) {
             extension.updateConfiguration(configuration)
         }
 
         sourceFiles += createKtFiles(project)
+
+        collectAdditionalSources(project)
+
         sourceFiles.sortBy { it.virtualFile.path }
-
-        // If not disabled explicitly, we should always support at least the standard script definition
-        if (!configuration.getBoolean(JVMConfigurationKeys.DISABLE_STANDARD_SCRIPT_DEFINITION) &&
-            StandardScriptDefinition !in configuration.getList(JVMConfigurationKeys.SCRIPT_DEFINITIONS)
-        ) {
-            configuration.add(JVMConfigurationKeys.SCRIPT_DEFINITIONS, StandardScriptDefinition)
-        }
-
-        val scriptDefinitionProvider = ScriptDefinitionProvider.getInstance(project) as? CliScriptDefinitionProvider
-        if (scriptDefinitionProvider != null) {
-            scriptDefinitionProvider.setScriptDefinitionsSources(configuration.getList(JVMConfigurationKeys.SCRIPT_DEFINITIONS_SOURCES))
-            scriptDefinitionProvider.setScriptDefinitions(configuration.getList(JVMConfigurationKeys.SCRIPT_DEFINITIONS))
-
-            ScriptDependenciesProvider.getInstance(project).let { importsProvider ->
-                configuration.addJvmClasspathRoots(
-                    sourceFiles.mapNotNull(importsProvider::getScriptDependencies)
-                        .flatMap { it.classpath }
-                        .distinctBy { it.absolutePath })
-            }
-        }
 
         val jdkHome = configuration.get(JVMConfigurationKeys.JDK_HOME)
         val jrtFileSystem = VirtualFileManager.getInstance().getFileSystem(StandardFileSystems.JRT_PROTOCOL)
@@ -303,9 +265,35 @@ class KotlinCoreEnvironment private constructor(
         })
     }
 
+    private fun collectAdditionalSources(project: MockProject) {
+        var unprocessedSources: Collection<KtFile> = sourceFiles
+        val processedSources = HashSet<KtFile>()
+        val processedSourcesByExtension = HashMap<CollectAdditionalSourcesExtension, Collection<KtFile>>()
+        // repeat feeding extensions with sources while new sources a being added
+        var sourceCollectionIterations = 0
+        while (unprocessedSources.isNotEmpty()) {
+            if (sourceCollectionIterations++ > 10) { // TODO: consider using some appropriate global constant
+                throw IllegalStateException("Unable to collect additional sources in reasonable number of iterations")
+            }
+            processedSources.addAll(unprocessedSources)
+            val allNewSources = ArrayList<KtFile>()
+            for (extension in CollectAdditionalSourcesExtension.getInstances(project)) {
+                // do not feed the extension with the sources it returned on the previous iteration
+                val sourcesToProcess = unprocessedSources - (processedSourcesByExtension[extension] ?: emptyList())
+                val newSources = extension.collectAdditionalSourcesAndUpdateConfiguration(sourcesToProcess, configuration, project)
+                if (newSources.isNotEmpty()) {
+                    allNewSources.addAll(newSources)
+                    processedSourcesByExtension[extension] = newSources
+                }
+            }
+            unprocessedSources = allNewSources.filterNot { processedSources.contains(it) }.distinct()
+            sourceFiles += unprocessedSources
+        }
+    }
+
     fun createPackagePartProvider(scope: GlobalSearchScope): JvmPackagePartProvider {
         return JvmPackagePartProvider(configuration.languageVersionSettings, scope).apply {
-            addRoots(initialRoots)
+            addRoots(initialRoots, configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY))
             packagePartProviders += this
             (ModuleAnnotationsResolver.getInstance(project) as CliModuleAnnotationsResolver).addPackagePartProvider(this)
         }
@@ -363,7 +351,7 @@ class KotlinCoreEnvironment private constructor(
         val newRoots = classpathRootsResolver.convertClasspathRoots(contentRoots).roots
 
         for (packagePartProvider in packagePartProviders) {
-            packagePartProvider.addRoots(newRoots)
+            packagePartProvider.addRoots(newRoots, configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY))
         }
 
         return rootsIndex.addNewIndexForRoots(newRoots)?.let { newIndex ->
@@ -400,75 +388,28 @@ class KotlinCoreEnvironment private constructor(
     private fun findJarRoot(file: File): VirtualFile? =
         applicationEnvironment.jarFileSystem.findFileByPath("$file${URLUtil.JAR_SEPARATOR}")
 
-    private fun getSourceRootsCheckingForDuplicates(): Collection<String> {
-        val uniqueSourceRoots = linkedSetOf<String>()
+    private fun getSourceRootsCheckingForDuplicates(): List<KotlinSourceRoot> {
+        val uniqueSourceRoots = hashSetOf<String>()
+        val result = mutableListOf<KotlinSourceRoot>()
 
-        configuration.kotlinSourceRoots.forEach { path ->
-            if (!uniqueSourceRoots.add(path)) {
-                report(STRONG_WARNING, "Duplicate source root: $path")
+        for (root in configuration.kotlinSourceRoots) {
+            if (!uniqueSourceRoots.add(root.path)) {
+                report(STRONG_WARNING, "Duplicate source root: ${root.path}")
             }
-        }
-
-        return uniqueSourceRoots
-    }
-
-    fun getSourceFiles(): List<KtFile> = sourceFiles
-
-    private fun createKtFiles(project: Project): List<KtFile> {
-        val sourceRoots = getSourceRootsCheckingForDuplicates()
-
-        val localFileSystem = VirtualFileManager.getInstance().getFileSystem(StandardFileSystems.FILE_PROTOCOL)
-        val psiManager = PsiManager.getInstance(project)
-
-        val processedFiles = hashSetOf<VirtualFile>()
-        val result = mutableListOf<KtFile>()
-
-        val virtualFileCreator = PreprocessedFileCreator(project)
-
-        for (sourceRootPath in sourceRoots) {
-            val vFile = localFileSystem.findFileByPath(sourceRootPath)
-            if (vFile == null) {
-                val message = "Source file or directory not found: $sourceRootPath"
-
-                val buildFilePath = configuration.get(JVMConfigurationKeys.MODULE_XML_FILE)
-                if (buildFilePath != null && Logger.isInitialized()) {
-                    LOG.warn("$message\n\nbuild file path: $buildFilePath\ncontent:\n${buildFilePath.readText()}")
-                }
-
-                report(ERROR, message)
-                continue
-            }
-
-            if (!vFile.isDirectory && vFile.fileType != KotlinFileType.INSTANCE) {
-                report(ERROR, "Source entry is not a Kotlin file: $sourceRootPath")
-                continue
-            }
-
-            for (file in File(sourceRootPath).walkTopDown()) {
-                if (!file.isFile) continue
-
-                val virtualFile = localFileSystem.findFileByPath(file.absolutePath)?.let(virtualFileCreator::create)
-                if (virtualFile != null && processedFiles.add(virtualFile)) {
-                    val psiFile = psiManager.findFile(virtualFile)
-                    if (psiFile is KtFile) {
-                        result.add(psiFile)
-                    }
-                }
-            }
+            result.add(root)
         }
 
         return result
     }
 
-    private fun report(severity: CompilerMessageSeverity, message: String) {
-        configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY).report(severity, message)
-    }
+    fun getSourceFiles(): List<KtFile> = sourceFiles
+
+    private fun createKtFiles(project: Project): List<KtFile> =
+        createSourceFilesFromSourceRoots(configuration, project, getSourceRootsCheckingForDuplicates())
+
+    internal fun report(severity: CompilerMessageSeverity, message: String) = configuration.report(severity, message)
 
     companion object {
-        init {
-            setCompatibleBuild()
-        }
-
         private val LOG = Logger.getInstance(KotlinCoreEnvironment::class.java)
 
         private val APPLICATION_LOCK = Object()
@@ -479,7 +420,6 @@ class KotlinCoreEnvironment private constructor(
         fun createForProduction(
             parentDisposable: Disposable, configuration: CompilerConfiguration, configFiles: EnvironmentConfigFiles
         ): KotlinCoreEnvironment {
-            setCompatibleBuild()
             val appEnv = getOrCreateApplicationEnvironmentForProduction(configuration)
             // Disposing of the environment is unsafe in production then parallel builds are enabled, but turning it off universally
             // breaks a lot of tests, therefore it is disabled for production and enabled for tests
@@ -500,14 +440,6 @@ class KotlinCoreEnvironment private constructor(
                 ourProjectCount++
             }
             return environment
-        }
-
-        @JvmStatic
-        private fun setCompatibleBuild() {
-            IdeaExtensionPoints.IDEA_COMPATIBLE_BUILD_NUMBER.let { buildNumber ->
-                PluginManagerCore.BUILD_NUMBER = buildNumber
-                System.getProperties().setProperty("idea.plugins.compatible.build", buildNumber)
-            }
         }
 
         @TestOnly
@@ -593,6 +525,8 @@ class KotlinCoreEnvironment private constructor(
         }
 
         private fun registerApplicationExtensionPointsAndExtensionsFrom(configuration: CompilerConfiguration, configFilePath: String) {
+            workaroundIbmJdkStaxReportCdataEventIssue()
+
             fun File.hasConfigFile(configFile: String): Boolean =
                 if (isDirectory) File(this, "META-INF" + File.separator + configFile).exists()
                 else try {
@@ -605,16 +539,66 @@ class KotlinCoreEnvironment private constructor(
 
             val pluginRoot =
                 configuration.get(CLIConfigurationKeys.INTELLIJ_PLUGIN_ROOT)?.let(::File)
-                    ?: configuration.get(CLIConfigurationKeys.COMPILER_JAR_LOCATOR)?.compilerJar
                     ?: PathUtil.getResourcePathForClass(this::class.java).takeIf { it.hasConfigFile(configFilePath) }
                     // hack for load extensions when compiler run directly from project directory (e.g. in tests)
-                    ?: File("idea/src").takeIf { it.hasConfigFile(configFilePath) }
+                    ?: File("idea/resources").takeIf { it.hasConfigFile(configFilePath) }
                     ?: throw IllegalStateException(
                         "Unable to find extension point configuration $configFilePath " +
                                 "(cp:\n  ${(Thread.currentThread().contextClassLoader as? UrlClassLoader)?.urls?.joinToString("\n  ") { it.file }})"
                     )
 
             CoreApplicationEnvironment.registerExtensionPointAndExtensions(pluginRoot, configFilePath, Extensions.getRootArea())
+        }
+
+        private fun workaroundIbmJdkStaxReportCdataEventIssue() {
+            if (!SystemInfo.isIbmJvm) return
+
+            // On IBM JDK, XMLInputFactory does not support "report-cdata-event" property, but JDOMUtil sets it unconditionally in the
+            // static XML_INPUT_FACTORY field and fails with an exception (Logger.error throws exception in the compiler) if unsuccessful.
+            // Until this is fixed in the platform, we workaround the issue by setting that field to a value that does not attempt
+            // to set the unsupported property.
+            // See IDEA-206446 for more information
+            val field = JDOMUtil::class.java.getDeclaredField("XML_INPUT_FACTORY")
+            field.isAccessible = true
+            Field::class.java.getDeclaredField("modifiers")
+                .apply { isAccessible = true }
+                .setInt(field, field.modifiers and Modifier.FINAL.inv())
+            field.set(null, object : NotNullLazyValue<XMLInputFactory>() {
+                override fun compute(): XMLInputFactory {
+                    val factory: XMLInputFactory = try {
+                        // otherwise wst can be used (in tests/dev run)
+                        val clazz = Class.forName("com.sun.xml.internal.stream.XMLInputFactoryImpl")
+                        clazz.newInstance() as XMLInputFactory
+                    } catch (e: Exception) {
+                        // ok, use random
+                        XMLInputFactory.newFactory()
+                    }
+
+                    factory.setProperty(XMLInputFactory.IS_COALESCING, true)
+                    factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
+                    factory.setProperty(XMLInputFactory.SUPPORT_DTD, false)
+                    return factory
+                }
+            })
+        }
+
+        @JvmStatic
+        @Suppress("MemberVisibilityCanPrivate") // made public for CLI Android Lint
+        fun registerPluginExtensionPoints(project: MockProject) {
+            ExpressionCodegenExtension.registerExtensionPoint(project)
+            SyntheticResolveExtension.registerExtensionPoint(project)
+            ClassBuilderInterceptorExtension.registerExtensionPoint(project)
+            AnalysisHandlerExtension.registerExtensionPoint(project)
+            PackageFragmentProviderExtension.registerExtensionPoint(project)
+            StorageComponentContainerContributor.registerExtensionPoint(project)
+            DeclarationAttributeAltererExtension.registerExtensionPoint(project)
+            PreprocessedVirtualFileFactoryExtension.registerExtensionPoint(project)
+            JsSyntheticTranslateExtension.registerExtensionPoint(project)
+            CompilerConfigurationExtension.registerExtensionPoint(project)
+            CollectAdditionalSourcesExtension.registerExtensionPoint(project)
+            ExtraImportsProviderExtension.registerExtensionPoint(project)
+            IrGenerationExtension.registerExtensionPoint(project)
+            ScriptEvaluationExtension.registerExtensionPoint(project)
         }
 
         private fun registerApplicationServicesForCLI(applicationEnvironment: JavaCoreApplicationEnvironment) {
@@ -637,7 +621,8 @@ class KotlinCoreEnvironment private constructor(
             }
         }
 
-        private fun registerProjectExtensionPoints(area: ExtensionsArea) {
+        @JvmStatic
+        fun registerProjectExtensionPoints(area: ExtensionsArea) {
             CoreApplicationEnvironment.registerExtensionPoint(
                 area, PsiTreeChangePreprocessor.EP_NAME, PsiTreeChangePreprocessor::class.java
             )
@@ -648,20 +633,18 @@ class KotlinCoreEnvironment private constructor(
 
         // made public for Upsource
         @JvmStatic
+        @Deprecated("Use registerProjectServices(project) instead.", ReplaceWith("registerProjectServices(projectEnvironment.project)"))
         fun registerProjectServices(projectEnvironment: JavaCoreProjectEnvironment, messageCollector: MessageCollector?) {
-            with(projectEnvironment.project) {
-                val scriptDefinitionProvider = CliScriptDefinitionProvider()
-                registerService(ScriptDefinitionProvider::class.java, scriptDefinitionProvider)
-                registerService(
-                    ScriptDependenciesProvider::class.java,
-                    CliScriptDependenciesProvider(projectEnvironment.project)
-                )
+            registerProjectServices(projectEnvironment.project)
+        }
+
+        // made public for Android Lint
+        @JvmStatic
+        fun registerProjectServices(project: MockProject) {
+            with(project) {
                 registerService(KotlinJavaPsiFacade::class.java, KotlinJavaPsiFacade(this))
                 registerService(KtLightClassForFacade.FacadeStubCache::class.java, KtLightClassForFacade.FacadeStubCache(this))
                 registerService(ModuleAnnotationsResolver::class.java, CliModuleAnnotationsResolver())
-                if (messageCollector != null) {
-                    registerService(ScriptReportSink::class.java, CliScriptReportSink(messageCollector))
-                }
             }
         }
 
@@ -670,6 +653,27 @@ class KotlinCoreEnvironment private constructor(
              * Note that Kapt may restart code analysis process, and CLI services should be aware of that.
              * Use PsiManager.getModificationTracker() to ensure that all the data you cached is still valid.
              */
+        }
+
+        // made public for Android Lint
+        @JvmStatic
+        fun registerKotlinLightClassSupport(project: MockProject) {
+            with(project) {
+                val traceHolder = CliTraceHolder()
+                val cliLightClassGenerationSupport = CliLightClassGenerationSupport(traceHolder)
+                val kotlinAsJavaSupport = CliKotlinAsJavaSupport(this, traceHolder)
+                registerService(LightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
+                registerService(CliLightClassGenerationSupport::class.java, cliLightClassGenerationSupport)
+                registerService(KotlinAsJavaSupport::class.java, kotlinAsJavaSupport)
+                registerService(CodeAnalyzerInitializer::class.java, traceHolder)
+
+                val area = Extensions.getArea(this)
+
+                area.getExtensionPoint(PsiElementFinder.EP_NAME).registerExtension(JavaElementFinder(this, kotlinAsJavaSupport))
+                area.getExtensionPoint(PsiElementFinder.EP_NAME).registerExtension(
+                    PsiElementFinderImpl(this, ServiceManager.getService(this, JavaFileManager::class.java))
+                )
+            }
         }
 
         private fun CompilerConfiguration.setupJdkClasspathRoots(configFiles: EnvironmentConfigFiles) {
@@ -690,8 +694,7 @@ class KotlinCoreEnvironment private constructor(
 
             if (!CoreJrtFileSystem.isModularJdk(javaRoot)) {
                 if (classesRoots.isEmpty()) {
-                    val messageCollector = get(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY)
-                    messageCollector?.report(ERROR, "No class roots are found in the JDK path: $javaRoot")
+                    report(ERROR, "No class roots are found in the JDK path: $javaRoot")
                 } else {
                     addJvmSdkRoots(classesRoots)
                 }
@@ -699,3 +702,4 @@ class KotlinCoreEnvironment private constructor(
         }
     }
 }
+

@@ -9,7 +9,6 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationWithTarget
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
@@ -186,6 +185,10 @@ interface DescriptorRendererOptions {
     var withoutReturnType: Boolean
     var normalizedVisibilities: Boolean
     var renderDefaultVisibility: Boolean
+    var renderDefaultModality: Boolean
+    var renderConstructorDelegation: Boolean
+    var renderPrimaryConstructorParametersAsProperties: Boolean
+    var actualPropertiesInPrimaryConstructor: Boolean
     var uninferredTypeParameterAsName: Boolean
     var overrideRenderingPolicy: OverrideRenderingPolicy
     var valueParametersHandler: DescriptorRenderer.ValueParametersHandler
@@ -210,11 +213,12 @@ interface DescriptorRendererOptions {
     var typeNormalizer: (KotlinType) -> KotlinType
     var defaultParameterValueRenderer: ((ValueParameterDescriptor) -> String)?
     var secondaryConstructorsAsPrimary: Boolean
-    var renderAccessors: Boolean
+    var propertyAccessorRenderingPolicy: PropertyAccessorRenderingPolicy
     var renderDefaultAnnotationArguments: Boolean
     var alwaysRenderModifiers: Boolean
     var renderConstructorKeyword: Boolean
     var renderUnabbreviatedType: Boolean
+    var renderTypeExpansions: Boolean
     var includeAdditionalModifiers: Boolean
     var parameterNamesInFunctionalTypes: Boolean
     var renderFunctionContracts: Boolean
@@ -251,6 +255,12 @@ enum class ParameterNameRenderingPolicy {
     NONE
 }
 
+enum class PropertyAccessorRenderingPolicy {
+    PRETTY,
+    DEBUG,
+    NONE
+}
+
 enum class DescriptorRendererModifier(val includeByDefault: Boolean) {
     VISIBILITY(true),
     MODALITY(true),
@@ -262,6 +272,8 @@ enum class DescriptorRendererModifier(val includeByDefault: Boolean) {
     INLINE(true),
     EXPECT(true),
     ACTUAL(true),
+    CONST(true),
+    LATEINIT(true),
     ;
 
     companion object {

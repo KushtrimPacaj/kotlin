@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptorIfAny
 import org.jetbrains.kotlin.idea.codeInsight.DescriptorToSourceUtilsIde
 import org.jetbrains.kotlin.idea.core.TemplateKind
 import org.jetbrains.kotlin.idea.core.getFunctionBodyTextFromTemplate
+import org.jetbrains.kotlin.idea.core.overrideImplement.OverrideMemberChooserObject.BodyType.*
 import org.jetbrains.kotlin.idea.core.util.DescriptorMemberChooserObject
 import org.jetbrains.kotlin.idea.j2k.IdeaDocCommentConverter
 import org.jetbrains.kotlin.idea.kdoc.KDocElementFactory
@@ -40,14 +41,17 @@ import org.jetbrains.kotlin.psi.findDocComment.findDocComment
 import org.jetbrains.kotlin.psi.psiUtil.hasActualModifier
 import org.jetbrains.kotlin.psi.psiUtil.hasExpectModifier
 import org.jetbrains.kotlin.renderer.*
+import org.jetbrains.kotlin.renderer.DescriptorRenderer.Companion.withOptions
+import org.jetbrains.kotlin.renderer.DescriptorRendererModifier.*
 import org.jetbrains.kotlin.resolve.checkers.ExperimentalUsageChecker
 import org.jetbrains.kotlin.resolve.descriptorUtil.setSingleOverridden
 import org.jetbrains.kotlin.util.findCallableMemberBySignature
 
 interface OverrideMemberChooserObject : ClassMember {
-    sealed class BodyType {
+    sealed class BodyType(val requiresReturn: Boolean = true) {
         object NO_BODY : BodyType()
-        object EMPTY : BodyType()
+        object EMPTY_OR_TEMPLATE : BodyType(requiresReturn = false)
+        object FROM_TEMPLATE : BodyType(requiresReturn = false)
         object SUPER : BodyType()
         object QUALIFIED_SUPER : BodyType()
 
@@ -60,27 +64,36 @@ interface OverrideMemberChooserObject : ClassMember {
     val preferConstructorParameter: Boolean
 
     companion object {
-        fun create(project: Project,
-                   descriptor: CallableMemberDescriptor,
-                   immediateSuper: CallableMemberDescriptor,
-                   bodyType: BodyType,
-                   preferConstructorParameter: Boolean = false
+        fun create(
+            project: Project,
+            descriptor: CallableMemberDescriptor,
+            immediateSuper: CallableMemberDescriptor,
+            bodyType: BodyType,
+            preferConstructorParameter: Boolean = false
         ): OverrideMemberChooserObject {
             val declaration = DescriptorToSourceUtilsIde.getAnyDeclaration(project, descriptor)
             return if (declaration != null) {
-                WithDeclaration(descriptor, declaration, immediateSuper, bodyType, preferConstructorParameter)
-            }
-            else {
+                create(declaration, descriptor, immediateSuper, bodyType, preferConstructorParameter)
+            } else {
                 WithoutDeclaration(descriptor, immediateSuper, bodyType, preferConstructorParameter)
             }
         }
 
+        fun create(
+            declaration: PsiElement,
+            descriptor: CallableMemberDescriptor,
+            immediateSuper: CallableMemberDescriptor,
+            bodyType: BodyType,
+            preferConstructorParameter: Boolean = false
+        ): OverrideMemberChooserObject =
+            WithDeclaration(descriptor, declaration, immediateSuper, bodyType, preferConstructorParameter)
+
         private class WithDeclaration(
-                descriptor: CallableMemberDescriptor,
-                declaration: PsiElement,
-                override val immediateSuper: CallableMemberDescriptor,
-                override val bodyType: BodyType,
-                override val preferConstructorParameter: Boolean
+            descriptor: CallableMemberDescriptor,
+            declaration: PsiElement,
+            override val immediateSuper: CallableMemberDescriptor,
+            override val bodyType: BodyType,
+            override val preferConstructorParameter: Boolean
         ) : DescriptorMemberChooserObject(declaration, descriptor), OverrideMemberChooserObject {
 
             override val descriptor: CallableMemberDescriptor
@@ -88,52 +101,91 @@ interface OverrideMemberChooserObject : ClassMember {
         }
 
         private class WithoutDeclaration(
-                override val descriptor: CallableMemberDescriptor,
-                override val immediateSuper: CallableMemberDescriptor,
-                override val bodyType: BodyType,
-                override val preferConstructorParameter: Boolean
-        ) : MemberChooserObjectBase(DescriptorMemberChooserObject.getText(descriptor), DescriptorMemberChooserObject.getIcon(null, descriptor)), OverrideMemberChooserObject {
+            override val descriptor: CallableMemberDescriptor,
+            override val immediateSuper: CallableMemberDescriptor,
+            override val bodyType: BodyType,
+            override val preferConstructorParameter: Boolean
+        ) : MemberChooserObjectBase(
+            DescriptorMemberChooserObject.getText(descriptor), DescriptorMemberChooserObject.getIcon(null, descriptor)
+        ), OverrideMemberChooserObject {
 
             override fun getParentNodeDelegate(): MemberChooserObject? {
                 val parentClassifier = descriptor.containingDeclaration as? ClassifierDescriptor ?: return null
-                return MemberChooserObjectBase(DescriptorMemberChooserObject.getText(parentClassifier), DescriptorMemberChooserObject.getIcon(null, parentClassifier))
+                return MemberChooserObjectBase(
+                    DescriptorMemberChooserObject.getText(parentClassifier), DescriptorMemberChooserObject.getIcon(null, parentClassifier)
+                )
             }
         }
     }
 }
 
-fun OverrideMemberChooserObject.generateMember(targetClass: KtClassOrObject, copyDoc: Boolean): KtCallableDeclaration {
-    val project = targetClass.project
+enum class MemberGenerateMode {
+    OVERRIDE,
+    ACTUAL,
+    EXPECT
+}
 
+fun OverrideMemberChooserObject.generateMember(
+    targetClass: KtClassOrObject,
+    copyDoc: Boolean
+) = generateMember(targetClass, copyDoc, targetClass.project, mode = MemberGenerateMode.OVERRIDE)
+
+fun OverrideMemberChooserObject.generateMember(
+    targetClass: KtClassOrObject?,
+    copyDoc: Boolean,
+    project: Project,
+    mode: MemberGenerateMode
+): KtCallableDeclaration {
     val descriptor = immediateSuper
 
     val bodyType = when {
-        targetClass.hasExpectModifier() -> OverrideMemberChooserObject.BodyType.NO_BODY
-        descriptor.extensionReceiverParameter != null -> OverrideMemberChooserObject.BodyType.EMPTY
+        targetClass?.hasExpectModifier() == true -> NO_BODY
+        descriptor.extensionReceiverParameter != null && mode == MemberGenerateMode.OVERRIDE -> FROM_TEMPLATE
         else -> bodyType
     }
 
-    if (preferConstructorParameter && descriptor is PropertyDescriptor) return generateConstructorParameter(project, descriptor)
+    val baseRenderer = when (mode) {
+        MemberGenerateMode.OVERRIDE -> OVERRIDE_RENDERER
+        MemberGenerateMode.ACTUAL -> ACTUAL_RENDERER
+        MemberGenerateMode.EXPECT -> EXPECT_RENDERER
+    }
+    val renderer = baseRenderer.withOptions {
+        if (descriptor is ClassConstructorDescriptor && descriptor.isPrimary) {
+            val containingClass = descriptor.containingDeclaration
+            if (containingClass.kind == ClassKind.ANNOTATION_CLASS || containingClass.isInline) {
+                renderPrimaryConstructorParametersAsProperties = true
+            }
+        }
+    }
+
+    if (preferConstructorParameter && descriptor is PropertyDescriptor) {
+        return generateConstructorParameter(project, descriptor, renderer, mode == MemberGenerateMode.OVERRIDE)
+    }
 
     val newMember: KtCallableDeclaration = when (descriptor) {
-        is SimpleFunctionDescriptor -> generateFunction(project, descriptor, bodyType)
-        is PropertyDescriptor -> generateProperty(project, descriptor, bodyType)
+        is FunctionDescriptor -> generateFunction(project, descriptor, renderer, bodyType, mode == MemberGenerateMode.OVERRIDE)
+        is PropertyDescriptor -> generateProperty(project, descriptor, renderer, bodyType, mode == MemberGenerateMode.OVERRIDE)
         else -> error("Unknown member to override: $descriptor")
     }
 
-    if (targetClass.hasActualModifier()) {
-        val expectClassDescriptors =
-            targetClass.resolveToDescriptorIfAny()?.expectedDescriptors()?.filterIsInstance<ClassDescriptor>().orEmpty()
-        if (expectClassDescriptors.any { expectClassDescriptor ->
-                val expectMemberDescriptor = expectClassDescriptor.findCallableMemberBySignature(immediateSuper)
-                expectMemberDescriptor?.isExpect == true && expectMemberDescriptor.kind != CallableMemberDescriptor.Kind.FAKE_OVERRIDE
-            }
-        ) {
-            newMember.addModifier(KtTokens.ACTUAL_KEYWORD)
+    when (mode) {
+        MemberGenerateMode.ACTUAL -> newMember.addModifier(KtTokens.ACTUAL_KEYWORD)
+        MemberGenerateMode.EXPECT -> if (targetClass == null) {
+            newMember.addModifier(KtTokens.EXPECT_KEYWORD)
         }
-    } else {
-        newMember.removeModifier(KtTokens.IMPL_KEYWORD)
-        newMember.removeModifier(KtTokens.ACTUAL_KEYWORD)
+        MemberGenerateMode.OVERRIDE -> {
+            if (targetClass?.hasActualModifier() == true) {
+                val expectClassDescriptors =
+                    targetClass.resolveToDescriptorIfAny()?.expectedDescriptors()?.filterIsInstance<ClassDescriptor>().orEmpty()
+                if (expectClassDescriptors.any { expectClassDescriptor ->
+                        val expectMemberDescriptor = expectClassDescriptor.findCallableMemberBySignature(immediateSuper)
+                        expectMemberDescriptor?.isExpect == true && expectMemberDescriptor.kind != CallableMemberDescriptor.Kind.FAKE_OVERRIDE
+                    }
+                ) {
+                    newMember.addModifier(KtTokens.ACTUAL_KEYWORD)
+                }
+            }
+        }
     }
 
     if (copyDoc) {
@@ -143,7 +195,7 @@ fun OverrideMemberChooserObject.generateMember(targetClass: KtClassOrObject, cop
                 findDocComment(superDeclaration)
             is PsiDocCommentOwner -> {
                 val kDocText = superDeclaration.docComment?.let { IdeaDocCommentConverter.convertDocComment(it) }
-                if (kDocText.isNullOrEmpty()) null else KDocElementFactory(project).createKDocFromText(kDocText!!)
+                if (kDocText.isNullOrEmpty()) null else KDocElementFactory(project).createKDocFromText(kDocText)
             }
             else -> null
         }
@@ -155,9 +207,9 @@ fun OverrideMemberChooserObject.generateMember(targetClass: KtClassOrObject, cop
     return newMember
 }
 
-private val OVERRIDE_RENDERER = DescriptorRenderer.withOptions {
+private val OVERRIDE_RENDERER = withOptions {
     defaultParameterValueRenderer = null
-    modifiers = setOf(DescriptorRendererModifier.OVERRIDE, DescriptorRendererModifier.ANNOTATIONS)
+    modifiers = setOf(OVERRIDE, ANNOTATIONS)
     withDefinedIn = false
     classifierNamePolicy = ClassifierNamePolicy.SOURCE_CODE_QUALIFIED
     overrideRenderingPolicy = OverrideRenderingPolicy.RENDER_OVERRIDE
@@ -171,81 +223,153 @@ private val OVERRIDE_RENDERER = DescriptorRenderer.withOptions {
     presentableUnresolvedTypes = true
 }
 
-private fun PropertyDescriptor.wrap(): PropertyDescriptor {
-    val delegate = copy(containingDeclaration, Modality.OPEN, visibility, kind, true) as PropertyDescriptor
+private val EXPECT_RENDERER = OVERRIDE_RENDERER.withOptions {
+    modifiers = setOf(VISIBILITY, MODALITY, OVERRIDE, INNER, MEMBER_KIND)
+    renderConstructorKeyword = false
+    secondaryConstructorsAsPrimary = false
+    renderDefaultVisibility = false
+    renderDefaultModality = false
+    renderTypeExpansions = true
+}
+
+private val ACTUAL_RENDERER = EXPECT_RENDERER.withOptions {
+    modifiers += ACTUAL
+    actualPropertiesInPrimaryConstructor = true
+    renderTypeExpansions = false
+    renderConstructorDelegation = true
+}
+
+private fun PropertyDescriptor.wrap(forceOverride: Boolean): PropertyDescriptor {
+    val delegate = copy(containingDeclaration, if (forceOverride) Modality.OPEN else modality, visibility, kind, true) as PropertyDescriptor
     val newDescriptor = object : PropertyDescriptor by delegate {
         override fun isExpect() = false
     }
-    newDescriptor.setSingleOverridden(this)
+    if (forceOverride) {
+        newDescriptor.setSingleOverridden(this)
+    }
     return newDescriptor
 }
 
-private fun FunctionDescriptor.wrap(): FunctionDescriptor {
+private fun FunctionDescriptor.wrap(forceOverride: Boolean): FunctionDescriptor {
+    if (this is ClassConstructorDescriptor) return this.wrap()
     return object : FunctionDescriptor by this {
         override fun isExpect() = false
-        override fun getModality() = Modality.OPEN
+        override fun getModality() = if (forceOverride) Modality.OPEN else this@wrap.modality
         override fun getReturnType() = this@wrap.returnType?.approximateFlexibleTypes(preferNotNull = true, preferStarForRaw = true)
-        override fun getOverriddenDescriptors() = listOf(this@wrap)
-        override fun <R : Any?, D : Any?> accept(visitor: DeclarationDescriptorVisitor<R, D>, data: D) = visitor.visitFunctionDescriptor(this, data)
+        override fun getOverriddenDescriptors() = if (forceOverride) listOf(this@wrap) else this@wrap.overriddenDescriptors
+        override fun <R : Any?, D : Any?> accept(visitor: DeclarationDescriptorVisitor<R, D>, data: D) =
+            visitor.visitFunctionDescriptor(this, data)
     }
 }
 
-private fun generateProperty(project: Project, descriptor: PropertyDescriptor, bodyType: OverrideMemberChooserObject.BodyType): KtProperty {
-    val newDescriptor = descriptor.wrap()
-    val body = buildString {
-        append("\nget()")
-        append(" = ")
-        append(generateUnsupportedOrSuperCall(project, descriptor, bodyType))
-        if (descriptor.isVar) {
-            append("\nset(value) {}")
-        }
+private fun ClassConstructorDescriptor.wrap(): ClassConstructorDescriptor {
+    return object : ClassConstructorDescriptor by this {
+        override fun isExpect() = false
+        override fun getModality() = Modality.FINAL
+        override fun getReturnType() = this@wrap.returnType.approximateFlexibleTypes(preferNotNull = true, preferStarForRaw = true)
+        override fun getOverriddenDescriptors(): List<ClassConstructorDescriptor> = emptyList()
+        override fun <R : Any?, D : Any?> accept(visitor: DeclarationDescriptorVisitor<R, D>, data: D) =
+            visitor.visitConstructorDescriptor(this, data)
     }
-    return KtPsiFactory(project).createProperty(OVERRIDE_RENDERER.render(newDescriptor) + body)
 }
 
-private fun generateConstructorParameter(project: Project, descriptor: PropertyDescriptor): KtParameter {
-    val newDescriptor = descriptor.wrap()
-    newDescriptor.setSingleOverridden(descriptor)
-    return KtPsiFactory(project).createParameter(OVERRIDE_RENDERER.render(newDescriptor))
-}
-
-private fun generateFunction(project: Project, descriptor: FunctionDescriptor, bodyType: OverrideMemberChooserObject.BodyType): KtNamedFunction {
-    val newDescriptor = descriptor.wrap()
+private fun generateProperty(
+    project: Project,
+    descriptor: PropertyDescriptor,
+    renderer: DescriptorRenderer,
+    bodyType: OverrideMemberChooserObject.BodyType,
+    forceOverride: Boolean
+): KtProperty {
+    val newDescriptor = descriptor.wrap(forceOverride)
 
     val returnType = descriptor.returnType
     val returnsNotUnit = returnType != null && !KotlinBuiltIns.isUnit(returnType)
 
-    val body = if (bodyType != OverrideMemberChooserObject.BodyType.NO_BODY) {
-        val delegation = generateUnsupportedOrSuperCall(project, descriptor, bodyType)
-        "{" + (if (returnsNotUnit && bodyType != OverrideMemberChooserObject.BodyType.EMPTY) "return " else "") + delegation + "\n}"
-    }
-    else ""
+    val body =
+        if (bodyType != NO_BODY) {
+            buildString {
+                append("\nget()")
+                append(" = ")
+                append(generateUnsupportedOrSuperCall(project, descriptor, bodyType, !returnsNotUnit))
+                if (descriptor.isVar) {
+                    append("\nset(value) {}")
+                }
+            }
+        } else ""
+    return KtPsiFactory(project).createProperty(renderer.render(newDescriptor) + body)
+}
 
-    return KtPsiFactory(project).createFunction(OVERRIDE_RENDERER.render(newDescriptor) + body)
+private fun generateConstructorParameter(
+    project: Project,
+    descriptor: PropertyDescriptor,
+    renderer: DescriptorRenderer,
+    forceOverride: Boolean
+): KtParameter {
+    val newDescriptor = descriptor.wrap(forceOverride)
+    newDescriptor.setSingleOverridden(descriptor)
+    return KtPsiFactory(project).createParameter(renderer.render(newDescriptor))
+}
+
+private fun generateFunction(
+    project: Project,
+    descriptor: FunctionDescriptor,
+    renderer: DescriptorRenderer,
+    bodyType: OverrideMemberChooserObject.BodyType,
+    forceOverride: Boolean
+): KtFunction {
+    val newDescriptor = descriptor.wrap(forceOverride)
+
+    val returnType = descriptor.returnType
+    val returnsNotUnit = returnType != null && !KotlinBuiltIns.isUnit(returnType)
+
+    val body = if (bodyType != NO_BODY) {
+        val delegation = generateUnsupportedOrSuperCall(project, descriptor, bodyType, !returnsNotUnit)
+        val returnPrefix = if (returnsNotUnit && bodyType.requiresReturn) "return " else ""
+        "{$returnPrefix$delegation\n}"
+    } else ""
+
+    val factory = KtPsiFactory(project)
+    val functionText = renderer.render(newDescriptor) + body
+    return when (descriptor) {
+        is ClassConstructorDescriptor -> {
+            if (descriptor.isPrimary) {
+                factory.createPrimaryConstructor(functionText)
+            } else {
+                factory.createSecondaryConstructor(functionText)
+            }
+        }
+        else -> factory.createFunction(functionText)
+    }
 }
 
 fun generateUnsupportedOrSuperCall(
-        project: Project,
-        descriptor: CallableMemberDescriptor,
-        bodyType: OverrideMemberChooserObject.BodyType
+    project: Project,
+    descriptor: CallableMemberDescriptor,
+    bodyType: OverrideMemberChooserObject.BodyType,
+    canBeEmpty: Boolean = true
 ): String {
-    if (bodyType == OverrideMemberChooserObject.BodyType.EMPTY) {
-        val templateKind = if (descriptor is FunctionDescriptor) TemplateKind.FUNCTION else TemplateKind.PROPERTY_INITIALIZER
-        return getFunctionBodyTextFromTemplate(project,
-                                               templateKind,
-                                               descriptor.name.asString(),
-                                               descriptor.returnType?.let { IdeDescriptorRenderers.SOURCE_CODE.renderType(it) } ?: "Unit",
-                                               null)
-    }
-    else {
-        return buildString {
+    val effectiveBodyType = if (!canBeEmpty && bodyType == EMPTY_OR_TEMPLATE) FROM_TEMPLATE else bodyType
+    when (effectiveBodyType) {
+        EMPTY_OR_TEMPLATE -> return ""
+        FROM_TEMPLATE -> {
+            val templateKind = if (descriptor is FunctionDescriptor) TemplateKind.FUNCTION else TemplateKind.PROPERTY_INITIALIZER
+            return getFunctionBodyTextFromTemplate(
+                project,
+                templateKind,
+                descriptor.name.asString(),
+                descriptor.returnType?.let { IdeDescriptorRenderers.SOURCE_CODE.renderType(it) } ?: "Unit",
+                null
+            )
+        }
+        else -> return buildString {
             if (bodyType is OverrideMemberChooserObject.BodyType.Delegate) {
                 append(bodyType.receiverName)
-            }
-            else {
+            } else {
                 append("super")
-                if (bodyType == OverrideMemberChooserObject.BodyType.QUALIFIED_SUPER) {
-                    val superClassFqName = IdeDescriptorRenderers.SOURCE_CODE.renderClassifierName(descriptor.containingDeclaration as ClassifierDescriptor)
+                if (bodyType == QUALIFIED_SUPER) {
+                    val superClassFqName = IdeDescriptorRenderers.SOURCE_CODE.renderClassifierName(
+                        descriptor.containingDeclaration as ClassifierDescriptor
+                    )
                     append("<").append(superClassFqName).append(">")
                 }
             }
@@ -262,4 +386,7 @@ fun generateUnsupportedOrSuperCall(
     }
 }
 
-
+fun KtNamedDeclaration.makeNotActual() {
+    removeModifier(KtTokens.ACTUAL_KEYWORD)
+    removeModifier(KtTokens.IMPL_KEYWORD)
+}

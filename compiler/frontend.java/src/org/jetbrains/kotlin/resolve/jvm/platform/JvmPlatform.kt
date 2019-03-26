@@ -32,8 +32,8 @@ object JvmPlatform : TargetPlatform("JVM") {
             }
         }
 
-        for (builtinPackageFragment in JvmBuiltIns(storageManager).builtInsPackageFragmentsImportedByDefault) {
-            addAllClassifiersFromScope(builtinPackageFragment.getMemberScope())
+        for (builtInPackage in JvmBuiltIns(storageManager, JvmBuiltIns.Kind.FROM_CLASS_LOADER).builtInPackagesImportedByDefault) {
+            addAllClassifiersFromScope(builtInPackage.memberScope)
         }
     }
 

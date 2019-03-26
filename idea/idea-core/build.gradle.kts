@@ -5,7 +5,7 @@ plugins {
 }
 
 dependencies {
-    compile(projectDist(":kotlin-stdlib"))
+    compile(kotlinStdlib())
     compileOnly(project(":kotlin-reflect-api"))
     compile(project(":core:descriptors"))
     compile(project(":core:descriptors.jvm"))
@@ -18,11 +18,15 @@ dependencies {
     compile(project(":idea:ide-common"))
     compile(project(":idea:idea-jps-common"))
     compile(project(":plugins:android-extensions-compiler"))
-    compile(project(":kotlin-scripting-compiler"))
+    compile(project(":kotlin-scripting-impl"))
     compile(commonDep("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
     compile(commonDep("org.jetbrains.kotlinx", "kotlinx-coroutines-jdk8")) { isTransitive = false }
     compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
-    compileOnly(intellijDep())
+    compileOnly(intellijDep()) {
+        Ide.IJ191.orHigher {
+            this@compileOnly.includeJars("platform-api")
+        }
+    }
     compileOnly(intellijPluginDep("gradle"))
 }
 
@@ -30,7 +34,7 @@ sourceSets {
     "main" {
         projectDefault()
         java.srcDir("../idea-analysis/src")
-        resources.srcDir("../idea-analysis/src").apply { include("**/*.properties") }
+        resources.srcDir("../idea-analysis/resources")
     }
     "test" {}
 }

@@ -9,7 +9,9 @@ import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.backend.common.CodegenUtil
 import org.jetbrains.kotlin.codegen.*
 import org.jetbrains.kotlin.codegen.context.*
+import org.jetbrains.kotlin.codegen.coroutines.getOrCreateJvmSuspendFunctionView
 import org.jetbrains.kotlin.codegen.state.GenerationState
+import org.jetbrains.kotlin.config.isReleaseCoroutines
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.incremental.KotlinLookupLocation
 import org.jetbrains.kotlin.incremental.components.LookupLocation
@@ -133,11 +135,15 @@ class PsiSourceCompilerForInline(private val codegen: ExpressionCodegen, overrid
     ): SMAP {
         lambdaInfo as? PsiExpressionLambda ?: error("TODO")
         val invokeMethodDescriptor = lambdaInfo.invokeMethodDescriptor
-        val closureContext =
-            if (lambdaInfo.isPropertyReference)
+        val closureContext = when {
+            lambdaInfo.isPropertyReference ->
                 codegen.getContext().intoAnonymousClass(lambdaInfo.classDescriptor, codegen, OwnerKind.IMPLEMENTATION)
-            else
-                codegen.getContext().intoClosure(invokeMethodDescriptor, codegen, state.typeMapper)
+            invokeMethodDescriptor.isSuspend ->
+                codegen.getContext().intoCoroutineClosure(
+                    getOrCreateJvmSuspendFunctionView(invokeMethodDescriptor, state), invokeMethodDescriptor, codegen, state.typeMapper
+                )
+            else -> codegen.getContext().intoClosure(invokeMethodDescriptor, codegen, state.typeMapper)
+        }
         val context = closureContext.intoInlinedLambda(invokeMethodDescriptor, lambdaInfo.isCrossInline, lambdaInfo.isPropertyReference)
 
         return generateMethodBody(
@@ -171,24 +177,30 @@ class PsiSourceCompilerForInline(private val codegen: ExpressionCodegen, overrid
         val strategy = when (expression) {
             is KtCallableReferenceExpression -> {
                 val resolvedCall = expression.callableReference.getResolvedCallWithAssert(state.bindingContext)
-                val receiverType = JvmCodegenUtil.getBoundCallableReferenceReceiver(resolvedCall)?.type?.let(state.typeMapper::mapType)
+                val receiverKotlinType = JvmCodegenUtil.getBoundCallableReferenceReceiver(resolvedCall)?.type
+                val receiverType = receiverKotlinType?.let(state.typeMapper::mapType)
+                val boundReceiverJvmKotlinType = receiverType?.let { JvmKotlinType(receiverType, receiverKotlinType) }
 
                 if (isLambda && lambdaInfo!!.isPropertyReference) {
                     val asmType = state.typeMapper.mapClass(lambdaInfo.classDescriptor)
                     val info = lambdaInfo.propertyReferenceInfo
                     PropertyReferenceCodegen.PropertyReferenceGenerationStrategy(
-                        true, info!!.getFunction, info.target, asmType, receiverType,
+                        true, info!!.getFunction, info.target, asmType,
+                        boundReceiverJvmKotlinType,
                         lambdaInfo.functionWithBodyOrCallableReference, state, true
                     )
                 } else {
-                    FunctionReferenceGenerationStrategy(state, descriptor, resolvedCall, receiverType, null, true)
+                    FunctionReferenceGenerationStrategy(state, descriptor, resolvedCall, boundReceiverJvmKotlinType, null, true)
                 }
             }
             is KtFunctionLiteral -> ClosureGenerationStrategy(state, expression as KtDeclarationWithBody)
             else -> FunctionGenerationStrategy.FunctionDefault(state, expression as KtDeclarationWithBody)
         }
 
-        FunctionCodegen.generateMethodBody(adapter, descriptor, context, jvmMethodSignature, strategy, parentCodegen, state.jvmDefaultMode)
+        FunctionCodegen.generateMethodBody(
+            adapter, descriptor, context, jvmMethodSignature, strategy, parentCodegen, state.jvmDefaultMode,
+            state.languageVersionSettings.isReleaseCoroutines()
+        )
 
         if (isLambda) {
             codegen.propagateChildReifiedTypeParametersUsages(parentCodegen.reifiedTypeParametersUsages)
@@ -266,7 +278,7 @@ class PsiSourceCompilerForInline(private val codegen: ExpressionCodegen, overrid
         val inliningFunction = element as KtDeclarationWithBody?
 
         val node = MethodNode(
-            API,
+            Opcodes.API_VERSION,
             AsmUtil.getMethodAsmFlags(callableDescriptor, context.contextKind, state) or if (callDefault) Opcodes.ACC_STATIC else 0,
             asmMethod.name,
             asmMethod.descriptor, null, null

@@ -26,6 +26,7 @@ import com.intellij.util.ExceptionUtil;
 import com.intellij.util.SmartList;
 import kotlin.collections.ArraysKt;
 import kotlin.collections.CollectionsKt;
+import kotlin.collections.SetsKt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.analyzer.AnalysisResult;
@@ -76,6 +77,7 @@ import java.util.*;
 import static org.jetbrains.kotlin.cli.common.ExitCode.COMPILATION_ERROR;
 import static org.jetbrains.kotlin.cli.common.ExitCode.OK;
 import static org.jetbrains.kotlin.cli.common.UtilsKt.checkKotlinPackageUsage;
+import static org.jetbrains.kotlin.cli.common.UtilsKt.getLibraryFromHome;
 import static org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity.*;
 
 public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
@@ -141,7 +143,7 @@ public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
                 }
                 else {
                     TranslationResultValue translatedValue = compiledParts.get(allSources[i]);
-                    translationUnits.add(new TranslationUnit.BinaryAst(translatedValue.getBinaryAst()));
+                    translationUnits.add(new TranslationUnit.BinaryAst(translatedValue.getBinaryAst(), translatedValue.getInlineData()));
                 }
             }
             return translator.translateUnits(reporter, translationUnits, mainCallParameters, jsAnalysisResult);
@@ -175,7 +177,12 @@ public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
 
         configuration.put(JSConfigurationKeys.LIBRARIES, configureLibraries(arguments, paths, messageCollector));
 
-        ContentRootsKt.addKotlinSourceRoots(configuration, arguments.getFreeArgs());
+        String[] commonSourcesArray = arguments.getCommonSources();
+        Set<String> commonSources = commonSourcesArray == null ? Collections.emptySet() : SetsKt.setOf(commonSourcesArray);
+        for (String arg : arguments.getFreeArgs()) {
+            ContentRootsKt.addKotlinSourceRoot(configuration, arg, commonSources.contains(arg));
+        }
+
         KotlinCoreEnvironment environmentForJS =
                 KotlinCoreEnvironment.createForProduction(rootDisposable, configuration, EnvironmentConfigFiles.JS_CONFIG_FILES);
 
@@ -358,7 +365,7 @@ public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
         MessageCollector messageCollector = configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY);
 
         if (arguments.getTarget() != null) {
-            assert arguments.getTarget() == "v5" : "Unsupported ECMA version: " + arguments.getTarget();
+            assert "v5".equals(arguments.getTarget()) : "Unsupported ECMA version: " + arguments.getTarget();
         }
         configuration.put(JSConfigurationKeys.TARGET, EcmaVersion.defaultVersion());
 

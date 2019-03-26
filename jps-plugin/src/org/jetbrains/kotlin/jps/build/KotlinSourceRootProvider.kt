@@ -14,12 +14,11 @@ import org.jetbrains.jps.incremental.ModuleBuildTarget
 import org.jetbrains.jps.model.java.JavaResourceRootType
 import org.jetbrains.jps.model.java.JavaSourceRootProperties
 import org.jetbrains.jps.model.java.JavaSourceRootType
-import org.jetbrains.jps.model.java.JpsJavaExtensionService
 import org.jetbrains.jps.model.module.JpsModule
 import org.jetbrains.jps.model.module.JpsModuleSourceRootType
-import org.jetbrains.kotlin.config.KotlinResourceRootType
-import org.jetbrains.kotlin.config.KotlinSourceRootType
+import org.jetbrains.kotlin.config.*
 import org.jetbrains.kotlin.jps.model.expectedByModules
+import org.jetbrains.kotlin.jps.model.isTestModule
 import org.jetbrains.kotlin.jps.model.sourceSetModules
 import java.io.File
 
@@ -39,7 +38,7 @@ class KotlinSourceRootProvider : AdditionalRootsProviderService<JavaSourceRootDe
         // `ModuleBuildTarget.computeAllTargets`. `ModuleBuildTarget` is required for incremental compilation.
         // We cannot define our own `ModuleBuildTarget` since it is final and `ModuleBuildTarget` supports only `JavaSourceRootDescriptor`.
         // So the only one way to support `KotlinSourceRootType` is to add a fake `JavaSourceRootDescriptor` for each source root with that type.
-        val kotlinSourceRootType = if (target.isTests) KotlinSourceRootType.TestSource else KotlinSourceRootType.Source
+        val kotlinSourceRootType = if (target.isTests) TestSourceKotlinRootType else SourceKotlinRootType
         module.getSourceRoots(kotlinSourceRootType).forEach {
             result.add(
                 JavaSourceRootDescriptor(
@@ -54,18 +53,15 @@ class KotlinSourceRootProvider : AdditionalRootsProviderService<JavaSourceRootDe
         }
 
         // new multiplatform model support:
-        module.sourceSetModules.forEach { sourceSetModule ->
-            addModuleSourceRoots(result, sourceSetModule, target, false)
+        if (target.isTests == module.isTestModule) {
+            module.sourceSetModules.forEach { sourceSetModule ->
+                addModuleSourceRoots(result, sourceSetModule, target)
+            }
         }
 
         // legacy multiplatform model support:
         module.expectedByModules.forEach { commonModule ->
-            // At the moment, incremental compilation is not supported by K2Metadata compiler.
-            // To avoid long running compilation of common modules, we do not run K2Metadata at all:
-            // instead all the common source roots are transitively added to the final platform modules.
-            val isRecursive = true
-
-            addModuleSourceRoots(result, commonModule, target, isRecursive)
+            addModuleSourceRoots(result, commonModule, target)
         }
 
         return result
@@ -74,8 +70,7 @@ class KotlinSourceRootProvider : AdditionalRootsProviderService<JavaSourceRootDe
     private fun addModuleSourceRoots(
         result: MutableList<JavaSourceRootDescriptor>,
         module: JpsModule,
-        target: ModuleBuildTarget,
-        recursive: Boolean = false
+        target: ModuleBuildTarget
     ) {
         for (commonSourceRoot in module.sourceRoots) {
             val isCommonTestsRootType = commonSourceRoot.rootType.isTestsRootType
@@ -94,28 +89,13 @@ class KotlinSourceRootProvider : AdditionalRootsProviderService<JavaSourceRootDe
                 )
             }
         }
-
-        if (recursive) {
-            JpsJavaExtensionService.dependencies(module)
-                .also {
-                    if (!target.isTests) it.productionOnly()
-                }
-                .processModules {
-                    addModuleSourceRoots(
-                        result,
-                        it,
-                        ModuleBuildTarget(it, target.targetType as JavaModuleBuildTargetType),
-                        true
-                    )
-                }
-        }
     }
 }
 
 private val JpsModuleSourceRootType<*>.isTestsRootType
     get() = when (this) {
-        is KotlinSourceRootType -> this == KotlinSourceRootType.TestSource
-        is KotlinResourceRootType -> this == KotlinResourceRootType.TestResource
+        is KotlinSourceRootType -> this == TestSourceKotlinRootType
+        is KotlinResourceRootType -> this == TestResourceKotlinRootType
         // for compatibility:
         is JavaSourceRootType -> this == JavaSourceRootType.TEST_SOURCE
         is JavaResourceRootType -> this == JavaResourceRootType.TEST_RESOURCE

@@ -27,7 +27,7 @@ fun ClassFileFactory.getClassFiles(): Iterable<OutputFile> {
     return asList().filterClassFiles()
 }
 
-fun List<OutputFile>.filterClassFiles(): Iterable<OutputFile> {
+fun List<OutputFile>.filterClassFiles(): List<OutputFile> {
     return filter { it.relativePath.endsWith(".class") }
 }
 
@@ -38,7 +38,9 @@ private fun Iterable<PackageParts>.addCompiledParts(state: GenerationState): Lis
     val incrementalCache = state.incrementalCacheForThisTarget ?: return this.toList()
     val moduleMappingData = incrementalCache.getModuleMappingData() ?: return this.toList()
 
-    val mapping = ModuleMapping.loadModuleMapping(moduleMappingData, "<incremental>", state.deserializationConfiguration)
+    val mapping = ModuleMapping.loadModuleMapping(moduleMappingData, "<incremental>", state.deserializationConfiguration) { version ->
+        throw IllegalStateException("Version of the generated module cannot be incompatible: $version")
+    }
 
     incrementalCache.getObsoletePackageParts().forEach { internalName ->
         val qualifier = JvmClassName.byInternalName(internalName).packageFqName.asString()

@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 // FILE: utils.kt
 
@@ -29,7 +30,7 @@ fun takeNullableUInt(y: UInt?) {}
 inline fun <T> T.myLet(f: (T) -> Unit) = f(this)
 
 // @TestKt.class:
-// 1 INVOKESTATIC UInt\$Erased.box
+// 1 INVOKESTATIC UInt\.box
 // 5 INVOKEVIRTUAL UInt.unbox
 
 // 0 intValue

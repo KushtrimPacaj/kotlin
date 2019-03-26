@@ -6,10 +6,8 @@ plugins {
     id("jps-compatible")
 }
 
-jvmTarget = "1.6"
-
 dependencies {
-    compile(projectDist(":kotlin-stdlib"))
+    compile(kotlinStdlib())
 }
 
 sourceSets {
@@ -19,7 +17,7 @@ sourceSets {
 
 runtimeJar {
     manifest.attributes.put("Main-Class", "org.jetbrains.kotlin.runner.Main")
-    manifest.attributes.put("Class-Path", "kotlin-runtime.jar")
+    manifest.attributes.put("Class-Path", "kotlin-stdlib.jar")
 }
 
 dist()

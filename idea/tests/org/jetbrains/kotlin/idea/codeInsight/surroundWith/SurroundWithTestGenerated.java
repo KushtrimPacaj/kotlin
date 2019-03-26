@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -585,6 +585,11 @@ public class SurroundWithTestGenerated extends AbstractSurroundWithTest {
         @TestMetadata("moveDeclarationsOut.kt")
         public void testMoveDeclarationsOut() throws Exception {
             runTest("idea/testData/codeInsight/surroundWith/tryCatch/moveDeclarationsOut.kt");
+        }
+
+        @TestMetadata("moveDeclarationsOutSingleStatement.kt")
+        public void testMoveDeclarationsOutSingleStatement() throws Exception {
+            runTest("idea/testData/codeInsight/surroundWith/tryCatch/moveDeclarationsOutSingleStatement.kt");
         }
 
         @TestMetadata("multiExpression.kt")

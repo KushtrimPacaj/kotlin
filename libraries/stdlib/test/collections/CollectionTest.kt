@@ -9,7 +9,7 @@ import test.assertStaticAndRuntimeTypeIs
 import kotlin.test.*
 import test.collections.behaviors.*
 import test.comparisons.STRING_CASE_INSENSITIVE_ORDER
-import kotlin.comparisons.*
+import kotlin.random.Random
 
 class CollectionTest {
 
@@ -358,6 +358,18 @@ class CollectionTest {
         assertEquals(namesByTeam, mutableNamesByTeam)
     }
 
+    @Test fun associateWith() {
+        val items = listOf("Alice", "Bob", "Carol")
+        val itemsWithTheirLength = items.associateWith { it.length }
+
+        assertEquals(mapOf("Alice" to 5, "Bob" to 3, "Carol" to 5), itemsWithTheirLength)
+
+        val updatedLength =
+            items.drop(1).associateWithTo(itemsWithTheirLength.toMutableMap()) { name -> name.toLowerCase().count { it in "aeuio" }}
+
+        assertEquals(mapOf("Alice" to 5, "Bob" to 1, "Carol" to 2), updatedLength)
+    }
+
     @Test fun plusRanges() {
         val range1 = 1..3
         val range2 = 4..7
@@ -608,6 +620,31 @@ class CollectionTest {
         assertFails { arrayListOf<Int>().last() }
     }
 
+    @Test fun random() {
+        val list = List(100) { it }
+        val set = list.toSet()
+        listOf(list, set).forEach { collection: Collection<Int> ->
+            val tosses = List(10) { collection.random() }
+            assertTrue(tosses.distinct().size > 1, "Should be some distinct elements in $tosses")
+
+            val seed = Random.nextInt()
+            val random1 = Random(seed)
+            val random2 = Random(seed)
+
+            val tosses1 = List(10) { collection.random(random1) }
+            val tosses2 = List(10) { collection.random(random2) }
+
+            assertEquals(tosses1, tosses2)
+        }
+
+        listOf("x").let { singletonList ->
+            val tosses = List(10) { singletonList.random() }
+            assertEquals(singletonList, tosses.distinct())
+        }
+
+        assertFailsWith<NoSuchElementException> { emptyList<Any>().random() }
+    }
+
     @Test fun subscript() {
         val list = arrayListOf("foo", "bar")
         assertEquals("foo", list[0])
@@ -791,6 +828,21 @@ class CollectionTest {
         assertEquals(listOf("aa" to 20, "aa" to 3, "ab" to 3), data)
     }
 
+    @Test fun sortStable() {
+        val keyRange = 'A'..'D'
+        for (size in listOf(10, 100, 2000)) {
+            val list = MutableList(size) { index -> Sortable(keyRange.random(), index) }
+
+            list.sorted().assertStableSorted()
+            list.sortedDescending().assertStableSorted(descending = true)
+
+            list.sort()
+            list.assertStableSorted()
+            list.sortDescending()
+            list.assertStableSorted(descending = true)
+        }
+    }
+
     @Test fun sortedBy() {
         assertEquals(listOf("two" to 3, "three" to 20), listOf("three" to 20, "two" to 3).sortedBy { it.second })
         assertEquals(listOf("three" to 20, "two" to 3), listOf("three" to 20, "two" to 3).sortedBy { it.first })
@@ -822,6 +874,22 @@ class CollectionTest {
         expect(listOf("BAD", "dad", "cat")) { data.sortedWith(comparator) }
         expect(listOf("cat", "dad", "BAD")) { data.sortedWith(comparator.reversed()) }
         expect(listOf("BAD", "dad", "cat")) { data.sortedWith(comparator.reversed().reversed()) }
+    }
+
+    @Test fun sortByStable() {
+        val keyRange = 'A'..'D'
+        for (size in listOf(10, 100, 2000)) {
+            val list = MutableList(size) { index -> Sortable(keyRange.random(), index) }
+
+            list.sortedBy { it.key }.assertStableSorted()
+            list.sortedByDescending { it.key }.assertStableSorted(descending = true)
+
+            list.sortBy { it.key }
+            list.assertStableSorted()
+
+            list.sortByDescending { it.key }
+            list.assertStableSorted(descending = true)
+        }
     }
 
     @Test fun decomposeFirst() {

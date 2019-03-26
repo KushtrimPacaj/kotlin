@@ -21,11 +21,11 @@ dependencies {
     testCompile(project(":compiler:daemon-common"))
     testCompile(projectRuntimeJar(":kotlin-daemon-client"))
     testCompile(commonDep("junit:junit"))
-    testCompile(projectDist(":kotlin-test:kotlin-test-jvm"))
-    testCompile(projectDist(":kotlin-test:kotlin-test-junit"))
-    testRuntimeCompilerJar(projectDist(":kotlin-compiler"))
-    testStdlibJar(projectDist(":kotlin-stdlib"))
-    testScriptRuntimeJar(projectDist(":kotlin-script-runtime"))
+    testCompile(project(":kotlin-test:kotlin-test-jvm"))
+    testCompile(project(":kotlin-test:kotlin-test-junit"))
+    testRuntimeCompilerJar(project(":kotlin-compiler"))
+    testStdlibJar(kotlinStdlib())
+    testScriptRuntimeJar(project(":kotlin-script-runtime"))
 }
 
 sourceSets {
@@ -49,18 +49,13 @@ projectTest {
     }
 }
 
-archives.artifacts.let { artifacts ->
-    artifacts.forEach {
-        if (it.type == "jar") {
-            artifacts.remove(it)
-        }
-    }
-}
+publish()
+
+noDefaultJar()
 
 runtimeJar(task<ShadowJar>("shadowJar")) {
     from(jarContents)
 }
+
 sourcesJar()
 javadocJar()
-
-publish()

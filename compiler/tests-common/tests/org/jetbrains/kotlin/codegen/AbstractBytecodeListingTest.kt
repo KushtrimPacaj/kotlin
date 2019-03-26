@@ -41,33 +41,22 @@ abstract class AbstractBytecodeListingTest : CodegenTestCase() {
     }
 }
 
-class BytecodeListingTextCollectingVisitor(val filter: Filter, val withSignatures: Boolean) : ClassVisitor(ASM5) {
+class BytecodeListingTextCollectingVisitor(val filter: Filter, val withSignatures: Boolean, api: Int = API_VERSION) : ClassVisitor(api) {
     companion object {
         @JvmOverloads
         fun getText(
-                factory: ClassFileFactory,
-                filter: Filter = Filter.EMPTY,
-                replaceHash: Boolean = true,
-                withSignatures: Boolean = false
-        ) =
-                factory.getClassFiles()
-                        .sortedBy { it.relativePath }
-                        .mapNotNull {
-                            val cr = ClassReader(it.asByteArray())
-                            val visitor = BytecodeListingTextCollectingVisitor(filter, withSignatures)
-                            cr.accept(visitor, ClassReader.SKIP_CODE)
+            factory: ClassFileFactory,
+            filter: Filter = Filter.EMPTY,
+            withSignatures: Boolean = false
+        ) = factory.getClassFiles()
+            .sortedBy { it.relativePath }
+            .mapNotNull {
+                val cr = ClassReader(it.asByteArray())
+                val visitor = BytecodeListingTextCollectingVisitor(filter, withSignatures)
+                cr.accept(visitor, ClassReader.SKIP_CODE)
 
-                            if (!filter.shouldWriteClass(cr.access, cr.className)) {
-                                return@mapNotNull null
-                            }
-
-                            if (replaceHash) {
-                                KotlinTestUtils.replaceHash(visitor.text, "HASH")
-                            }
-                            else {
-                                visitor.text
-                            }
-                        }.joinToString("\n\n", postfix = "\n")
+                if (!filter.shouldWriteClass(cr.access, cr.className)) null else visitor.text
+            }.joinToString("\n\n", postfix = "\n")
     }
 
     interface Filter {
@@ -160,8 +149,12 @@ class BytecodeListingTextCollectingVisitor(val filter: Filter, val withSignature
         val parameterAnnotations = hashMapOf<Int, MutableList<String>>()
 
         handleModifiers(access, methodAnnotations)
+        val methodParamCount = Type.getArgumentTypes(desc).size
 
-        return object : MethodVisitor(ASM5) {
+        return object : MethodVisitor(API_VERSION) {
+            private var visibleAnnotableParameterCount = methodParamCount
+            private var invisibleAnnotableParameterCount = methodParamCount
+
             override fun visitAnnotation(desc: String, visible: Boolean): AnnotationVisitor? {
                 val type = Type.getType(desc).className
                 methodAnnotations += "@$type "
@@ -170,7 +163,9 @@ class BytecodeListingTextCollectingVisitor(val filter: Filter, val withSignature
 
             override fun visitParameterAnnotation(parameter: Int, desc: String, visible: Boolean): AnnotationVisitor? {
                 val type = Type.getType(desc).className
-                parameterAnnotations.getOrPut(parameter, { arrayListOf() }).add("@$type ")
+                parameterAnnotations.getOrPut(
+                    parameter + methodParamCount - (if (visible) visibleAnnotableParameterCount else invisibleAnnotableParameterCount),
+                    { arrayListOf() }).add("@$type ")
                 return super.visitParameterAnnotation(parameter, desc, visible)
             }
 
@@ -184,6 +179,15 @@ class BytecodeListingTextCollectingVisitor(val filter: Filter, val withSignature
                         Declaration("${signatureIfRequired}method $name($parameterWithAnnotations): $returnType", methodAnnotations)
                 )
                 super.visitEnd()
+            }
+
+            @Suppress("NOTHING_TO_OVERRIDE")
+            override fun visitAnnotableParameterCount(parameterCount: Int, visible: Boolean) {
+                if (visible)
+                    visibleAnnotableParameterCount = parameterCount
+                else {
+                    invisibleAnnotableParameterCount = parameterCount
+                }
             }
         }
     }
@@ -200,7 +204,7 @@ class BytecodeListingTextCollectingVisitor(val filter: Filter, val withSignature
         handleModifiers(access)
         if (access and ACC_VOLATILE != 0) addModifier("volatile", fieldDeclaration.annotations)
 
-        return object : FieldVisitor(ASM5) {
+        return object : FieldVisitor(API_VERSION) {
             override fun visitAnnotation(desc: String, visible: Boolean): AnnotationVisitor? {
                 addAnnotation(desc)
                 return super.visitAnnotation(desc, visible)

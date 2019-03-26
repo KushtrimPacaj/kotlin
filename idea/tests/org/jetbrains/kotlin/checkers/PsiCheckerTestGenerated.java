@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -154,6 +154,16 @@ public class PsiCheckerTestGenerated extends AbstractPsiCheckerTest {
         @TestMetadata("LocalObjects.kt")
         public void testLocalObjects() throws Exception {
             runTest("idea/testData/checker/LocalObjects.kt");
+        }
+
+        @TestMetadata("MainWithWarningOnUnusedParam.kt")
+        public void testMainWithWarningOnUnusedParam() throws Exception {
+            runTest("idea/testData/checker/MainWithWarningOnUnusedParam.kt");
+        }
+
+        @TestMetadata("MainWithoutWarningOnUnusedParam.kt")
+        public void testMainWithoutWarningOnUnusedParam() throws Exception {
+            runTest("idea/testData/checker/MainWithoutWarningOnUnusedParam.kt");
         }
 
         @TestMetadata("MultipleBounds.kt")

@@ -1,8 +1,8 @@
 buildscript {
     repositories {
         mavenLocal()
-        jcenter()
         maven { url 'https://maven.google.com' }
+        jcenter()
     }
 
     dependencies {
@@ -35,8 +35,8 @@ android {
 
 repositories {
     mavenLocal()
-    jcenter()
     maven { url 'https://maven.google.com' }
+    jcenter()
 }
 
 dependencies {
@@ -47,8 +47,4 @@ dependencies {
     compile 'com.google.dagger:dagger:2.0.1'
     kapt 'com.google.dagger:dagger-compiler:2.0'
     provided 'org.glassfish:javax.annotation:10.0-b28'
-}
-
-androidExtensions {
-    experimental = true
 }

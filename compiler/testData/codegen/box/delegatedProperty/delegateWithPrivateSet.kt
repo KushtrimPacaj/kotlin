@@ -1,5 +1,4 @@
-// IGNORE_BACKEND: JVM_IR
-// IGNORE_BACKEND: JS_IR
+// KJS_WITH_FULL_RUNTIME
 // WITH_RUNTIME
 // See KT-10107: 'Variable must be initialized' for delegate with private set
 

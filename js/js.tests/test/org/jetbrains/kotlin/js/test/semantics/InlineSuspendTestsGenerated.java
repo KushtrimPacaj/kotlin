@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -131,6 +131,11 @@ public class InlineSuspendTestsGenerated extends AbstractInlineSuspendTests {
     @TestMetadata("inlineSuspendOfSuspend.kt")
     public void testInlineSuspendOfSuspend_1_3() throws Exception {
         runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/inlineSuspendOfSuspend.kt", "kotlin.coroutines");
+    }
+
+    @TestMetadata("kt26658.kt")
+    public void testKt26658() throws Exception {
+        runTest("compiler/testData/codegen/boxInline/suspend/kt26658.kt");
     }
 
     @TestMetadata("multipleLocals.kt")

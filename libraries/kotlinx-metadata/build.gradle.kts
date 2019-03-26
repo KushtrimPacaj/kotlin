@@ -2,6 +2,7 @@ description = "Kotlin metadata manipulation library"
 
 plugins {
     kotlin("jvm")
+    id("jps-compatible")
 }
 
 jvmTarget = "1.6"
@@ -13,7 +14,7 @@ sourceSets {
 }
 
 dependencies {
-    compile(project(":kotlin-stdlib"))
+    compile(kotlinStdlib())
     compileOnly(project(":core:metadata"))
     compileOnly(protobufLite())
 }

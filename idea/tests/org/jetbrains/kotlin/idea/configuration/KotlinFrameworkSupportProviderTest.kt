@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -21,8 +21,8 @@ class KotlinFrameworkSupportProviderTest : FrameworkSupportProviderTestCase() {
         addSupport()
 
         with (KotlinCommonCompilerArgumentsHolder.getInstance(module.project).settings) {
-            TestCase.assertEquals(VersionView.Specific(LanguageVersion.LATEST_STABLE), languageVersionView)
-            TestCase.assertEquals(VersionView.Specific(LanguageVersion.LATEST_STABLE), apiVersionView)
+            TestCase.assertEquals(VersionView.LatestStable, languageVersionView)
+            TestCase.assertEquals(VersionView.LatestStable, apiVersionView)
         }
     }
 

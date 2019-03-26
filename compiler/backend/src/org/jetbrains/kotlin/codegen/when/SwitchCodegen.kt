@@ -91,6 +91,7 @@ abstract class SwitchCodegen(
         v.mark(endLabel)
 
         subjectVariableDescriptor?.let {
+            codegen.frameMap.leave(it)
             v.visitLocalVariable(
                 it.name.asString(), subjectType.descriptor, null,
                 beginLabel, endLabel, subjectLocal
@@ -185,12 +186,7 @@ abstract class SwitchCodegen(
         val minValue = keys.first()
         val rangeLength = maxValue.toLong() - minValue.toLong() + 1L
 
-        // In modern JVM implementations it shouldn't matter very much for runtime performance
-        // whether to choose lookupswitch or tableswitch.
-        // The only metric that really matters is bytecode size and here we can estimate:
-        // - lookupswitch: ~ 2 * labelsNumber
-        // - tableswitch: ~ rangeLength
-        if (rangeLength > 2L * labelsNumber || rangeLength > Int.MAX_VALUE) {
+        if (preferLookupOverSwitch(labelsNumber, rangeLength)) {
             val labels = transitionsTable.values.toTypedArray()
             v.lookupswitch(defaultLabel, keys, labels)
             return
@@ -217,5 +213,14 @@ abstract class SwitchCodegen(
                 v.goTo(endLabel)
             }
         }
+    }
+
+    companion object {
+        // In modern JVM implementations it shouldn't matter very much for runtime performance
+        // whether to choose lookupswitch or tableswitch.
+        // The only metric that really matters is bytecode size and here we can estimate:
+        // - lookupswitch: ~ 2 * labelsNumber
+        // - tableswitch: ~ rangeLength
+        fun preferLookupOverSwitch(labelsNumber: Int, rangeLength: Long) = rangeLength > 2L * labelsNumber || rangeLength > Int.MAX_VALUE
     }
 }

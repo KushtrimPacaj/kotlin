@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -242,6 +242,11 @@ public class KotlinSteppingTestGenerated extends AbstractKotlinSteppingTest {
             runTest("idea/testData/debugger/tinyApp/src/stepping/stepInto/functionReference.kt");
         }
 
+        @TestMetadata("inlineClass.kt")
+        public void testInlineClass() throws Exception {
+            runTest("idea/testData/debugger/tinyApp/src/stepping/stepInto/inlineClass.kt");
+        }
+
         @TestMetadata("inlineDex.kt")
         public void testInlineDex() throws Exception {
             runTest("idea/testData/debugger/tinyApp/src/stepping/stepInto/inlineDex.kt");
@@ -265,6 +270,11 @@ public class KotlinSteppingTestGenerated extends AbstractKotlinSteppingTest {
         @TestMetadata("samAdapter.kt")
         public void testSamAdapter() throws Exception {
             runTest("idea/testData/debugger/tinyApp/src/stepping/stepInto/samAdapter.kt");
+        }
+
+        @TestMetadata("sameFileNames.kt")
+        public void testSameFileNames() throws Exception {
+            runTest("idea/testData/debugger/tinyApp/src/stepping/stepInto/sameFileNames.kt");
         }
 
         @TestMetadata("siSuspendFun.kt")
@@ -446,6 +456,11 @@ public class KotlinSteppingTestGenerated extends AbstractKotlinSteppingTest {
         @TestMetadata("inlineInObjectDex.kt")
         public void testInlineInObjectDex() throws Exception {
             runTest("idea/testData/debugger/tinyApp/src/stepping/stepOver/inlineInObjectDex.kt");
+        }
+
+        @TestMetadata("kt24343.kt")
+        public void testKt24343() throws Exception {
+            runTest("idea/testData/debugger/tinyApp/src/stepping/stepOver/kt24343.kt");
         }
 
         @TestMetadata("noParameterLambdaArgumentCallInInline.kt")
@@ -906,6 +921,11 @@ public class KotlinSteppingTestGenerated extends AbstractKotlinSteppingTest {
         @TestMetadata("stopInlineCallInLocalFunInSecondaryConstructor.kt")
         public void testStopInlineCallInLocalFunInSecondaryConstructor() throws Exception {
             runTest("idea/testData/debugger/tinyApp/src/stepping/stepOver/stopInlineCallInLocalFunInSecondaryConstructor.kt");
+        }
+
+        @TestMetadata("whenWithoutExpression.kt")
+        public void testWhenWithoutExpression() throws Exception {
+            runTest("idea/testData/debugger/tinyApp/src/stepping/stepOver/whenWithoutExpression.kt");
         }
     }
 

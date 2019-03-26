@@ -23,11 +23,16 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.kotlin.platform.DefaultIdeTargetPlatformKindProvider;
+import org.jetbrains.kotlin.platform.IdePlatform;
+import org.jetbrains.kotlin.platform.IdePlatformKind;
 import org.jetbrains.kotlin.psi.KtCodeFragment;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtPsiFactoryKt;
 import org.jetbrains.kotlin.resolve.TargetPlatform;
 import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform;
+import org.jetbrains.kotlin.script.KotlinScriptDefinition;
+import org.jetbrains.kotlin.scripting.shared.definitions.DefinitionsKt;
 
 public class TargetPlatformDetector {
     public static final TargetPlatformDetector INSTANCE = new TargetPlatformDetector();
@@ -54,6 +59,19 @@ public class TargetPlatformDetector {
             return contextFile instanceof KtFile ? getPlatform((KtFile) contextFile) : JvmPlatform.INSTANCE;
         }
 
+        if (file.isScript()) {
+            KotlinScriptDefinition scriptDefinition = DefinitionsKt.scriptDefinition(file);
+            if (scriptDefinition != null) {
+                String platformNameFromScriptDefinition = scriptDefinition.getPlatform();
+                for (IdePlatform platform : IdePlatformKind.Companion.getAll_PLATFORMS()) {
+                    TargetPlatform compilerPlatform = platform.getKind().getCompilerPlatform();
+                    if (compilerPlatform.getPlatformName().equals(platformNameFromScriptDefinition)) {
+                        return compilerPlatform;
+                    }
+                }
+            }
+        }
+
         VirtualFile virtualFile = file.getOriginalFile().getVirtualFile();
         if (virtualFile != null) {
             Module moduleForFile = ProjectFileIndex.SERVICE.getInstance(file.getProject()).getModuleForFile(virtualFile);
@@ -62,7 +80,7 @@ public class TargetPlatformDetector {
             }
         }
 
-        return JvmPlatform.INSTANCE;
+        return DefaultIdeTargetPlatformKindProvider.Companion.getDefaultCompilerPlatform();
     }
 
     @NotNull

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -27,6 +27,16 @@ public class IdeCompiledLightClassTestGenerated extends AbstractIdeCompiledLight
 
     public void testAllFilesPresentInLightClasses() throws Exception {
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/asJava/lightClasses"), Pattern.compile("^([^.]+)\\.(kt|kts)$"), TargetBackend.ANY, true, "local", "compilationErrors", "ideRegression");
+    }
+
+    @TestMetadata("AnnotatedParameterInEnumConstructor.kt")
+    public void testAnnotatedParameterInEnumConstructor() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/AnnotatedParameterInEnumConstructor.kt");
+    }
+
+    @TestMetadata("AnnotatedParameterInInnerClassConstructor.kt")
+    public void testAnnotatedParameterInInnerClassConstructor() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/AnnotatedParameterInInnerClassConstructor.kt");
     }
 
     @TestMetadata("AnnotationClass.kt")
@@ -122,6 +132,11 @@ public class IdeCompiledLightClassTestGenerated extends AbstractIdeCompiledLight
     @TestMetadata("StubOrderForOverloads.kt")
     public void testStubOrderForOverloads() throws Exception {
         runTest("compiler/testData/asJava/lightClasses/StubOrderForOverloads.kt");
+    }
+
+    @TestMetadata("TypePararametersInClass.kt")
+    public void testTypePararametersInClass() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/TypePararametersInClass.kt");
     }
 
     @TestMetadata("VarArgs.kt")

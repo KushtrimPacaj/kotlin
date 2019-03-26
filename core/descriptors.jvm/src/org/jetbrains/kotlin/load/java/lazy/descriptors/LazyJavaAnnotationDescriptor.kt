@@ -18,9 +18,7 @@ package org.jetbrains.kotlin.load.java.lazy.descriptors
 
 import org.jetbrains.kotlin.builtins.jvm.JavaToKotlinClassMap
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
-import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.descriptors.findNonGenericClassAcrossDependencies
-import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.load.java.JvmAnnotationNames.DEFAULT_ANNOTATION_MEMBER_NAME
 import org.jetbrains.kotlin.load.java.components.DescriptorResolverUtils
 import org.jetbrains.kotlin.load.java.components.TypeUsage
@@ -33,13 +31,14 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.renderer.DescriptorRenderer
 import org.jetbrains.kotlin.resolve.constants.*
 import org.jetbrains.kotlin.resolve.descriptorUtil.annotationClass
-import org.jetbrains.kotlin.resolve.descriptorUtil.resolveTopLevelClass
 import org.jetbrains.kotlin.storage.getValue
-import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.ErrorUtils
+import org.jetbrains.kotlin.types.Variance
+import org.jetbrains.kotlin.types.isError
 
 class LazyJavaAnnotationDescriptor(
-        private val c: LazyJavaResolverContext,
-        private val javaAnnotation: JavaAnnotation
+    private val c: LazyJavaResolverContext,
+    private val javaAnnotation: JavaAnnotation
 ) : AnnotationDescriptor {
     override val fqName by c.storageManager.createNullableLazyValue {
         javaAnnotation.classId?.asSingleFqName()
@@ -48,8 +47,8 @@ class LazyJavaAnnotationDescriptor(
     override val type by c.storageManager.createLazyValue {
         val fqName = fqName ?: return@createLazyValue ErrorUtils.createErrorType("No fqName: $javaAnnotation")
         val annotationClass = JavaToKotlinClassMap.mapJavaToKotlin(fqName, c.module.builtIns)
-                              ?: javaAnnotation.resolve()?.let { javaClass -> c.components.moduleClassResolver.resolveClass(javaClass) }
-                              ?: createTypeForMissingDependencies(fqName)
+            ?: javaAnnotation.resolve()?.let { javaClass -> c.components.moduleClassResolver.resolveClass(javaClass) }
+            ?: createTypeForMissingDependencies(fqName)
         annotationClass.defaultType
     }
 
@@ -81,15 +80,15 @@ class LazyJavaAnnotationDescriptor(
         if (type.isError) return null
 
         val arrayType =
-                DescriptorResolverUtils.getAnnotationParameterByName(argumentName, annotationClass!!)?.type
-                 // Try to load annotation arguments even if the annotation class is not found
-                 ?: c.components.module.builtIns.getArrayType(
-                        Variance.INVARIANT,
-                        ErrorUtils.createErrorType("Unknown array element type")
-                    )
+            DescriptorResolverUtils.getAnnotationParameterByName(argumentName, annotationClass!!)?.type
+            // Try to load annotation arguments even if the annotation class is not found
+                ?: c.components.module.builtIns.getArrayType(
+                    Variance.INVARIANT,
+                    ErrorUtils.createErrorType("Unknown array element type")
+                )
 
-        val values = elements.map {
-            argument -> resolveAnnotationArgument(argument) ?: NullValue()
+        val values = elements.map { argument ->
+            resolveAnnotationArgument(argument) ?: NullValue()
         }
 
         return ConstantValueFactory.createArrayValue(values, arrayType)
@@ -101,29 +100,16 @@ class LazyJavaAnnotationDescriptor(
         return EnumValue(enumClassId, entryName)
     }
 
-    private fun resolveFromJavaClassObjectType(javaType: JavaType): ConstantValue<*>? {
-        // Class type is never nullable in 'Foo.class' in Java
-        val type = TypeUtils.makeNotNullable(c.typeResolver.transformJavaType(
-                javaType,
-                TypeUsage.COMMON.toAttributes())
-        )
-
-        val jlClass = c.module.resolveTopLevelClass(FqName("java.lang.Class"), NoLookupLocation.FOR_NON_TRACKED_SCOPE) ?: return null
-
-        val arguments = listOf(TypeProjectionImpl(type))
-
-        val javaClassObjectType = KotlinTypeFactory.simpleNotNullType(Annotations.EMPTY, jlClass, arguments)
-
-        return KClassValue(javaClassObjectType)
-    }
+    private fun resolveFromJavaClassObjectType(javaType: JavaType): ConstantValue<*>? =
+        KClassValue.create(c.typeResolver.transformJavaType(javaType, TypeUsage.COMMON.toAttributes()))
 
     override fun toString(): String {
         return DescriptorRenderer.FQ_NAMES_IN_TYPES.renderAnnotation(this)
     }
 
     private fun createTypeForMissingDependencies(fqName: FqName) =
-            c.module.findNonGenericClassAcrossDependencies(
-                    ClassId.topLevel(fqName),
-                    c.components.deserializedDescriptorResolver.components.notFoundClasses
-            )
+        c.module.findNonGenericClassAcrossDependencies(
+            ClassId.topLevel(fqName),
+            c.components.deserializedDescriptorResolver.components.notFoundClasses
+        )
 }

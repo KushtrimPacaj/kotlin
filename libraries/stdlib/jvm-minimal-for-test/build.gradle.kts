@@ -4,13 +4,17 @@ description = "Kotlin Mock Runtime for Tests"
 
 plugins {
     kotlin("jvm")
+    `maven-publish`
 }
 
 jvmTarget = "1.6"
 javaHome = rootProject.extra["JDK_16"] as String
 
+val builtins by configurations.creating
+
 dependencies {
     compileOnly(project(":kotlin-stdlib"))
+    builtins(project(":core:builtins"))
 }
 
 sourceSets {
@@ -33,8 +37,8 @@ val copySources by task<Sync> {
     from(stdlibProjectDir.resolve("../src"))
         .include("kotlin/util/Standard.kt",
                  "kotlin/internal/Annotations.kt",
-                 "kotlin/internal/contracts/ContractBuilder.kt",
-                 "kotlin/internal/contracts/Effect.kt")
+                 "kotlin/contracts/ContractBuilder.kt",
+                 "kotlin/contracts/Effect.kt")
     into(File(buildDir, "src"))
 }
 
@@ -46,15 +50,35 @@ tasks.withType<JavaCompile> {
 tasks.withType<KotlinCompile> {
     dependsOn(copySources)
     kotlinOptions {
-        freeCompilerArgs += listOf("-module-name", "kotlin-stdlib", "-Xmulti-platform")
+        freeCompilerArgs += listOf(
+            "-module-name",
+            "kotlin-stdlib",
+            "-Xmulti-platform",
+            "-Xuse-experimental=kotlin.contracts.ExperimentalContracts",
+            "-Xuse-experimental=kotlin.Experimental"
+        )
     }
 }
 
 val jar = runtimeJar {
-    dependsOn(":core:builtins:serialize")
-    from(fileTree("${rootProject.extra["distDir"]}/builtins")) { include("kotlin/**") }
+    dependsOn(builtins)
+    from(provider { zipTree(builtins.singleFile) }) { include("kotlin/**") }
 }
 
 val distDir: String by rootProject.extra
 
-dist(targetName = "kotlin-stdlib-minimal-for-test.jar", targetDir = File(distDir))
+dist(targetName = "kotlin-stdlib-minimal-for-test.jar", targetDir = File(distDir), fromTask = jar)
+
+publishing {
+    publications {
+        create<MavenPublication>("internal") {
+            artifactId = "kotlin-stdlib-minimal-for-test"
+            artifact(jar)
+        }
+    }
+
+    repositories {
+        maven("${rootProject.buildDir}/internal/repo")
+    }
+}
+

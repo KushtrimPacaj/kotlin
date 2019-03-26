@@ -21,7 +21,8 @@ import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.idea.configuration.KOTLIN_GROUP_ID
 import org.jetbrains.kotlin.idea.inspections.gradle.GradleHeuristicHelper.PRODUCTION_DEPENDENCY_STATEMENTS
-import org.jetbrains.kotlin.idea.versions.*
+import org.jetbrains.kotlin.idea.platform.tooling
+import org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 import org.jetbrains.plugins.gradle.codeInspection.GradleBaseInspection
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspectionVisitor
@@ -30,9 +31,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethod
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrCallExpression
 
 class DifferentStdlibGradleVersionInspection : GradleBaseInspection() {
-    override fun buildVisitor(): BaseInspectionVisitor = MyVisitor(
-        KOTLIN_GROUP_ID, listOf(MAVEN_STDLIB_ID, MAVEN_STDLIB_ID_JRE7, MAVEN_STDLIB_ID_JDK7, MAVEN_STDLIB_ID_JRE8, MAVEN_STDLIB_ID_JDK8)
-    )
+    override fun buildVisitor(): BaseInspectionVisitor = MyVisitor(KOTLIN_GROUP_ID, JvmIdePlatformKind.tooling.mavenLibraryIds)
 
     override fun buildErrorString(vararg args: Any) =
         "Plugin version (${args[0]}) is not the same as library version (${args[1]})"
@@ -69,7 +68,11 @@ class DifferentStdlibGradleVersionInspection : GradleBaseInspection() {
     companion object {
         private fun findLibraryStatement(closure: GrClosableBlock, libraryGroup: String, libraryIds: List<String>): GrCallExpression? {
             return GradleHeuristicHelper.findStatementWithPrefixes(closure, PRODUCTION_DEPENDENCY_STATEMENTS).firstOrNull { statement ->
-                libraryIds.any { it in statement.text } && statement.text.contains(libraryGroup)
+                libraryIds.any {
+                    val index = statement.text.indexOf(it)
+                    // This prevents detecting kotlin-stdlib inside kotlin-stdlib-common, -jdk8, etc.
+                    index != -1 && statement.text.getOrNull(index + it.length) != '-'
+                } && statement.text.contains(libraryGroup)
             }
         }
 

@@ -1,6 +1,6 @@
+// KJS_WITH_FULL_RUNTIME
+// WITH_RUNTIME
 // IGNORE_BACKEND: JVM_IR
-// WITH_UNSIGNED
-// TARGET_BACKEND: JVM
 
 fun box(): String {
     val u1: UByte = 255u

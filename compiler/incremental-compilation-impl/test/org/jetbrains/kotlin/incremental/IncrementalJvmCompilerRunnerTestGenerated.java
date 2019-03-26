@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -99,6 +99,11 @@ public class IncrementalJvmCompilerRunnerTestGenerated extends AbstractIncrement
         @TestMetadata("classRecreated")
         public void testClassRecreated() throws Exception {
             runTest("jps-plugin/testData/incremental/pureKotlin/classRecreated/");
+        }
+
+        @TestMetadata("classRemoved")
+        public void testClassRemoved() throws Exception {
+            runTest("jps-plugin/testData/incremental/pureKotlin/classRemoved/");
         }
 
         @TestMetadata("classSignatureChanged")
@@ -291,6 +296,11 @@ public class IncrementalJvmCompilerRunnerTestGenerated extends AbstractIncrement
             runTest("jps-plugin/testData/incremental/pureKotlin/inlinePropertyOnTopLevel/");
         }
 
+        @TestMetadata("inlineSuspendFunctionChanged")
+        public void testInlineSuspendFunctionChanged() throws Exception {
+            runTest("jps-plugin/testData/incremental/pureKotlin/inlineSuspendFunctionChanged/");
+        }
+
         @TestMetadata("inlineTwoFunctionsOneChanged")
         public void testInlineTwoFunctionsOneChanged() throws Exception {
             runTest("jps-plugin/testData/incremental/pureKotlin/inlineTwoFunctionsOneChanged/");
@@ -359,6 +369,11 @@ public class IncrementalJvmCompilerRunnerTestGenerated extends AbstractIncrement
         @TestMetadata("ourClassReferenced")
         public void testOurClassReferenced() throws Exception {
             runTest("jps-plugin/testData/incremental/pureKotlin/ourClassReferenced/");
+        }
+
+        @TestMetadata("overloadInlined")
+        public void testOverloadInlined() throws Exception {
+            runTest("jps-plugin/testData/incremental/pureKotlin/overloadInlined/");
         }
 
         @TestMetadata("packageConstantChanged")
@@ -549,6 +564,11 @@ public class IncrementalJvmCompilerRunnerTestGenerated extends AbstractIncrement
         @TestMetadata("returnTypeChanged")
         public void testReturnTypeChanged() throws Exception {
             runTest("jps-plugin/testData/incremental/pureKotlin/returnTypeChanged/");
+        }
+
+        @TestMetadata("secondaryConstructorInlined")
+        public void testSecondaryConstructorInlined() throws Exception {
+            runTest("jps-plugin/testData/incremental/pureKotlin/secondaryConstructorInlined/");
         }
 
         @TestMetadata("simpleClassDependency")

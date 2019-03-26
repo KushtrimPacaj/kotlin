@@ -10,7 +10,6 @@ import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPluginConvention
 import org.gradle.api.tasks.*
 import org.gradle.jvm.tasks.Jar
-import org.jetbrains.kotlin.gradle.utils.isClassFile
 import java.io.File
 
 internal open class InspectClassesForMultiModuleIC : DefaultTask() {
@@ -28,9 +27,13 @@ internal open class InspectClassesForMultiModuleIC : DefaultTask() {
     @Suppress("MemberVisibilityCanBePrivate")
     @get:InputFiles
     internal val classFiles: FileCollection
-        get() = project.convention.findPlugin(JavaPluginConvention::class.java)?.let {
-            it.sourceSets.findByName(sourceSetName)?.output?.asFileTree?.filter { it.isClassFile() }
-        } ?: project.files()
+        get() {
+            val convention = project.convention.findPlugin(JavaPluginConvention::class.java)
+            val sourceSet = convention?.sourceSets?.findByName(sourceSetName) ?: return project.files()
+
+            val fileTrees = sourceSet.output.classesDirs.map { project.fileTree(it).include("**/*.class") }
+            return project.files(fileTrees)
+        }
 
     @get:Input
     internal val archivePath: String

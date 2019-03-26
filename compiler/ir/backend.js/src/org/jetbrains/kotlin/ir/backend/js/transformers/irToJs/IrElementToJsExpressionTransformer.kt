@@ -5,14 +5,16 @@
 
 package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 
-import org.jetbrains.kotlin.backend.common.utils.isFunctionTypeOrSubtype
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
 import org.jetbrains.kotlin.ir.backend.js.utils.Namer
+import org.jetbrains.kotlin.ir.backend.js.utils.getJsName
+import org.jetbrains.kotlin.ir.backend.js.utils.realOverrideTarget
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrConstructor
+import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
-import org.jetbrains.kotlin.ir.types.isUnit
+import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.js.backend.ast.*
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
@@ -20,50 +22,8 @@ import org.jetbrains.kotlin.util.OperatorNameConventions
 class IrElementToJsExpressionTransformer : BaseIrElementToJsNodeTransformer<JsExpression, JsGenerationContext> {
 
     override fun visitVararg(expression: IrVararg, context: JsGenerationContext): JsExpression {
-        // TODO: perform the dark magic below in the separated lowering
-        if (expression.elements.size == 1) {
-            val element = expression.elements[0]
-            if (element is IrSpreadElement) {
-                // special case, invoke slice()
-                val expr = element.expression.accept(this, context)
-                return JsInvocation(JsNameRef(Namer.SLICE_FUNCTION, expr))
-            }
-        }
-
-        var arrayLiteralElements = mutableListOf<JsExpression>()
-        val concatArguments = mutableListOf<JsExpression>()
-        var qualifier: JsExpression? = null
-
-        expression.elements.forEach {
-            if (it is IrSpreadElement) {
-                val expr = it.expression.accept(this, context)
-                if (qualifier == null) {
-                    if (arrayLiteralElements.isEmpty()) {
-                        qualifier = JsNameRef(Namer.CONCAT_FUNCTION, expr)
-                    } else {
-                        val dispatch = JsArrayLiteral(arrayLiteralElements)
-                        arrayLiteralElements = mutableListOf()
-                        qualifier = JsNameRef(Namer.CONCAT_FUNCTION, dispatch)
-                        concatArguments.add(expr)
-                    }
-                } else {
-                    if (arrayLiteralElements.isNotEmpty()) {
-                        concatArguments.add(JsArrayLiteral(arrayLiteralElements))
-                        arrayLiteralElements = mutableListOf()
-                    }
-                    concatArguments.add(expr)
-                }
-            } else {
-                arrayLiteralElements.add(it.accept(this, context))
-            }
-        }
-
-        return qualifier?.let {
-            if (arrayLiteralElements.isNotEmpty()) {
-                concatArguments.add(JsArrayLiteral(arrayLiteralElements))
-            }
-            return JsInvocation(it, concatArguments)
-        } ?: JsArrayLiteral(arrayLiteralElements)
+        assert(expression.elements.none { it is IrSpreadElement })
+        return JsArrayLiteral(expression.elements.map { it.accept(this, context) })
     }
 
     override fun visitExpressionBody(body: IrExpressionBody, context: JsGenerationContext): JsExpression =
@@ -85,10 +45,12 @@ class IrElementToJsExpressionTransformer : BaseIrElementToJsNodeTransformer<JsEx
             is IrConstKind.Int -> JsIntLiteral(kind.valueOf(expression))
             is IrConstKind.Long -> throw IllegalStateException("Long const should have been lowered at this point")
             is IrConstKind.Char -> throw IllegalStateException("Char const should have been lowered at this point")
-            is IrConstKind.Float -> JsDoubleLiteral(kind.valueOf(expression).toDouble())
+            is IrConstKind.Float -> JsDoubleLiteral(toDoubleConst(kind.valueOf(expression)))
             is IrConstKind.Double -> JsDoubleLiteral(kind.valueOf(expression))
         }
     }
+
+    private fun toDoubleConst(f: Float) = if (f.isInfinite() || f.isNaN()) f.toDouble() else f.toString().toDouble()
 
     override fun visitStringConcatenation(expression: IrStringConcatenation, context: JsGenerationContext): JsExpression {
         // TODO revisit
@@ -102,6 +64,12 @@ class IrElementToJsExpressionTransformer : BaseIrElementToJsNodeTransformer<JsEx
     }
 
     override fun visitGetField(expression: IrGetField, context: JsGenerationContext): JsExpression {
+        if (expression.symbol.isBound) {
+            val fieldParent = expression.symbol.owner.parent
+            if (fieldParent is IrClass && fieldParent.isInline) {
+                return expression.receiver!!.accept(this, context)
+            }
+        }
         val fieldName = context.getNameForSymbol(expression.symbol)
         return JsNameRef(fieldName, expression.receiver?.accept(this, context))
     }
@@ -111,10 +79,11 @@ class IrElementToJsExpressionTransformer : BaseIrElementToJsNodeTransformer<JsEx
 
     override fun visitGetObjectValue(expression: IrGetObjectValue, context: JsGenerationContext) = when (expression.symbol.owner.kind) {
         ClassKind.OBJECT -> {
-            // TODO: return unit instance instead of null
-            if (expression.type.isUnit()) JsNullLiteral()
-            else {
-                val className = context.getNameForSymbol(expression.symbol)
+            val obj = expression.symbol.owner
+            val className = context.getNameForSymbol(expression.symbol)
+            if (obj.isEffectivelyExternal()) {
+                className.makeRef()
+            } else {
                 val getInstanceName = className.ident + "_getInstance"
                 JsInvocation(JsNameRef(getInstanceName))
             }
@@ -143,46 +112,234 @@ class IrElementToJsExpressionTransformer : BaseIrElementToJsNodeTransformer<JsEx
         val thisRef =
             if (fromPrimary) JsThisRef() else context.getNameForSymbol(context.currentFunction!!.valueParameters.last().symbol).makeRef()
         val arguments = translateCallArguments(expression, context)
+
+        val constructor = expression.symbol.owner
+        if (constructor.parentAsClass.isInline) {
+            assert(constructor.isPrimary) {
+                "Delegation to secondary inline constructors must be lowered into simple function calls"
+            }
+            return JsBinaryOperation(JsBinaryOperator.ASG, thisRef, arguments.single())
+        }
+
         return JsInvocation(callFuncRef, listOf(thisRef) + arguments)
     }
 
     override fun visitCall(expression: IrCall, context: JsGenerationContext): JsExpression {
-        val symbol = expression.symbol
+        val function = expression.symbol.owner.realOverrideTarget
+        val symbol = function.symbol
 
         context.staticContext.intrinsics[symbol]?.let {
             return it(expression, context)
         }
 
-        val dispatchReceiver = expression.dispatchReceiver
         val jsDispatchReceiver = expression.dispatchReceiver?.accept(this, context)
         val jsExtensionReceiver = expression.extensionReceiver?.accept(this, context)
         val arguments = translateCallArguments(expression, context)
 
-        if (dispatchReceiver != null &&
-            dispatchReceiver.type.isFunctionTypeOrSubtype() && symbol.descriptor.name == OperatorNameConventions.INVOKE && !symbol.descriptor.isSuspend
-        ) {
+        // Transform external property accessor call
+        // @JsName-annotated external property accessors are translated as function calls
+        if (function is IrSimpleFunction && function.getJsName() == null) {
+            val property = function.correspondingProperty
+            if (property != null && property.isEffectivelyExternal()) {
+                val nameRef = JsNameRef(context.getNameForDeclaration(property), jsDispatchReceiver)
+                return when (function) {
+                    property.getter -> nameRef
+                    property.setter -> jsAssignment(nameRef, arguments.single())
+                    else -> error("Function must be an accessor of corresponding property")
+                }
+            }
+        }
+
+        if (isNativeInvoke(expression)) {
             return JsInvocation(jsDispatchReceiver!!, arguments)
         }
 
         expression.superQualifierSymbol?.let {
-            val qualifierName = context.getNameForSymbol(it).makeRef()
-            val targetName = context.getNameForSymbol(symbol)
+            val (target, owner) = if (it.owner.isInterface) {
+                val impl = (symbol.owner as IrSimpleFunction).resolveFakeOverride()!!
+                Pair(impl, impl.parentAsClass)
+            } else Pair(symbol.owner, it.owner)
+            val qualifierName = context.getNameForSymbol(owner.symbol).makeRef()
+            val targetName = context.getNameForSymbol(target.symbol)
             val qPrototype = JsNameRef(targetName, prototypeOf(qualifierName))
             val callRef = JsNameRef(Namer.CALL_FUNCTION, qPrototype)
-            return JsInvocation(callRef, jsDispatchReceiver?.let { listOf(it) + arguments } ?: arguments)
+            return JsInvocation(callRef, jsDispatchReceiver?.let { receiver -> listOf(receiver) + arguments } ?: arguments)
         }
 
-        return if (symbol is IrConstructorSymbol) {
-            JsNew(context.getNameForSymbol(symbol).makeRef(), arguments)
+        val varargParameterIndex = function.valueParameters.indexOfFirst { it.varargElementType != null }
+        val isExternalVararg = function.isEffectivelyExternal() && varargParameterIndex != -1
+
+        val symbolName = context.getNameForSymbol(symbol)
+        val ref = if (function is IrSimpleFunction && jsDispatchReceiver != null) JsNameRef(symbolName, jsDispatchReceiver) else JsNameRef(
+            symbolName
+        )
+
+        return if (function is IrConstructor) {
+            // Inline class primary constructor takes a single value of to
+            // initialize underlying property.
+            // TODO: Support initialization block
+            val klass = function.parentAsClass
+            if (klass.isInline) {
+                assert(function.isPrimary) {
+                    "Inline class secondary constructors must be lowered into static methods"
+                }
+                // Argument value constructs unboxed inline class instance
+                arguments.single()
+            } else {
+                JsNew(ref, arguments)
+            }
+        } else if (isExternalVararg) {
+
+            // External vararg arguments should be represented in JS as multiple "plain" arguments (opposed to arrays in Kotlin)
+            // We are using `Function.prototype.apply` function to pass all arguments as a single array.
+            // For this purpose are concatenating non-vararg arguments with vararg.
+            // TODO: Don't use `Function.prototype.apply` when number of arguments is known at compile time (e.g. there are no spread operators)
+            val arrayConcat = JsNameRef("concat", JsArrayLiteral())
+            val arraySliceCall = JsNameRef("call", JsNameRef("slice", JsArrayLiteral()))
+
+            val argumentsAsSingleArray = JsInvocation(
+                arrayConcat,
+                listOfNotNull(jsExtensionReceiver) + arguments.mapIndexed { index, argument ->
+                    when (index) {
+
+                        // Call `Array.prototype.slice` on vararg arguments in order to convert array-like objects into proper arrays
+                        // TODO: Optimize for proper arrays
+                        varargParameterIndex -> JsInvocation(arraySliceCall, argument)
+
+                        // TODO: Don't wrap non-array-like arguments with array literal
+                        // TODO: Wrap adjacent non-vararg arguments in a single array literal
+                        else -> JsArrayLiteral(listOf(argument))
+                    }
+                }
+            )
+
+            if (function is IrSimpleFunction && jsDispatchReceiver != null) {
+                // TODO: Do not create IIFE when receiver expression is simple or has no side effects
+                // TODO: Do not create IIFE at all? (Currently there is no reliable way to create temporary variable in current scope)
+                val receiverName = context.currentScope.declareFreshName("\$externalVarargReceiverTmp")
+                val receiverRef = receiverName.makeRef()
+                JsInvocation(
+                    // Create scope for temporary variable holding dispatch receiver
+                    // It is used both during method reference and passing `this` value to `apply` function.
+                    JsFunction(
+                        context.currentScope,
+                        JsBlock(
+                            JsVars(JsVars.JsVar(receiverName, jsDispatchReceiver)),
+                            JsReturn(
+                                JsInvocation(
+                                    JsNameRef("apply", JsNameRef(symbolName, receiverRef)),
+                                    listOf(
+                                        receiverRef,
+                                        argumentsAsSingleArray
+                                    )
+                                )
+                            )
+                        ),
+                        "VarargIIFE"
+                    )
+                )
+            } else {
+                JsInvocation(
+                    JsNameRef("apply", JsNameRef(symbolName)),
+                    listOf(JsNullLiteral(), argumentsAsSingleArray)
+                )
+            }
         } else {
-            val symbolName = context.getNameForSymbol(symbol)
-            val ref = if (jsDispatchReceiver != null) JsNameRef(symbolName, jsDispatchReceiver) else JsNameRef(symbolName)
-            JsInvocation(ref, jsExtensionReceiver?.let { listOf(jsExtensionReceiver) + arguments } ?: arguments)
+            JsInvocation(ref, listOfNotNull(jsExtensionReceiver) + arguments)
         }
     }
 
     override fun visitWhen(expression: IrWhen, context: JsGenerationContext): JsExpression {
         // TODO check when w/o else branch and empty when
         return expression.toJsNode(this, context, ::JsConditional)!!
+    }
+
+    override fun visitTypeOperator(expression: IrTypeOperatorCall, data: JsGenerationContext): JsExpression {
+        return when (expression.operator) {
+            IrTypeOperator.IMPLICIT_CAST -> expression.argument.accept(this, data)
+            else -> throw IllegalStateException("All type operator calls except IMPLICIT_CAST should be lowered at this point")
+        }
+    }
+
+    override fun visitDynamicMemberExpression(expression: IrDynamicMemberExpression, data: JsGenerationContext): JsExpression =
+        JsNameRef(expression.memberName, expression.receiver.accept(this, data))
+
+    override fun visitDynamicOperatorExpression(expression: IrDynamicOperatorExpression, data: JsGenerationContext): JsExpression =
+        when (expression.operator) {
+            IrDynamicOperator.UNARY_PLUS -> prefixOperation(JsUnaryOperator.POS, expression, data)
+            IrDynamicOperator.UNARY_MINUS -> prefixOperation(JsUnaryOperator.NEG, expression, data)
+
+            IrDynamicOperator.EXCL -> prefixOperation(JsUnaryOperator.NOT, expression, data)
+
+            IrDynamicOperator.PREFIX_INCREMENT -> prefixOperation(JsUnaryOperator.INC, expression, data)
+            IrDynamicOperator.PREFIX_DECREMENT -> prefixOperation(JsUnaryOperator.DEC, expression, data)
+
+            IrDynamicOperator.POSTFIX_INCREMENT -> postfixOperation(JsUnaryOperator.INC, expression, data)
+            IrDynamicOperator.POSTFIX_DECREMENT -> postfixOperation(JsUnaryOperator.DEC, expression, data)
+
+            IrDynamicOperator.BINARY_PLUS -> binaryOperation(JsBinaryOperator.ADD, expression, data)
+            IrDynamicOperator.BINARY_MINUS -> binaryOperation(JsBinaryOperator.SUB, expression, data)
+            IrDynamicOperator.MUL -> binaryOperation(JsBinaryOperator.MUL, expression, data)
+            IrDynamicOperator.DIV -> binaryOperation(JsBinaryOperator.DIV, expression, data)
+            IrDynamicOperator.MOD -> binaryOperation(JsBinaryOperator.MOD, expression, data)
+
+            IrDynamicOperator.GT -> binaryOperation(JsBinaryOperator.GT, expression, data)
+            IrDynamicOperator.LT -> binaryOperation(JsBinaryOperator.LT, expression, data)
+            IrDynamicOperator.GE -> binaryOperation(JsBinaryOperator.GTE, expression, data)
+            IrDynamicOperator.LE -> binaryOperation(JsBinaryOperator.LTE, expression, data)
+
+            IrDynamicOperator.EQEQ -> binaryOperation(JsBinaryOperator.EQ, expression, data)
+            IrDynamicOperator.EXCLEQ -> binaryOperation(JsBinaryOperator.NEQ, expression, data)
+
+            IrDynamicOperator.EQEQEQ -> binaryOperation(JsBinaryOperator.REF_EQ, expression, data)
+            IrDynamicOperator.EXCLEQEQ -> binaryOperation(JsBinaryOperator.REF_NEQ, expression, data)
+
+            IrDynamicOperator.ANDAND -> binaryOperation(JsBinaryOperator.AND, expression, data)
+            IrDynamicOperator.OROR -> binaryOperation(JsBinaryOperator.OR, expression, data)
+
+            IrDynamicOperator.EQ -> binaryOperation(JsBinaryOperator.ASG, expression, data)
+            IrDynamicOperator.PLUSEQ -> binaryOperation(JsBinaryOperator.ASG_ADD, expression, data)
+            IrDynamicOperator.MINUSEQ -> binaryOperation(JsBinaryOperator.ASG_SUB, expression, data)
+            IrDynamicOperator.MULEQ -> binaryOperation(JsBinaryOperator.ASG_MUL, expression, data)
+            IrDynamicOperator.DIVEQ -> binaryOperation(JsBinaryOperator.ASG_DIV, expression, data)
+            IrDynamicOperator.MODEQ -> binaryOperation(JsBinaryOperator.ASG_MOD, expression, data)
+
+            IrDynamicOperator.ARRAY_ACCESS -> JsArrayAccess(expression.left.accept(this, data), expression.right.accept(this, data))
+
+            IrDynamicOperator.INVOKE ->
+                JsInvocation(
+                    expression.receiver.accept(this, data),
+                    expression.arguments.map { it.accept(this, data) }
+                )
+
+            else -> error("Unexpected operator ${expression.operator}: ${expression.render()}")
+        }
+
+    private fun prefixOperation(operator: JsUnaryOperator, expression: IrDynamicOperatorExpression, data: JsGenerationContext) =
+        JsPrefixOperation(
+            operator,
+            expression.receiver.accept(this, data)
+        )
+
+    private fun postfixOperation(operator: JsUnaryOperator, expression: IrDynamicOperatorExpression, data: JsGenerationContext) =
+        JsPostfixOperation(
+            operator,
+            expression.receiver.accept(this, data)
+        )
+
+    private fun binaryOperation(operator: JsBinaryOperator, expression: IrDynamicOperatorExpression, data: JsGenerationContext) =
+        JsBinaryOperation(
+            operator,
+            expression.left.accept(this, data),
+            expression.right.accept(this, data)
+        )
+
+    private fun isNativeInvoke(call: IrCall): Boolean {
+        val simpleFunction = call.symbol.owner as? IrSimpleFunction ?: return false
+        val receiverType = simpleFunction.dispatchReceiverParameter?.type ?: return false
+
+        if (simpleFunction.isSuspend) return false
+
+        return simpleFunction.name == OperatorNameConventions.INVOKE && receiverType.isFunctionTypeOrSubtype()
     }
 }

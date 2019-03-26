@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.container.useImpl
 import org.jetbrains.kotlin.container.useInstance
 import org.jetbrains.kotlin.context.ModuleContext
 import org.jetbrains.kotlin.context.ProjectContext
+import org.jetbrains.kotlin.contracts.ContractDeserializerImpl
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.impl.CompositePackageFragmentProvider
 import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
@@ -51,7 +52,7 @@ class CommonAnalysisParameters(
 
 /**
  * A facade that is used to analyze common (platform-independent) modules in multi-platform projects.
- * See [TargetPlatform.Common]
+ * See [CommonPlatform]
  */
 object CommonAnalyzerFacade : ResolverForModuleFactory() {
     private class SourceModuleInfo(
@@ -85,7 +86,6 @@ object CommonAnalyzerFacade : ResolverForModuleFactory() {
             ProjectContext(project),
             listOf(moduleInfo),
             modulesContent = { ModuleContent(it, files, GlobalSearchScope.allScope(project)) },
-            modulePlatforms = { MultiTargetPlatform.Common },
             moduleLanguageSettingsProvider = object : LanguageSettingsProvider {
                 override fun getLanguageVersionSettings(
                     moduleInfo: ModuleInfo,
@@ -165,6 +165,7 @@ object CommonAnalyzerFacade : ResolverForModuleFactory() {
         useInstance(metadataPartProvider)
         useInstance(declarationProviderFactory)
         useImpl<MetadataPackageFragmentProvider>()
+        useImpl<ContractDeserializerImpl>()
 
         val metadataFinderFactory = ServiceManager.getService(moduleContext.project, MetadataFinderFactory::class.java)
                 ?: error("No MetadataFinderFactory in project")
@@ -174,5 +175,5 @@ object CommonAnalyzerFacade : ResolverForModuleFactory() {
     }
 
     override val targetPlatform: TargetPlatform
-        get() = TargetPlatform.Common
+        get() = CommonPlatform
 }

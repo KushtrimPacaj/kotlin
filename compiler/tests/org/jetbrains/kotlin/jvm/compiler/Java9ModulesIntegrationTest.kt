@@ -1,25 +1,17 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jvm.compiler
 
 import com.intellij.openapi.util.io.FileUtil
+import junit.framework.TestCase
+import org.jetbrains.kotlin.cli.AbstractCliTest
 import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
 import org.jetbrains.kotlin.test.KotlinTestUtils
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.jar.Manifest
 
 class Java9ModulesIntegrationTest : AbstractKotlinCompilerIntegrationTest() {
@@ -30,6 +22,7 @@ class Java9ModulesIntegrationTest : AbstractKotlinCompilerIntegrationTest() {
             name: String,
             modulePath: List<File> = emptyList(),
             addModules: List<String> = emptyList(),
+            additionalKotlinArguments: List<String> = emptyList(),
             manifest: Manifest? = null
     ): File {
         val paths = (modulePath + ForTestCompileRuntime.runtimeJarForTests()).joinToString(separator = File.pathSeparator) { it.path }
@@ -42,6 +35,7 @@ class Java9ModulesIntegrationTest : AbstractKotlinCompilerIntegrationTest() {
         if (addModules.isNotEmpty()) {
             kotlinOptions += "-Xadd-modules=${addModules.joinToString()}"
         }
+        kotlinOptions += additionalKotlinArguments
 
         return compileLibrary(
                 name,
@@ -236,5 +230,33 @@ class Java9ModulesIntegrationTest : AbstractKotlinCompilerIntegrationTest() {
 
     fun testDependencyOnReflect() {
         module("usage", listOf(ForTestCompileRuntime.reflectJarForTests()))
+    }
+
+    fun testWithBuildFile() {
+        // This test checks that module path is configured correctly when the compiler is invoked in the '-Xbuild-file' mode. Note that
+        // the "'-d' option is ignored" warning in this test is an artifact of the test infrastructure and is not a part of the test.
+        val buildFile = AbstractCliTest.replacePathsInBuildXml(
+            "-Xbuild-file=${File(testDataDirectory, "build.xml").path}",
+            testDataDirectory.absolutePath,
+            tmpdir.absolutePath
+        )
+        module("usage", additionalKotlinArguments = listOf("-no-stdlib", buildFile))
+    }
+
+    fun testCoroutinesDebugMetadata() {
+        val jar = module("usage", listOf(ForTestCompileRuntime.runtimeJarForTests()))
+
+        val command = listOf<String>(
+            File(KotlinTestUtils.getJdk9Home(), "bin/java").path,
+            "-p",
+            "${ForTestCompileRuntime.runtimeJarForTests().path}${File.pathSeparator}${jar.path}",
+            "-m",
+            "usage/some.module.withsome.packages.UsageKt"
+        )
+
+        val process = ProcessBuilder().command(command).start()
+        process.waitFor(1, TimeUnit.MINUTES)
+        val got = process.inputStream.reader().readText()
+        KotlinTestUtils.assertEqualsToFile(File("$testDataDirectory/stdout.txt"), got)
     }
 }

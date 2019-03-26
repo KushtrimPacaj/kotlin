@@ -1,4 +1,3 @@
-import org.jetbrains.kotlin.gradle.dsl.Coroutines
 
 plugins {
     kotlin("jvm")
@@ -8,9 +7,10 @@ plugins {
 jvmTarget = "1.6"
 
 dependencies {
-    compile(projectDist(":kotlin-stdlib"))
-    compile(projectDist(":kotlin-reflect"))
+    compile(kotlinStdlib())
+    compileOnly(project(":kotlin-reflect-api"))
     compile(commonDep("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
+    runtime(project(":kotlin-reflect"))
 }
 
 sourceSets {
@@ -18,7 +18,7 @@ sourceSets {
     "test" {}
 }
 
-kotlin.experimental.coroutines = Coroutines.ENABLE
+publish()
 
 val jar = runtimeJar()
 val sourcesJar = sourcesJar()
@@ -29,5 +29,3 @@ dist()
 ideaPlugin {
     from(jar, sourcesJar)
 }
-
-publish()

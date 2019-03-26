@@ -20,23 +20,22 @@ import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.declarations.impl.IrModuleFragmentImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrPropertyImpl
+import org.jetbrains.kotlin.ir.declarations.impl.IrFieldImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrValueParameterImpl
 import org.jetbrains.kotlin.ir.declarations.lazy.*
-import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.expressions.impl.IrErrorExpressionImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrExpressionBodyImpl
+import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.types.KotlinType
 
 class DeclarationStubGenerator(
     moduleDescriptor: ModuleDescriptor,
     val symbolTable: SymbolTable,
-    val origin: IrDeclarationOrigin,
-    val languageVersionSettings: LanguageVersionSettings
+    languageVersionSettings: LanguageVersionSettings,
+    private val externalDeclarationOrigin: ((DeclarationDescriptor) -> IrDeclarationOrigin)? = null,
+    private val deserializer: IrDeserializer? = null
 ) {
-
     private val lazyTable = symbolTable.lazyWrapper
 
     internal var unboundSymbolGeneration: Boolean
@@ -79,27 +78,30 @@ class DeclarationStubGenerator(
                 throw AssertionError("Unexpected member descriptor: $descriptor")
         }
 
-    internal fun generatePropertyStub(descriptor: PropertyDescriptor): IrProperty =
-        IrPropertyImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor).also { irProperty ->
-            val getterDescriptor = descriptor.getter
-            if (getterDescriptor == null) {
-                irProperty.backingField =
-                        symbolTable.declareField(
-                            UNDEFINED_OFFSET,
-                            UNDEFINED_OFFSET,
-                            origin,
-                            descriptor.original,
-                            descriptor.type.toIrType()
-                        )
-            } else {
-                irProperty.getter = generateFunctionStub(getterDescriptor)
-            }
+    private fun computeOrigin(descriptor: DeclarationDescriptor): IrDeclarationOrigin =
+        externalDeclarationOrigin?.invoke(descriptor) ?: IrDeclarationOrigin.IR_EXTERNAL_DECLARATION_STUB
 
-            irProperty.setter = descriptor.setter?.let { generateFunctionStub(it) }
+    internal fun generatePropertyStub(
+        descriptor: PropertyDescriptor,
+        bindingContext: BindingContext? = null
+    ): IrProperty {
+        val referenced = symbolTable.referenceProperty(descriptor)
+        if (referenced.isBound) {
+            return referenced.owner
         }
 
-    fun generateFunctionStub(descriptor: FunctionDescriptor): IrSimpleFunction {
-        val referenced = symbolTable.referenceSimpleFunction(descriptor)
+        val origin = computeOrigin(descriptor)
+        return symbolTable.declareProperty(
+            UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor.original,
+            isDelegated = descriptor.isDelegated
+        ) {
+            deserializer?.findDeserializedDeclaration(descriptor)
+                ?: IrLazyProperty(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator, bindingContext)
+        }
+    }
+
+    fun generateFieldStub(descriptor: PropertyDescriptor): IrField {
+        val referenced = symbolTable.referenceField(descriptor)
         if (referenced.isBound) {
             return referenced.owner
         }
@@ -107,12 +109,45 @@ class DeclarationStubGenerator(
         val origin =
             if (descriptor.kind == CallableMemberDescriptor.Kind.FAKE_OVERRIDE)
                 IrDeclarationOrigin.FAKE_OVERRIDE
-            else origin
+            else computeOrigin(descriptor)
+
+        return symbolTable.declareField(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor.original, descriptor.type.toIrType()) {
+            deserializer?.findDeserializedDeclaration(referenced) as? IrField
+                ?: IrFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, descriptor.type.toIrType())
+        }.apply {
+            initializer = descriptor.compileTimeInitializer?.let {
+                IrExpressionBodyImpl(
+                    constantValueGenerator.generateConstantValueAsExpression(UNDEFINED_OFFSET, UNDEFINED_OFFSET, it)
+                )
+            }
+        }
+    }
+
+    fun generateFunctionStub(descriptor: FunctionDescriptor, createPropertyIfNeeded: Boolean = true): IrSimpleFunction {
+        val referenced = symbolTable.referenceSimpleFunction(descriptor)
+        if (referenced.isBound) {
+            return referenced.owner
+        }
+
+        if (createPropertyIfNeeded && descriptor is PropertyGetterDescriptor) {
+            return generatePropertyStub(descriptor.correspondingProperty).getter!!
+        }
+        if (createPropertyIfNeeded && descriptor is PropertySetterDescriptor) {
+            return generatePropertyStub(descriptor.correspondingProperty).setter!!
+        }
+
+        val origin =
+            if (descriptor.kind == CallableMemberDescriptor.Kind.FAKE_OVERRIDE)
+                IrDeclarationOrigin.FAKE_OVERRIDE
+            else computeOrigin(descriptor)
         return symbolTable.declareSimpleFunction(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
             origin,
             descriptor.original
-        ) { IrLazyFunction(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator) }
+        ) {
+            deserializer?.findDeserializedDeclaration(referenced) as? IrSimpleFunction
+                ?: IrLazyFunction(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
+        }
     }
 
     internal fun generateConstructorStub(descriptor: ClassConstructorDescriptor): IrConstructor {
@@ -121,26 +156,30 @@ class DeclarationStubGenerator(
             return referenced.owner
         }
 
+        val origin = computeOrigin(descriptor)
         return symbolTable.declareConstructor(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor.original
-        ) { IrLazyConstructor(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator) }
+        ) {
+            deserializer?.findDeserializedDeclaration(referenced) as? IrConstructor
+                ?: IrLazyConstructor(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
+        }
     }
 
     private fun KotlinType.toIrType() = typeTranslator.translateType(this)
 
     internal fun generateValueParameterStub(descriptor: ValueParameterDescriptor): IrValueParameter {
         return IrValueParameterImpl(
-            UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin,
+            UNDEFINED_OFFSET, UNDEFINED_OFFSET, computeOrigin(descriptor),
             descriptor, descriptor.type.toIrType(), descriptor.varargElementType?.toIrType()
         ).also { irValueParameter ->
             if (descriptor.declaresDefaultValue()) {
                 irValueParameter.defaultValue =
-                        IrExpressionBodyImpl(
-                            IrErrorExpressionImpl(
-                                UNDEFINED_OFFSET, UNDEFINED_OFFSET, descriptor.type.toIrType(),
-                                "Stub expression for default value of ${descriptor.name}"
-                            )
+                    IrExpressionBodyImpl(
+                        IrErrorExpressionImpl(
+                            UNDEFINED_OFFSET, UNDEFINED_OFFSET, descriptor.type.toIrType(),
+                            "Stub expression for default value of ${descriptor.name}"
                         )
+                    )
             }
         }
     }
@@ -150,9 +189,11 @@ class DeclarationStubGenerator(
         if (referenceClass.isBound) {
             return referenceClass.owner
         }
-        return symbolTable.declareClass(
-            UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor
-        ) { IrLazyClass(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator) }
+        val origin = computeOrigin(descriptor)
+        return symbolTable.declareClass(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor) {
+            deserializer?.findDeserializedDeclaration(referenceClass) as? IrClass
+                ?: IrLazyClass(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
+        }
     }
 
     internal fun generateEnumEntryStub(descriptor: ClassDescriptor): IrEnumEntry {
@@ -160,8 +201,10 @@ class DeclarationStubGenerator(
         if (referenced.isBound) {
             return referenced.owner
         }
+        val origin = computeOrigin(descriptor)
         return symbolTable.declareEnumEntry(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor) {
-            IrLazyEnumEntryImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
+            deserializer?.findDeserializedDeclaration(referenced) as? IrEnumEntry
+                ?: IrLazyEnumEntryImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
         }
     }
 
@@ -170,11 +213,10 @@ class DeclarationStubGenerator(
         if (referenced.isBound) {
             return referenced.owner
         }
+        val origin = computeOrigin(descriptor)
         return symbolTable.declareGlobalTypeParameter(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor) {
-            IrLazyTypeParameter(
-                UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin,
-                it, this, typeTranslator
-            )
+            deserializer?.findDeserializedDeclaration(referenced) as? IrTypeParameter
+                ?: IrLazyTypeParameter(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
         }
     }
 
@@ -183,11 +225,9 @@ class DeclarationStubGenerator(
         if (referenced.isBound) {
             return referenced.owner
         }
+        val origin = computeOrigin(descriptor)
         return symbolTable.declareScopedTypeParameter(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, descriptor) {
-            IrLazyTypeParameter(
-                UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin,
-                it, this, typeTranslator
-            )
+            IrLazyTypeParameter(UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, it, this, typeTranslator)
         }
     }
 }

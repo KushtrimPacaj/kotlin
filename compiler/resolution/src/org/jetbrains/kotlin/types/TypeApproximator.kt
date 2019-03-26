@@ -20,9 +20,11 @@ import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.resolve.calls.NewCommonSuperTypeCalculator
 import org.jetbrains.kotlin.resolve.calls.inference.model.TypeVariableTypeConstructor
+import org.jetbrains.kotlin.resolve.constants.IntegerLiteralTypeConstructor
 import org.jetbrains.kotlin.types.TypeApproximatorConfiguration.IntersectionStrategy.*
 import org.jetbrains.kotlin.types.checker.*
-import org.jetbrains.kotlin.types.checker.CaptureStatus.*
+import org.jetbrains.kotlin.types.model.CaptureStatus
+import org.jetbrains.kotlin.types.model.CaptureStatus.*
 import org.jetbrains.kotlin.types.typeUtil.asTypeProjection
 import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.types.typeUtil.isNothing
@@ -40,6 +42,7 @@ open class TypeApproximatorConfiguration {
     open val dynamic get() = false // DynamicType
     open val rawType get() = false // RawTypeImpl
     open val errorType get() = false
+    open val integerLiteralType: Boolean = false // IntegerLiteralTypeConstructor
     open val definitelyNotNullType get() = true
     open val intersection: IntersectionStrategy = TO_COMMON_SUPERTYPE
 
@@ -58,12 +61,14 @@ open class TypeApproximatorConfiguration {
         override val allFlexible get() = true
         override val intersection get() = ALLOWED
         override val errorType get() = true
+        override val integerLiteralType: Boolean get() = true
     }
 
     object PublicDeclaration : AllFlexibleSameValue() {
         override val allFlexible get() = true
         override val errorType get() = true
         override val definitelyNotNullType get() = false
+        override val integerLiteralType: Boolean get() = true
     }
 
     abstract class AbstractCapturedTypesApproximation(val approximatedCapturedStatus: CaptureStatus) :
@@ -79,7 +84,9 @@ open class TypeApproximatorConfiguration {
 
     object IncorporationConfiguration : TypeApproximatorConfiguration.AbstractCapturedTypesApproximation(FOR_INCORPORATION)
     object SubtypeCapturedTypesApproximation : TypeApproximatorConfiguration.AbstractCapturedTypesApproximation(FOR_SUBTYPING)
-    object CapturedTypesApproximation : TypeApproximatorConfiguration.AbstractCapturedTypesApproximation(FROM_EXPRESSION)
+    object CapturedAndIntegerLiteralsTypesApproximation : TypeApproximatorConfiguration.AbstractCapturedTypesApproximation(FROM_EXPRESSION) {
+        override val integerLiteralType: Boolean get() = true
+    }
 }
 
 class TypeApproximator {
@@ -205,10 +212,12 @@ class TypeApproximator {
         val baseResult = when (conf.intersection) {
             ALLOWED -> if (!thereIsApproximation) return null else intersectTypes(newTypes)
             TO_FIRST -> if (toSuper) newTypes.first() else return type.defaultResult(toSuper = false)
-        // commonSupertypeCalculator should handle flexible types correctly
-            TO_COMMON_SUPERTYPE -> if (toSuper) NewCommonSuperTypeCalculator.commonSuperType(newTypes) else return type.defaultResult(
-                toSuper = false
-            )
+            // commonSupertypeCalculator should handle flexible types correctly
+            TO_COMMON_SUPERTYPE -> {
+                if (!toSuper) return type.defaultResult(toSuper = false)
+                val resultType = NewCommonSuperTypeCalculator.commonSuperType(newTypes)
+                approximateToSuperType(resultType.unwrap(), conf) ?: resultType.unwrap()
+            }
         }
 
         return if (type.isMarkedNullable) baseResult.makeNullableAsSpecified(true) else baseResult
@@ -309,6 +318,13 @@ class TypeApproximator {
 
         if (typeConstructor is TypeVariableTypeConstructor) {
             return if (conf.typeVariable(typeConstructor)) null else type.defaultResult(toSuper)
+        }
+
+        if (typeConstructor is IntegerLiteralTypeConstructor) {
+            return if (conf.integerLiteralType)
+                typeConstructor.getApproximatedType().unwrap().makeNullableAsSpecified(type.isMarkedNullable)
+            else
+                null
         }
 
         return null // simple classifier type

@@ -9,15 +9,16 @@ import com.intellij.debugger.engine.DebugProcessImpl
 import com.intellij.debugger.engine.DebuggerManagerThreadImpl
 import com.intellij.debugger.engine.events.DebuggerCommandImpl
 import com.intellij.debugger.impl.DebuggerContextImpl
-import com.intellij.debugger.impl.DebuggerUtilsEx
-import com.intellij.debugger.jdi.LocalVariableProxyImpl
 import com.intellij.psi.PsiElement
 import com.sun.jdi.*
 import com.sun.tools.jdi.LocalVariableImpl
 import org.jetbrains.kotlin.codegen.binding.CodegenBinding
+import org.jetbrains.kotlin.codegen.binding.CodegenBinding.asmTypeForAnonymousClass
 import org.jetbrains.kotlin.codegen.coroutines.DO_RESUME_METHOD_NAME
 import org.jetbrains.kotlin.codegen.coroutines.INVOKE_SUSPEND_METHOD_NAME
 import org.jetbrains.kotlin.codegen.coroutines.continuationAsmTypes
+import org.jetbrains.kotlin.codegen.inline.KOTLIN_STRATA_NAME
+import org.jetbrains.kotlin.idea.KotlinFileTypeFactory
 import org.jetbrains.kotlin.idea.codeInsight.CodeInsightUtils
 import org.jetbrains.kotlin.idea.debugger.evaluate.KotlinDebuggerCaches
 import org.jetbrains.kotlin.idea.refactoring.getLineEndOffset
@@ -28,87 +29,23 @@ import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.inline.InlineUtil
+import org.jetbrains.org.objectweb.asm.Type as AsmType
 import java.util.*
 
-fun Method.safeAllLineLocations(): List<Location> {
-    return DebuggerUtilsEx.allLineLocations(this) ?: emptyList()
+fun Location.isInKotlinSources(): Boolean {
+    val declaringType = declaringType()
+    val fileExtension = declaringType.safeSourceName()?.substringAfterLast('.')?.toLowerCase() ?: ""
+    return fileExtension in KotlinFileTypeFactory.KOTLIN_EXTENSIONS || declaringType.containsKotlinStrata()
 }
 
-fun ReferenceType.safeAllLineLocations(): List<Location> {
-    return DebuggerUtilsEx.allLineLocations(this) ?: emptyList()
-}
+fun ReferenceType.containsKotlinStrata() = availableStrata().contains(KOTLIN_STRATA_NAME)
 
-fun Method.safeLocationsOfLine(line: Int): List<Location> {
-    return try {
-        locationsOfLine(line)
-    } catch (e: AbsentInformationException) {
-        emptyList()
-    }
-}
-
-fun Method.safeVariables(): List<LocalVariable>? {
-    return try {
-        variables()
-    } catch (e: AbsentInformationException) {
-        null
-    }
-}
-
-fun Method.safeArguments(): List<LocalVariable>? {
-    return try {
-        arguments()
-    } catch (e: AbsentInformationException) {
-        null
-    }
-}
-
-fun Method.safeReturnType(): Type? {
-    return try {
-        returnType()
-    } catch (e: ClassNotLoadedException) {
-        null
-    }
-}
-
-fun LocalVariable.safeType(): Type? {
-    return try {
-        return type()
-    } catch (e: ClassNotLoadedException) {
-        null
-    }
-}
-
-fun Location.safeSourceName(): String? {
-    return try {
-        sourceName()
-    } catch (e: AbsentInformationException) {
-        null
-    } catch (e: InternalError) {
-        null
-    }
-}
-
-fun Location.safeLineNumber(): Int {
-    return DebuggerUtilsEx.getLineNumber(this, false)
-}
-
-fun Location.safeSourceLineNumber(): Int {
-    return DebuggerUtilsEx.getLineNumber(this, true)
-}
-
-fun Location.safeMethod(): Method? {
-    return DebuggerUtilsEx.getMethod(this)
-}
-
-fun isInsideInlineFunctionBody(visibleVariables: List<LocalVariableProxyImpl>): Boolean {
-    return visibleVariables.any { it.name().startsWith(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_FUNCTION) }
-}
-
-fun numberOfInlinedFunctions(visibleVariables: List<LocalVariableProxyImpl>): Int {
-    return visibleVariables.count { it.name().startsWith(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_FUNCTION) }
-}
-
-fun isInsideInlineArgument(inlineArgument: KtFunction, location: Location, debugProcess: DebugProcessImpl): Boolean {
+fun isInsideInlineArgument(
+    inlineArgument: KtFunction,
+    location: Location,
+    debugProcess: DebugProcessImpl,
+    bindingContext: BindingContext = KotlinDebuggerCaches.getOrCreateTypeMapper(inlineArgument).bindingContext
+): Boolean {
     val visibleVariables = location.visibleVariables(debugProcess)
     val markerLocalVariables = visibleVariables.filter { it.name().startsWith(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_ARGUMENT) }
 
@@ -117,10 +54,19 @@ fun isInsideInlineArgument(inlineArgument: KtFunction, location: Location, debug
     val functionName = runReadAction { functionNameByArgument(inlineArgument, context) }
 
     return markerLocalVariables
-            .map { it.name() }
-            .any { variableName ->
-                lambdaOrdinalByLocalVariable(variableName) == lambdaOrdinal && functionNameByLocalVariable(variableName) == functionName
+        .map { it.name().drop(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_ARGUMENT.length) }
+        .any { variableName ->
+            if (variableName.startsWith("-")) {
+                val lambdaClassName = asmTypeForAnonymousClass(bindingContext, inlineArgument)
+                    .internalName.substringAfterLast("/")
+
+                variableName == "-$functionName-$lambdaClassName"
+            } else {
+                // For Kotlin up to 1.3.10
+                lambdaOrdinalByLocalVariable(variableName) == lambdaOrdinal
+                        && functionNameByLocalVariable(variableName) == functionName
             }
+        }
 }
 
 fun <T : Any> DebugProcessImpl.invokeInManagerThread(f: (DebuggerContextImpl) -> T?): T? {
@@ -302,3 +248,37 @@ fun findCallByEndToken(element: PsiElement): KtCallExpression? {
         else -> null
     }
 }
+
+fun Type.isSubtype(className: String): Boolean = isSubtype(AsmType.getObjectType(className))
+
+fun Type.isSubtype(type: AsmType): Boolean {
+    if (this.signature() == type.descriptor) {
+        return true
+    }
+
+    if (type.sort != AsmType.OBJECT || this !is ClassType) {
+        return false
+    }
+
+    val superTypeName = type.className
+
+    if (allInterfaces().any { it.name() == superTypeName }) {
+        return true
+    }
+
+    var superClass = superclass()
+    while (superClass != null) {
+        if (superClass.name() == superTypeName) {
+            return true
+        }
+        superClass = superClass.superclass()
+    }
+
+    return false
+}
+
+val DebuggerContextImpl.canRunEvaluation: Boolean
+    get() = debugProcess?.canRunEvaluation ?: false
+
+val DebugProcessImpl.canRunEvaluation: Boolean
+    get() = suspendManager.pausedContext != null

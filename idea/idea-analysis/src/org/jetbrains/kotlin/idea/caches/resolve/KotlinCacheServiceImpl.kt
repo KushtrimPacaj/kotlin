@@ -45,21 +45,20 @@ import org.jetbrains.kotlin.idea.caches.project.IdeaModuleInfo
 import org.jetbrains.kotlin.idea.caches.resolve.util.contextWithNewLockAndCompositeExceptionTracker
 import org.jetbrains.kotlin.idea.compiler.IDELanguageSettingsProvider
 import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesModificationTracker
+import org.jetbrains.kotlin.idea.core.script.dependencies.ScriptRelatedModulesProvider
 import org.jetbrains.kotlin.idea.project.TargetPlatformDetector
 import org.jetbrains.kotlin.idea.project.outOfBlockModificationCount
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.idea.util.ProjectRootsUtil
+import org.jetbrains.kotlin.platform.DefaultIdeTargetPlatformKindProvider
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.contains
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.TargetPlatform
 import org.jetbrains.kotlin.resolve.diagnostics.KotlinSuppressCache
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import org.jetbrains.kotlin.utils.addToStdlib.sumByLong
-import java.lang.AssertionError
-import java.lang.IllegalStateException
 
 internal val LOG = Logger.getInstance(KotlinCacheService::class.java)
 
@@ -98,7 +97,8 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
         syntheticFiles: Collection<KtFile> = listOf()
     ): ProjectResolutionFacade {
         val sdk = dependenciesModuleInfo.sdk
-        val platform = JvmPlatform // TODO: Js scripts?
+        val platform = /* Fallback to Common platform in CIDR (Java is not supported there) */
+            DefaultIdeTargetPlatformKindProvider.defaultCompilerPlatform // TODO: Js scripts?
         val settings = PlatformAnalysisSettings(
             platform, sdk, true,
             LanguageFeature.ReleaseCoroutines.defaultState == LanguageFeature.State.ENABLED
@@ -111,12 +111,13 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
         )
 
         val scriptFile = (dependenciesModuleInfo as? ScriptDependenciesInfo.ForFile)?.scriptFile
-        val relatedModuleSourceInfo = scriptFile?.let { getScriptRelatedModuleInfo(project, it) }
-        val globalFacade = if (relatedModuleSourceInfo != null) {
-            globalFacade(settings)
-        } else {
-            getOrBuildGlobalFacade(settings).facadeForSdk
-        }
+        val relatedModules = scriptFile?.let { ScriptRelatedModulesProvider.getRelatedModules(it, project) }
+        val globalFacade =
+            if (relatedModules?.isNotEmpty() == true) {
+                globalFacade(settings)
+            } else {
+                getOrBuildGlobalFacade(settings).facadeForSdk
+            }
 
         val globalContext = globalFacade.globalContext.contextWithNewLockAndCompositeExceptionTracker()
         return ProjectResolutionFacade(
@@ -209,7 +210,7 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
         // we assume that all files come from the same module
         val targetPlatform = files.map { TargetPlatformDetector.getPlatform(it) }.toSet().single()
         val specialModuleInfo = files.map(KtFile::getModuleInfo).toSet().single()
-        val settings = specialModuleInfo.platformSettings(targetPlatform)
+        val settings = specialModuleInfo.platformSettings(specialModuleInfo.platform ?: targetPlatform)
 
         // File copies are created during completion and receive correct modification events through POM.
         // Dummy files created e.g. by J2K do not receive events.
@@ -394,7 +395,7 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
 
     private val scriptsCacheProvider = CachedValueProvider {
         CachedValueProvider.Result(
-            object : SLRUCache<Set<KtFile>, ProjectResolutionFacade>(2, 3) {
+            object : SLRUCache<Set<KtFile>, ProjectResolutionFacade>(10, 5) {
                 override fun createValue(files: Set<KtFile>) = createFacadeForFilesWithSpecialModuleInfo(files)
             },
             LibraryModificationTracker.getInstance(project),
@@ -419,16 +420,16 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
         val scripts = specialFiles.filterScripts()
         if (scripts.isNotEmpty()) {
             val projectFacade = getFacadeForScripts(scripts)
-            return ModuleResolutionFacadeImpl(projectFacade, moduleInfo)
+            return ModuleResolutionFacadeImpl(projectFacade, moduleInfo).createdFor(scripts, moduleInfo)
         }
 
         if (specialFiles.isNotEmpty()) {
             val projectFacade = getFacadeForSpecialFiles(specialFiles)
-            return ModuleResolutionFacadeImpl(projectFacade, moduleInfo)
+            return ModuleResolutionFacadeImpl(projectFacade, moduleInfo).createdFor(specialFiles, moduleInfo)
         }
 
         val platform = TargetPlatformDetector.getPlatform(file)
-        return getResolutionFacadeByModuleInfo(moduleInfo, platform)
+        return getResolutionFacadeByModuleInfo(moduleInfo, platform).createdFor(emptyList(), moduleInfo, platform)
     }
 
     override fun getResolutionFacadeByFile(file: PsiFile, platform: TargetPlatform): ResolutionFacade? {

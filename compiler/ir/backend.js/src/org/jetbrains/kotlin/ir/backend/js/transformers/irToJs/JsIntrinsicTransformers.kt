@@ -8,10 +8,14 @@ package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
 import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
 import org.jetbrains.kotlin.ir.backend.js.utils.Namer
+import org.jetbrains.kotlin.ir.declarations.IrConstructor
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrFunctionReference
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.types.classifierOrFail
+import org.jetbrains.kotlin.ir.util.getInlineClassBackingField
+import org.jetbrains.kotlin.ir.util.getInlinedClass
 import org.jetbrains.kotlin.js.backend.ast.*
 
 typealias IrCallTransformer = (IrCall, context: JsGenerationContext) -> JsExpression
@@ -79,6 +83,16 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
                 JsInvocation(Namer.JS_OBJECT_CREATE_FUNCTION, prototype)
             }
 
+            add(intrinsics.jsGetJSField) { call, context ->
+                val args = translateCallArguments(call, context)
+                val receiver = args[0]
+                val fieldName = args[1] as JsStringLiteral
+
+                val fieldNameLiteral = fieldName.value!!
+
+                JsNameRef(fieldNameLiteral, receiver)
+            }
+
             add(intrinsics.jsSetJSField) { call, context ->
                 val args = translateCallArguments(call, context)
                 val receiver = args[0]
@@ -90,16 +104,9 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
                 jsAssignment(JsNameRef(fieldNameLiteral, receiver), fieldValue)
             }
 
-            add(intrinsics.jsToJsType) { call, context ->
+            add(intrinsics.jsClass) { call, context ->
                 val typeName = context.getNameForSymbol(call.getTypeArgument(0)!!.classifierOrFail)
                 typeName.makeRef()
-            }
-
-            add(backendContext.sharedVariablesManager.closureBoxConstructorTypeSymbol) { call, context ->
-                val args = translateCallArguments(call, context)
-                val initializer = args[0]
-                val propertyInit = JsPropertyInitializer(JsNameRef("v"), initializer)
-                JsObjectLiteral(listOf(propertyInit))
             }
 
             addIfNotNull(intrinsics.jsCode) { call, context ->
@@ -142,6 +149,72 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
                 val getterName = context.getNameForSymbol(contextGetter)
                 val continuation = context.continuation
                 JsInvocation(JsNameRef(getterName, continuation))
+            }
+
+            add(intrinsics.jsArrayLength) { call, context ->
+                val args = translateCallArguments(call, context)
+                JsNameRef("length", args[0])
+            }
+
+            add(intrinsics.jsArrayGet) { call, context ->
+                val args = translateCallArguments(call, context)
+                val array = args[0]
+                val index = args[1]
+                JsArrayAccess(array, index)
+            }
+
+            add(intrinsics.jsArraySet) { call, context ->
+                val args = translateCallArguments(call, context)
+                val array = args[0]
+                val index = args[1]
+                val value = args[2]
+                JsBinaryOperation(JsBinaryOperator.ASG, JsArrayAccess(array, index), value)
+            }
+
+            add(intrinsics.arrayLiteral) { call, context ->
+                translateCallArguments(call, context).single()
+            }
+
+            add(intrinsics.jsArraySlice) { call, context ->
+                JsInvocation(JsNameRef(Namer.SLICE_FUNCTION, translateCallArguments(call, context).single()))
+            }
+
+            for ((type, prefix) in intrinsics.primitiveToTypedArrayMap) {
+                add(intrinsics.primitiveToSizeConstructor[type]!!) { call, context ->
+                    JsNew(JsNameRef("${prefix}Array"), translateCallArguments(call, context))
+                }
+                add(intrinsics.primitiveToLiteralConstructor[type]!!) { call, context ->
+                    JsNew(JsNameRef("${prefix}Array"), translateCallArguments(call, context))
+                }
+            }
+
+            add(intrinsics.jsBoxIntrinsic) { call: IrCall, context ->
+                val arg = translateCallArguments(call, context).single()
+                val inlineClass = call.getTypeArgument(0)!!.getInlinedClass()!!
+                val constructor = inlineClass.declarations.filterIsInstance<IrConstructor>().single { it.isPrimary }
+                JsNew(context.getNameForSymbol(constructor.symbol).makeRef(), listOf(arg))
+            }
+
+            add(intrinsics.jsUnboxIntrinsic) { call: IrCall, context ->
+                val arg = translateCallArguments(call, context).single()
+                val inlineClass = call.getTypeArgument(1)!!.getInlinedClass()!!
+                val field = getInlineClassBackingField(inlineClass)
+                val fieldName = context.getNameForSymbol(field.symbol)
+                JsNameRef(fieldName, arg)
+            }
+
+            add(intrinsics.jsBind) { call: IrCall, context: JsGenerationContext ->
+                val receiver = call.getValueArgument(0)!!
+                val reference = call.getValueArgument(1) as IrFunctionReference
+                val superClass = call.superQualifierSymbol!!
+
+                val jsReceiver = receiver.accept(IrElementToJsExpressionTransformer(), context)
+                val functionName = context.getNameForSymbol(reference.symbol)
+                val superName = context.getNameForSymbol(superClass).makeRef()
+                val qPrototype = JsNameRef(functionName, prototypeOf(superName))
+                val bindRef = JsNameRef(Namer.BIND_FUNCTION, qPrototype)
+
+                JsInvocation(bindRef, jsReceiver)
             }
         }
     }

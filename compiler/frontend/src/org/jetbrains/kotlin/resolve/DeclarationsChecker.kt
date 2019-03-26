@@ -38,13 +38,14 @@ import org.jetbrains.kotlin.resolve.DescriptorUtils.classCanHaveOpenMembers
 import org.jetbrains.kotlin.resolve.calls.results.TypeSpecificityComparator
 import org.jetbrains.kotlin.resolve.checkers.PlatformDiagnosticSuppressor
 import org.jetbrains.kotlin.resolve.descriptorUtil.builtIns
-import org.jetbrains.kotlin.resolve.descriptorUtil.declaresOrInheritsDefaultValue
 import org.jetbrains.kotlin.resolve.descriptorUtil.isAnnotationConstructor
 import org.jetbrains.kotlin.resolve.descriptorUtil.isEffectivelyExternal
+import org.jetbrains.kotlin.resolve.inline.isInlineOnly
 import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
 import org.jetbrains.kotlin.types.typeUtil.*
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import java.util.*
 
 internal class DeclarationsCheckerBuilder(
@@ -368,7 +369,7 @@ class DeclarationsChecker(
             upperBoundCheckRequests.add(DescriptorResolver.UpperBoundCheckRequest(name, typeReference, type))
         }
 
-        DescriptorResolver.checkUpperBoundTypes(trace, upperBoundCheckRequests)
+        DescriptorResolver.checkUpperBoundTypes(trace, upperBoundCheckRequests, false)
 
         for (request in upperBoundCheckRequests) {
             DescriptorResolver.checkBounds(request.upperBound, request.upperBoundType, trace)
@@ -404,6 +405,8 @@ class DeclarationsChecker(
                 // Otherwise report the diagnostic on the type parameter declaration
                 declaration
             }
+
+            if (descriptor.containingDeclaration.safeAs<MemberDescriptor>()?.isInlineOnly() == true) return
 
             trace.report(BOUNDS_NOT_ALLOWED_IF_BOUNDED_BY_TYPE_PARAMETER.on(reportOn))
         }
@@ -923,7 +926,9 @@ class DeclarationsChecker(
         for (parameter in varargParameters) {
             val varargElementType = parameter.varargElementType!!.upperIfFlexible()
             if (KotlinTypeChecker.DEFAULT.isSubtypeOf(varargElementType, nullableNothing) ||
-                (varargElementType.isInlineClassType() && !UnsignedTypes.isUnsignedType(varargElementType))
+                (varargElementType.isInlineClassType() &&
+                        !UnsignedTypes.isUnsignedType(varargElementType) &&
+                        !KotlinBuiltIns.isPrimitiveTypeOrNullablePrimitiveType(varargElementType))
             ) {
                 val parameterDeclaration = DescriptorToSourceUtils.descriptorToDeclaration(parameter) as? KtParameter ?: continue
                 trace.report(FORBIDDEN_VARARG_PARAMETER_TYPE.on(parameterDeclaration, varargElementType))

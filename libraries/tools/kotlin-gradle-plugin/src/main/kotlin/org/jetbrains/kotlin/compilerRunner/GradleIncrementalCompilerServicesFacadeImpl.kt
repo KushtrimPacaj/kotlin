@@ -5,25 +5,24 @@
 
 package org.jetbrains.kotlin.compilerRunner
 
-import org.gradle.api.Project
-import org.gradle.api.logging.Logger
-import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.daemon.client.reportFromDaemon
 import org.jetbrains.kotlin.daemon.common.*
-import org.jetbrains.kotlin.gradle.plugin.kotlinDebug
+import org.jetbrains.kotlin.gradle.logging.GradleBufferingMessageCollector
+import org.jetbrains.kotlin.gradle.logging.kotlinDebug
 import java.io.Serializable
 import java.rmi.Remote
 import java.rmi.server.UnicastRemoteObject
 
 internal open class GradleCompilerServicesFacadeImpl(
-        project: Project,
-        val compilerMessageCollector: MessageCollector,
-        port: Int = SOCKET_ANY_FREE_PORT
+    private val log: KotlinLogger,
+    // RMI messages are reported from RMI threads.
+    // Messages reported from non-Gradle threads are not grouped and not shown in build scans.
+    // To fix this, we store all messages in a buffer, then report them from a Gradle thread
+    private val compilerMessageCollector: GradleBufferingMessageCollector,
+    port: Int = SOCKET_ANY_FREE_PORT
 ) : UnicastRemoteObject(port, LoopbackNetworkInterface.clientLoopbackSocketFactory, LoopbackNetworkInterface.serverLoopbackSocketFactory),
     CompilerServicesFacadeBase,
     Remote {
-
-    protected val log: Logger = project.logger
 
     override fun report(category: Int, severity: Int, message: String?, attachment: Serializable?) {
         when (ReportCategory.fromCode(category)) {
@@ -35,19 +34,20 @@ internal open class GradleCompilerServicesFacadeImpl(
             }
             else -> {
                 compilerMessageCollector.reportFromDaemon(
-                        outputsCollector = null,
-                        category = category,
-                        severity = severity,
-                        message = message,
-                        attachment = attachment)
+                    outputsCollector = null,
+                    category = category,
+                    severity = severity,
+                    message = message,
+                    attachment = attachment
+                )
             }
         }
     }
 }
 
 internal class GradleIncrementalCompilerServicesFacadeImpl(
-        project: Project,
-        environment: GradleIncrementalCompilerEnvironment,
-        port: Int = SOCKET_ANY_FREE_PORT
-) : GradleCompilerServicesFacadeImpl(project, environment.messageCollector, port),
+    log: KotlinLogger,
+    messageCollector: GradleBufferingMessageCollector,
+    port: Int = SOCKET_ANY_FREE_PORT
+) : GradleCompilerServicesFacadeImpl(log, messageCollector, port),
     IncrementalCompilerServicesFacade

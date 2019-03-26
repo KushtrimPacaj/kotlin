@@ -30,27 +30,28 @@ import java.io.File
 
 class JvmModuleProtoBufTest : KtUsefulTestCase() {
     private fun doTest(
-            relativeDirectory: String,
-            compileWith: LanguageVersion = LanguageVersion.LATEST_STABLE,
-            loadWith: LanguageVersion = LanguageVersion.LATEST_STABLE,
-            extraOptions: List<String> = emptyList()
+        relativeDirectory: String,
+        compileWith: LanguageVersion = LanguageVersion.LATEST_STABLE,
+        loadWith: LanguageVersion = LanguageVersion.LATEST_STABLE,
+        extraOptions: List<String> = emptyList()
     ) {
         val directory = KotlinTestUtils.getTestDataPathBase() + relativeDirectory
         val tmpdir = KotlinTestUtils.tmpDir(this::class.simpleName)
 
         val moduleName = "main"
-        CompilerTestUtil.executeCompilerAssertSuccessful(K2JVMCompiler(), listOf(
+        CompilerTestUtil.executeCompilerAssertSuccessful(
+            K2JVMCompiler(), listOf(
                 directory,
                 "-d", tmpdir.path,
                 "-module-name", moduleName,
                 "-language-version", compileWith.versionString
-        ) + extraOptions)
+            ) + extraOptions
+        )
 
         val mapping = ModuleMapping.loadModuleMapping(
-                File(tmpdir, "META-INF/$moduleName.${ModuleMapping.MAPPING_FILE_EXT}").readBytes(), "test",
-                CompilerDeserializationConfiguration(
-                        LanguageVersionSettingsImpl(loadWith, ApiVersion.createByLanguageVersion(loadWith))
-                )
+            File(tmpdir, "META-INF/$moduleName.${ModuleMapping.MAPPING_FILE_EXT}").readBytes(), "test",
+            CompilerDeserializationConfiguration(LanguageVersionSettingsImpl(loadWith, ApiVersion.createByLanguageVersion(loadWith))),
+            ::error
         )
         val result = buildString {
             for (annotationClassId in mapping.moduleData.annotations) {
@@ -80,18 +81,19 @@ class JvmModuleProtoBufTest : KtUsefulTestCase() {
     }
 
     fun testJvmPackageName() {
-        doTest("/moduleProtoBuf/jvmPackageName",
-               compileWith = LanguageVersion.KOTLIN_1_2, loadWith = LanguageVersion.KOTLIN_1_2)
+        doTest("/moduleProtoBuf/jvmPackageName")
     }
 
     fun testJvmPackageNameManyParts() {
-        doTest("/moduleProtoBuf/jvmPackageNameManyParts",
-               compileWith = LanguageVersion.KOTLIN_1_2, loadWith = LanguageVersion.KOTLIN_1_2)
+        doTest("/moduleProtoBuf/jvmPackageNameManyParts")
     }
 
     fun testJvmPackageNameLanguageVersion11() {
-        doTest("/moduleProtoBuf/jvmPackageNameLanguageVersion11",
-               compileWith = LanguageVersion.KOTLIN_1_2, loadWith = LanguageVersion.KOTLIN_1_1)
+        doTest("/moduleProtoBuf/jvmPackageNameLanguageVersion11", loadWith = LanguageVersion.KOTLIN_1_1)
+    }
+
+    fun testJvmPackageNameMultifileClass() {
+        doTest("/moduleProtoBuf/jvmPackageNameMultifileClass")
     }
 
     fun testExperimental() {

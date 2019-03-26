@@ -28,7 +28,8 @@ open class CompilationOptions(
         /** @See [ReportSeverity] */
         val reportSeverity: Int,
         /** @See [CompilationResultCategory]] */
-        val requestedCompilationResults: Array<Int>
+        val requestedCompilationResults: Array<Int>,
+        val kotlinScriptExtensions: Array<String>? = null
 ) : Serializable {
     companion object {
         const val serialVersionUID: Long = 0
@@ -41,33 +42,41 @@ open class CompilationOptions(
                "reportCategories=${Arrays.toString(reportCategories)}, " +
                "reportSeverity=$reportSeverity, " +
                "requestedCompilationResults=${Arrays.toString(requestedCompilationResults)}" +
+               "kotlinScriptExtensions=${Arrays.toString(kotlinScriptExtensions)}" +
                ")"
     }
 }
 
 class IncrementalCompilationOptions(
-        val areFileChangesKnown: Boolean,
-        val modifiedFiles: List<File>?,
-        val deletedFiles: List<File>?,
-        val workingDir: File,
-        val customCacheVersionFileName: String,
-        val customCacheVersion: Int,
-        compilerMode: CompilerMode,
-        targetPlatform: CompileService.TargetPlatform,
-        /** @See [ReportCategory] */
+    val areFileChangesKnown: Boolean,
+    val modifiedFiles: List<File>?,
+    val deletedFiles: List<File>?,
+    val workingDir: File,
+    compilerMode: CompilerMode,
+    targetPlatform: CompileService.TargetPlatform,
+    /** @See [ReportCategory] */
         reportCategories: Array<Int>,
-        /** @See [ReportSeverity] */
+    /** @See [ReportSeverity] */
         reportSeverity: Int,
-        /** @See [CompilationResultCategory]] */
+    /** @See [CompilationResultCategory]] */
         requestedCompilationResults: Array<Int>,
-        val usePreciseJavaTracking: Boolean,
-        /**
+    val usePreciseJavaTracking: Boolean,
+    /**
          * Directories that should be cleared when IC decides to rebuild
          */
-        val localStateDirs: List<File>,
-        val multiModuleICSettings: MultiModuleICSettings,
-        val modulesInfo: IncrementalModuleInfo
-) : CompilationOptions(compilerMode, targetPlatform, reportCategories, reportSeverity, requestedCompilationResults) {
+        val outputFiles: List<File>,
+    val multiModuleICSettings: MultiModuleICSettings,
+    val modulesInfo: IncrementalModuleInfo,
+    val classpathFqNamesHistory: File? = null,
+    kotlinScriptExtensions: Array<String>? = null
+) : CompilationOptions(
+    compilerMode,
+    targetPlatform,
+    reportCategories,
+    reportSeverity,
+    requestedCompilationResults,
+    kotlinScriptExtensions
+) {
     companion object {
         const val serialVersionUID: Long = 0
     }
@@ -79,11 +88,10 @@ class IncrementalCompilationOptions(
                "modifiedFiles=$modifiedFiles, " +
                "deletedFiles=$deletedFiles, " +
                "workingDir=$workingDir, " +
-               "customCacheVersionFileName='$customCacheVersionFileName', " +
-               "customCacheVersion=$customCacheVersion, " +
                "multiModuleICSettings=$multiModuleICSettings, " +
                "usePreciseJavaTracking=$usePreciseJavaTracking" +
-               "localStateDirs=$localStateDirs" +
+               "outputFiles=$outputFiles" +
+               "classpathFqNamesHistory=$classpathFqNamesHistory" +
                ")"
     }
 }

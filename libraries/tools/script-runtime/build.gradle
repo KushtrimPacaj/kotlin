@@ -12,7 +12,7 @@ pill {
 }
 
 dependencies {
-    compileOnly project(path: ':kotlin-stdlib', configuration: 'distJar')
+    compileOnly kotlinStdlib()
 }
 
 configurations {
@@ -33,9 +33,10 @@ jar {
 
 artifacts {
     archives sourcesJar
-    archives javadocJar
     mainJar jar
 }
+
+javadocJar()
 
 dist {
     from (jar, sourcesJar)
@@ -49,5 +50,4 @@ compileKotlin {
     ]
 }
 
-kotlin.experimental.coroutines 'enable'
 

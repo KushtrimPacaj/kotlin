@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -32,5 +32,15 @@ public class DslHighlighterTestGenerated extends AbstractDslHighlighterTest {
     @TestMetadata("functionCalls.kt")
     public void testFunctionCalls() throws Exception {
         runTest("idea/testData/dslHighlighter/functionCalls.kt");
+    }
+
+    @TestMetadata("objectAccess.kt")
+    public void testObjectAccess() throws Exception {
+        runTest("idea/testData/dslHighlighter/objectAccess.kt");
+    }
+
+    @TestMetadata("propertyAccess.kt")
+    public void testPropertyAccess() throws Exception {
+        runTest("idea/testData/dslHighlighter/propertyAccess.kt");
     }
 }

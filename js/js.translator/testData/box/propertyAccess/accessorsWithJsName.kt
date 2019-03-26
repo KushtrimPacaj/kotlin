@@ -1,6 +1,4 @@
-// IGNORE_BACKEND: JS_IR
-// EXPECTED_REACHABLE_NODES: 1121
-package foo
+// EXPECTED_REACHABLE_NODES: 1291
 
 class A {
     val x: Int
@@ -16,7 +14,7 @@ class A {
 val A.z: Int
     @JsName("getZ_") get() = 42
 
-fun getPackage() = js("return JS_TESTS.foo")
+fun getPackage() = js("return JS_TESTS")
 
 fun box(): String {
     val a = A()

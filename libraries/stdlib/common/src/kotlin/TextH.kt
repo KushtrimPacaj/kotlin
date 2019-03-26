@@ -47,11 +47,14 @@ expect class Regex {
      *
      * @param startIndex An index to start search with, by default 0. Must be not less than zero and not greater than `input.length()`
      * @return An instance of [MatchResult] if match was found or `null` otherwise.
+     * @sample samples.text.Regexps.find
      */
     fun find(input: CharSequence, startIndex: Int = 0): MatchResult?
 
     /**
      * Returns a sequence of all occurrences of a regular expression within the [input] string, beginning at the specified [startIndex].
+     *
+     * @sample samples.text.Regexps.findAll
      */
     fun findAll(input: CharSequence, startIndex: Int = 0): Sequence<MatchResult>
 
@@ -99,6 +102,9 @@ public expect fun String(chars: CharArray): String
 
 /**
  * Converts the characters from a portion of the specified array to a string.
+ *
+ * @throws IndexOutOfBoundsException if either [offset] or [length] are less than zero
+ * or `offset + length` is out of [chars] array bounds.
  */
 @SinceKotlin("1.2")
 public expect fun String(chars: CharArray, offset: Int, length: Int): String
@@ -130,6 +136,15 @@ public expect fun CharSequence.repeat(n: Int): String
 
 
 /**
+ * Clears the content of this string builder making it empty.
+ *
+ * @sample samples.text.Strings.clearStringBuilder
+ */
+@SinceKotlin("1.3")
+public expect fun StringBuilder.clear(): StringBuilder
+
+
+/**
  * Returns a new string with all occurrences of [oldChar] replaced with [newChar].
  */
 expect fun String.replace(oldChar: Char, newChar: Char, ignoreCase: Boolean = false): String
@@ -158,10 +173,21 @@ expect fun String.replaceFirst(oldValue: String, newValue: String, ignoreCase: B
  */
 expect fun String?.equals(other: String?, ignoreCase: Boolean = false): Boolean
 
+/**
+ * Compares two strings lexicographically, optionally ignoring case differences.
+ */
+@SinceKotlin("1.2")
+expect fun String.compareTo(other: String, ignoreCase: Boolean = false): Int
+
+
+public expect fun String.startsWith(prefix: String, ignoreCase: Boolean = false): Boolean
+public expect fun String.startsWith(prefix: String, startIndex: Int, ignoreCase: Boolean = false): Boolean
+public expect fun String.endsWith(suffix: String, ignoreCase: Boolean = false): Boolean
+
 // From stringsCode.kt
 
-internal inline expect fun String.nativeIndexOf(ch: Char, fromIndex: Int): Int
-internal inline expect fun String.nativeLastIndexOf(ch: Char, fromIndex: Int): Int
+internal expect fun String.nativeIndexOf(ch: Char, fromIndex: Int): Int
+internal expect fun String.nativeLastIndexOf(ch: Char, fromIndex: Int): Int
 
 expect fun CharSequence.isBlank(): Boolean
 /**
@@ -181,6 +207,16 @@ expect fun CharSequence.regionMatches(
 
 
 /**
+ * A Comparator that orders strings ignoring character case.
+ *
+ * Note that this Comparator does not take locale into account,
+ * and will result in an unsatisfactory ordering for certain locales.
+ */
+@SinceKotlin("1.2")
+public expect val String.Companion.CASE_INSENSITIVE_ORDER: Comparator<String>
+
+
+/**
  * Returns `true` if the contents of this string is equal to the word "true", ignoring case, and `false` otherwise.
  */
 expect fun String.toBoolean(): Boolean
@@ -194,6 +230,7 @@ expect fun String.toByte(): Byte
 /**
  * Parses the string as a signed [Byte] number and returns the result.
  * @throws NumberFormatException if the string is not a valid representation of a number.
+ * @throws IllegalArgumentException when [radix] is not a valid radix for string to number conversion.
  */
 expect fun String.toByte(radix: Int): Byte
 
@@ -207,6 +244,7 @@ expect fun String.toShort(): Short
 /**
  * Parses the string as a [Short] number and returns the result.
  * @throws NumberFormatException if the string is not a valid representation of a number.
+ * @throws IllegalArgumentException when [radix] is not a valid radix for string to number conversion.
  */
 expect fun String.toShort(radix: Int): Short
 
@@ -219,6 +257,7 @@ expect fun String.toInt(): Int
 /**
  * Parses the string as an [Int] number and returns the result.
  * @throws NumberFormatException if the string is not a valid representation of a number.
+ * @throws IllegalArgumentException when [radix] is not a valid radix for string to number conversion.
  */
 expect fun String.toInt(radix: Int): Int
 
@@ -231,6 +270,7 @@ expect fun String.toLong(): Long
 /**
  * Parses the string as a [Long] number and returns the result.
  * @throws NumberFormatException if the string is not a valid representation of a number.
+ * @throws IllegalArgumentException when [radix] is not a valid radix for string to number conversion.
  */
 expect fun String.toLong(radix: Int): Long
 

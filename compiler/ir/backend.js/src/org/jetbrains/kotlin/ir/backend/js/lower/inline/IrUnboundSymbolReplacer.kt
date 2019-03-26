@@ -30,7 +30,7 @@ internal fun IrModuleFragment.replaceUnboundSymbols(context: JsIrBackendContext)
     val collector = DeclarationSymbolCollector()
     with(collector) {
         with(irBuiltins) {
-            for (op in arrayOf(eqeqeqFun, eqeqFun, throwNpeFun, booleanNotFun, noWhenBranchMatchedExceptionFun) +
+            for (op in arrayOf(eqeqeqFun, eqeqFun, throwNpeFun, noWhenBranchMatchedExceptionFun) +
                     lessFunByOperandType.values +
                     lessOrEqualFunByOperandType.values +
                     greaterOrEqualFunByOperandType.values +
@@ -58,7 +58,7 @@ internal fun IrModuleFragment.replaceUnboundSymbols(context: JsIrBackendContext)
         descriptor,
         symbolTable = context.symbolTable,
         irBuiltIns = context.irBuiltIns
-    ).generateUnboundSymbolsAsDependencies(this)
+    ).generateUnboundSymbolsAsDependencies()
 }
 
 private class DeclarationSymbolCollector : IrElementVisitorVoid {
@@ -171,7 +171,7 @@ private class IrUnboundSymbolReplacer(
 
         expression.transformChildrenVoid(this)
         return with(expression) {
-            IrClassReferenceImpl(startOffset, endOffset, type, symbol, symbol.descriptor.toIrType())
+            IrClassReferenceImpl(startOffset, endOffset, type, symbol, symbol.descriptor.toIrType(symbolTable = symbolTable))
         }
     }
 
@@ -292,9 +292,10 @@ private class IrUnboundSymbolReplacer(
     override fun visitPropertyReference(expression: IrPropertyReference): IrExpression {
         expression.replaceTypeArguments()
 
+        val property = expression.symbol.replaceOrSame(SymbolTable::referenceProperty)
         val field = expression.field?.replaceOrSame(SymbolTable::referenceField)
-        val getter = expression.getter?.replace(SymbolTable::referenceFunction) ?: expression.getter
-        val setter = expression.setter?.replace(SymbolTable::referenceFunction) ?: expression.setter
+        val getter = expression.getter?.replace(SymbolTable::referenceSimpleFunction) ?: expression.getter
+        val setter = expression.setter?.replace(SymbolTable::referenceSimpleFunction) ?: expression.setter
 
         if (field == expression.field && getter == expression.getter && setter == expression.setter) {
             return super.visitPropertyReference(expression)
@@ -302,12 +303,15 @@ private class IrUnboundSymbolReplacer(
 
         expression.transformChildrenVoid(this)
         return with(expression) {
-            IrPropertyReferenceImpl(startOffset, endOffset, type, descriptor, 0,
-                    field,
-                    getter,
-                    setter,
-                    origin).also {
-
+            IrPropertyReferenceImpl(
+                startOffset, endOffset, type,
+                property,
+                0,
+                field,
+                getter,
+                setter,
+                origin
+            ).also {
                 it.copyArgumentsFrom(this)
                 it.copyTypeArgumentsFrom(this)
             }
@@ -315,9 +319,10 @@ private class IrUnboundSymbolReplacer(
     }
 
     override fun visitLocalDelegatedPropertyReference(expression: IrLocalDelegatedPropertyReference): IrExpression {
+        val localDelegatedProperty = expression.symbol.replaceOrSame(SymbolTable::referenceLocalDelegatedProperty)
         val delegate = expression.delegate.replaceOrSame(SymbolTable::referenceVariable)
-        val getter = expression.getter.replace(SymbolTable::referenceFunction) ?: expression.getter
-        val setter = expression.setter?.replace(SymbolTable::referenceFunction) ?: expression.setter
+        val getter = expression.getter.replace(SymbolTable::referenceSimpleFunction) ?: expression.getter
+        val setter = expression.setter?.replace(SymbolTable::referenceSimpleFunction) ?: expression.setter
 
         if (delegate == expression.delegate && getter == expression.getter && setter == expression.setter) {
             return super.visitLocalDelegatedPropertyReference(expression)
@@ -325,9 +330,11 @@ private class IrUnboundSymbolReplacer(
 
         expression.transformChildrenVoid(this)
         return with(expression) {
-            IrLocalDelegatedPropertyReferenceImpl(startOffset, endOffset, type, descriptor,
-                    delegate, getter, setter, origin).also {
-
+            IrLocalDelegatedPropertyReferenceImpl(
+                startOffset, endOffset, type,
+                localDelegatedProperty,
+                delegate, getter, setter, origin
+            ).also {
                 it.copyArgumentsFrom(this)
             }
         }

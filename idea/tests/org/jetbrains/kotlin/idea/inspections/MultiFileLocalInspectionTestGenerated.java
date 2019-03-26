@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -87,5 +87,15 @@ public class MultiFileLocalInspectionTestGenerated extends AbstractMultiFileLoca
     @TestMetadata("unusedSymbol/fromKotlinTestClass/fromKotlinTestClass.test")
     public void testUnusedSymbol_fromKotlinTestClass_FromKotlinTestClass() throws Exception {
         runTest("idea/testData/multiFileLocalInspections/unusedSymbol/fromKotlinTestClass/fromKotlinTestClass.test");
+    }
+
+    @TestMetadata("unusedSymbol/inlineClassesImplInterface/inlineClassesImplInterface.test")
+    public void testUnusedSymbol_inlineClassesImplInterface_InlineClassesImplInterface() throws Exception {
+        runTest("idea/testData/multiFileLocalInspections/unusedSymbol/inlineClassesImplInterface/inlineClassesImplInterface.test");
+    }
+
+    @TestMetadata("unusedSymbol/internalConstructorUsedInJava/internalConstructorUsedInJava.test")
+    public void testUnusedSymbol_internalConstructorUsedInJava_InternalConstructorUsedInJava() throws Exception {
+        runTest("idea/testData/multiFileLocalInspections/unusedSymbol/internalConstructorUsedInJava/internalConstructorUsedInJava.test");
     }
 }

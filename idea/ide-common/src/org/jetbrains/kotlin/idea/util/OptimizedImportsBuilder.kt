@@ -49,7 +49,8 @@ class OptimizedImportsBuilder(
         private val options: Options
 ) {
     companion object {
-        @TestOnly
+        @get:TestOnly
+        @set:TestOnly
         var testLog: StringBuilder? = null
     }
 
@@ -266,7 +267,10 @@ class OptimizedImportsBuilder(
                 append("\n")
             }
         }
-        val fileWithImports = KtPsiFactory(originalFile).createAnalyzableFile("Dummy.kt", fileText, originalFile)
+        val fileWithImports = KtPsiFactory(originalFile).createAnalyzableFile("Dummy_" + originalFile.name, fileText, originalFile)
+        if (file.isScript()) {
+            fileWithImports.originalFile = originalFile
+        }
         return fileWithImports.getFileResolutionScope()
     }
 

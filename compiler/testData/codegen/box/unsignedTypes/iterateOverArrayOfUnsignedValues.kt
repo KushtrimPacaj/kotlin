@@ -1,7 +1,6 @@
-// WITH_UNSIGNED
+// WITH_RUNTIME
+// KJS_WITH_FULL_RUNTIME
 // IGNORE_BACKEND: JVM_IR
-// IGNORE_BACKEND: JS_IR
-// IGNORE_BACKEND: JS
 
 fun box(): String {
     var sum = 0u

@@ -69,7 +69,7 @@ import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeConstructor
 import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
 import org.jetbrains.kotlin.types.checker.NewKotlinTypeChecker
-import org.jetbrains.kotlin.types.checker.TypeCheckerContext
+import org.jetbrains.kotlin.types.checker.ClassicTypeCheckerContext
 import org.jetbrains.kotlin.utils.addIfNotNull
 import org.jetbrains.kotlin.utils.ifEmpty
 import org.jetbrains.kotlin.utils.sure
@@ -85,7 +85,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
     private var KtExpression.isOccurrence: Boolean by NotNullablePsiCopyableUserDataProperty(Key.create("OCCURRENCE"), false)
 
     private class TypeCheckerImpl(private val project: Project) : KotlinTypeChecker by KotlinTypeChecker.DEFAULT {
-        private inner class ContextImpl : TypeCheckerContext(false) {
+        private inner class ContextImpl : ClassicTypeCheckerContext(false) {
             override fun areEqualTypeConstructors(a: TypeConstructor, b: TypeConstructor): Boolean {
                 return compareDescriptors(project, a.declarationDescriptor, b.declarationDescriptor)
             }
@@ -124,7 +124,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
         private fun replaceExpression(expressionToReplace: KtExpression, addToReferences: Boolean): KtExpression {
             val isActualExpression = expression == expressionToReplace
 
-            val replacement = psiFactory.createExpression(nameSuggestions.single().first())
+            val replacement = psiFactory.createExpression(nameSuggestions.asSequence().single().first())
             val substringInfo = expressionToReplace.extractableSubstringInfo
             var result = when {
                 expressionToReplace.isLambdaOutsideParentheses() -> {
@@ -167,7 +167,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
             else {
                 buildString {
                     append("$varOvVal ")
-                    append(nameSuggestions.single().first())
+                    append(nameSuggestions.asSequence().single().first())
                     if (noTypeInference) {
                         val typeToRender = expressionType ?: resolutionFacade.moduleDescriptor.builtIns.anyType
                         append(": ").append(IdeDescriptorRenderers.SOURCE_CODE.renderType(typeToRender))
@@ -213,7 +213,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
                         }
                     }
                     //ugly logic to make sure we are working with right actual expression
-                    var actualExpression = reference!!
+                    var actualExpression = reference ?: return
                     var diff = actualExpression.textRange.startOffset - oldElement.textRange.startOffset
                     var actualExpressionText = actualExpression.text
                     val newElement = emptyBody.addAfter(oldElement, firstChild)
@@ -224,7 +224,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
                     emptyBody.addAfter(psiFactory.createNewLine(), firstChild)
                     property = emptyBody.addAfter(property, firstChild) as KtProperty
                     emptyBody.addAfter(psiFactory.createNewLine(), firstChild)
-                    actualExpression = reference!!
+                    actualExpression = reference ?: return
                     diff = actualExpression.textRange.startOffset - emptyBody.textRange.startOffset
                     actualExpressionText = actualExpression.text
                     emptyBody = anchor.replace(emptyBody) as KtBlockExpression
@@ -312,8 +312,8 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
 
             val newDeclaration = ConvertToBlockBodyIntention.convert(commonContainer)
 
-            val newCommonContainer = (newDeclaration.bodyExpression as KtBlockExpression?)
-                    .sure { "New body is not found: " + newDeclaration }
+            val newCommonContainer = newDeclaration.bodyBlockExpression
+                .sure { "New body is not found: " + newDeclaration }
 
             val newExpression = newCommonContainer.findExpressionByCopyableDataAndClearIt(EXPRESSION_KEY)
             val newCommonParent = newCommonContainer.findElementByCopyableDataAndClearIt(COMMON_PARENT_KEY)
@@ -324,7 +324,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
                 } ?: newReplace
             }
 
-            runRefactoring(isVar, newExpression, newCommonContainer, newCommonParent, newAllReplaces)
+            runRefactoring(isVar, newExpression ?: return, newCommonContainer, newCommonParent, newAllReplaces)
         }
     }
 
@@ -450,7 +450,7 @@ object KotlinIntroduceVariableHandler : RefactoringActionHandler {
                             FinishMarkAction.finish(project, editor, startMarkAction)
                         }
 
-                        override fun templateFinished(template: Template?, brokenOff: Boolean) {
+                        override fun templateFinished(template: Template, brokenOff: Boolean) {
                             if (!brokenOff) {
                                 postProcess(declaration)
                             }

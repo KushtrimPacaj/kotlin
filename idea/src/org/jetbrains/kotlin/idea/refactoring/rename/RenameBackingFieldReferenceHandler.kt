@@ -33,8 +33,10 @@ class RenameBackingFieldReferenceHandler: KotlinVariableInplaceRenameHandler() {
         return refExpression.resolveToCall()?.resultingDescriptor is SyntheticFieldDescriptor
     }
 
-    override fun invoke(project: Project, editor: Editor, file: PsiFile, dataContext: DataContext?) {
-        CodeInsightUtils.showErrorHint(project, editor, "Rename is not applicable to backing field reference", "Rename", null)
+    override fun invoke(project: Project, editor: Editor?, file: PsiFile?, dataContext: DataContext) {
+        editor?.let {
+            CodeInsightUtils.showErrorHint(project, editor, "Rename is not applicable to backing field reference", "Rename", null)
+        }
     }
 
     override fun invoke(project: Project, elements: Array<out PsiElement>, dataContext: DataContext) {

@@ -18,7 +18,6 @@ package org.jetbrains.kotlin.serialization.deserialization
 
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationWithTarget
 import org.jetbrains.kotlin.descriptors.deserialization.AdditionalClassPartsProvider
 import org.jetbrains.kotlin.descriptors.deserialization.ClassDescriptorFactory
 import org.jetbrains.kotlin.descriptors.deserialization.PlatformDependentDeclarationFilter
@@ -36,7 +35,7 @@ class DeserializationComponents(
     val moduleDescriptor: ModuleDescriptor,
     val configuration: DeserializationConfiguration,
     val classDataFinder: ClassDataFinder,
-    val annotationAndConstantLoader: AnnotationAndConstantLoader<AnnotationDescriptor, ConstantValue<*>, AnnotationWithTarget>,
+    val annotationAndConstantLoader: AnnotationAndConstantLoader<AnnotationDescriptor, ConstantValue<*>>,
     val packageFragmentProvider: PackageFragmentProvider,
     val localClassifierTypeSettings: LocalClassifierTypeSettings,
     val errorReporter: ErrorReporter,
@@ -81,7 +80,8 @@ class DeserializationContext(
 ) {
     val typeDeserializer: TypeDeserializer = TypeDeserializer(
         this, parentTypeDeserializer, typeParameters,
-        "Deserializer for ${containingDeclaration.name}"
+        "Deserializer for \"${containingDeclaration.name}\"",
+        containerSource?.presentableString ?: "[container not found]"
     )
 
     val memberDeserializer: MemberDeserializer = MemberDeserializer(this)

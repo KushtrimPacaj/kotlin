@@ -20,7 +20,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.search.GlobalSearchScope
 import org.jetbrains.kotlin.builtins.jvm.JvmBuiltIns
 import org.jetbrains.kotlin.builtins.jvm.JvmBuiltInsPackageFragmentProvider
-import org.jetbrains.kotlin.config.AnalysisFlag
+import org.jetbrains.kotlin.config.JvmAnalysisFlags
 import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.config.LanguageVersionSettings
@@ -65,13 +65,15 @@ private fun StorageComponentContainer.configureJavaTopDownAnalysis(
 
     useInstance(VirtualFileFinderFactory.getInstance(project).create(moduleContentScope))
 
-    useImpl<JavaPropertyInitializerEvaluatorImpl>()
+    useInstance(JavaPropertyInitializerEvaluatorImpl)
     useImpl<AnnotationResolverImpl>()
     useImpl<SignaturePropagatorImpl>()
     useImpl<TraceBasedErrorReporter>()
     useInstance(InternalFlexibleTypeTransformer)
 
     useImpl<CompilerDeserializationConfiguration>()
+
+    useInstance(JavaDeprecationSettings)
 }
 
 fun createContainerForLazyResolveWithJava(
@@ -108,7 +110,7 @@ fun createContainerForLazyResolveWithJava(
 
     useInstance(languageVersionSettings)
 
-    useInstance(languageVersionSettings.getFlag(AnalysisFlag.jsr305))
+    useInstance(languageVersionSettings.getFlag(JvmAnalysisFlags.jsr305))
 
     if (useBuiltInsProvider) {
         useInstance((moduleContext.module.builtIns as JvmBuiltIns).settings)
@@ -138,13 +140,14 @@ fun createContainerForTopDownAnalyzerForJvm(
         expectActualTracker: ExpectActualTracker,
         packagePartProvider: PackagePartProvider,
         moduleClassResolver: ModuleClassResolver,
+        targetEnvironment: TargetEnvironment,
         jvmTarget: JvmTarget,
         languageVersionSettings: LanguageVersionSettings,
         configureJavaClassFinder: (StorageComponentContainer.() -> Unit)? = null,
         javaClassTracker: JavaClassesTracker? = null
 ): ComponentProvider = createContainerForLazyResolveWithJava(
         moduleContext, bindingTrace, declarationProviderFactory, moduleContentScope, moduleClassResolver,
-        CompilerEnvironment, lookupTracker, expectActualTracker, packagePartProvider, jvmTarget, languageVersionSettings,
+        targetEnvironment, lookupTracker, expectActualTracker, packagePartProvider, jvmTarget, languageVersionSettings,
         useBuiltInsProvider = true,
         configureJavaClassFinder = configureJavaClassFinder,
         javaClassTracker = javaClassTracker

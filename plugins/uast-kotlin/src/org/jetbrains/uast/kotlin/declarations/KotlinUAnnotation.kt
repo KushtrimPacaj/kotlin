@@ -2,9 +2,12 @@ package org.jetbrains.uast.kotlin
 
 import com.intellij.psi.PsiAnnotation
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.ResolveResult
 import org.jetbrains.kotlin.asJava.toLightAnnotation
+import org.jetbrains.kotlin.descriptors.ClassConstructorDescriptor
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
+import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.psi.*
@@ -20,26 +23,28 @@ import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstance
 import org.jetbrains.uast.*
 import org.jetbrains.uast.kotlin.declarations.KotlinUIdentifier
 import org.jetbrains.uast.kotlin.declarations.KotlinUMethod
+import org.jetbrains.uast.kotlin.internal.multiResolveResults
 
-abstract class KotlinUAnnotationBase(
-    final override val psi: KtElement,
+abstract class KotlinUAnnotationBase<T : KtCallElement>(
+    final override val sourcePsi: T,
     givenParent: UElement?
-) : KotlinAbstractUElement(givenParent), UAnnotationEx, UAnchorOwner {
+) : KotlinAbstractUElement(givenParent), UAnnotationEx, UAnchorOwner, UMultiResolvable {
 
     abstract override val javaPsi: PsiAnnotation?
 
-    final override val sourcePsi = psi
+    final override val psi: PsiElement = sourcePsi
 
     protected abstract fun annotationUseSiteTarget(): AnnotationUseSiteTarget?
 
-    private val resolvedCall: ResolvedCall<*>? by lz { psi.getResolvedCall(psi.analyze()) }
+    private val resolvedCall: ResolvedCall<*>? get () = sourcePsi.getResolvedCall(sourcePsi.analyze())
 
-    override val qualifiedName: String?
-        get() = annotationClassDescriptor.takeUnless(ErrorUtils::isError)
+    override val qualifiedName: String? by lz {
+        computeClassDescriptor().takeUnless(ErrorUtils::isError)
             ?.fqNameUnsafe
             ?.takeIf(FqNameUnsafe::isSafe)
             ?.toSafe()
             ?.toString()
+    }
 
     override val attributeValues: List<UNamedExpression> by lz {
         resolvedCall?.valueArguments?.entries?.mapNotNull {
@@ -55,12 +60,9 @@ abstract class KotlinUAnnotationBase(
         } ?: emptyList()
     }
 
-    protected abstract val annotationClassDescriptor: ClassDescriptor?
+    protected abstract fun computeClassDescriptor(): ClassDescriptor?
 
-    override fun resolve(): PsiClass? {
-        val descriptor = annotationClassDescriptor ?: return null
-        return descriptor.toSource()?.getMaybeLightElement(this) as? PsiClass
-    }
+    override fun resolve(): PsiClass? = computeClassDescriptor()?.toSource()?.getMaybeLightElement() as? PsiClass
 
     override fun findAttributeValue(name: String?): UExpression? =
         findDeclaredAttributeValue(name) ?: findAttributeDefaultValue(name ?: "value")
@@ -82,7 +84,7 @@ abstract class KotlinUAnnotationBase(
     }
 
     private fun findAttributeDefaultValue(name: String): UExpression? {
-        val parameter = annotationClassDescriptor
+        val parameter = computeClassDescriptor()
             ?.unsubstitutedPrimaryConstructor
             ?.valueParameters
             ?.find { it.name.asString() == name } ?: return null
@@ -100,42 +102,39 @@ abstract class KotlinUAnnotationBase(
         }
         return superParent
     }
+
+    override fun multiResolve(): Iterable<ResolveResult> = sourcePsi.multiResolveResults().asIterable()
 }
 
 class KotlinUAnnotation(
-    val annotationEntry: KtAnnotationEntry,
+    annotationEntry: KtAnnotationEntry,
     givenParent: UElement?
-) : KotlinUAnnotationBase(annotationEntry, givenParent), UAnnotation {
+) : KotlinUAnnotationBase<KtAnnotationEntry>(annotationEntry, givenParent), UAnnotation {
 
     override val javaPsi = annotationEntry.toLightAnnotation()
 
-    private val resolvedAnnotation: AnnotationDescriptor? by lz { annotationEntry.analyze()[BindingContext.ANNOTATION, annotationEntry] }
+    override fun computeClassDescriptor(): ClassDescriptor? =
+        sourcePsi.analyze()[BindingContext.ANNOTATION, sourcePsi]?.annotationClass
 
-    override val annotationClassDescriptor: ClassDescriptor?
-        get() = resolvedAnnotation?.annotationClass
-
-    override fun annotationUseSiteTarget() = annotationEntry.useSiteTarget?.getAnnotationUseSiteTarget()
+    override fun annotationUseSiteTarget() = sourcePsi.useSiteTarget?.getAnnotationUseSiteTarget()
 
     override val uastAnchor by lazy {
         KotlinUIdentifier(
-            javaPsi?.nameReferenceElement?.referenceNameElement,
-            annotationEntry.typeReference?.typeElement?.let {
-                (it as? KtUserType)?.referenceExpression?.getReferencedNameElement() ?: it.navigationElement
-            },
+            javaPsi?.nameReferenceElement,
+            annotationEntry.typeReference?.nameElement,
             this
         )
     }
 
 }
 
-class KotlinUNestedAnnotation(
-    private val original: KtCallExpression,
-    givenParent: UElement?,
-    private val classDescriptor: ClassDescriptor?
-) : KotlinUAnnotationBase(original, givenParent) {
+class KotlinUNestedAnnotation private constructor(
+    original: KtCallExpression,
+    givenParent: UElement?
+) : KotlinUAnnotationBase<KtCallExpression>(original, givenParent) {
     override val javaPsi: PsiAnnotation? by lazy { original.toLightAnnotation() }
-    override val annotationClassDescriptor: ClassDescriptor?
-        get() = classDescriptor
+
+    override fun computeClassDescriptor(): ClassDescriptor? = classDescriptor(sourcePsi)
 
     override fun annotationUseSiteTarget(): AnnotationUseSiteTarget? = null
 
@@ -145,6 +144,18 @@ class KotlinUNestedAnnotation(
             (original.calleeExpression as? KtNameReferenceExpression)?.getReferencedNameElement(),
             this
         )
+    }
+
+    companion object {
+        fun tryCreate(original: KtCallExpression, givenParent: UElement?): KotlinUNestedAnnotation? {
+            if (classDescriptor(original)?.kind == ClassKind.ANNOTATION_CLASS)
+                return KotlinUNestedAnnotation(original, givenParent)
+            else
+                return null
+        }
+
+        private fun classDescriptor(original: KtCallExpression) =
+            (original.getResolvedCall(original.analyze())?.resultingDescriptor as? ClassConstructorDescriptor)?.constructedClass
     }
 
 }

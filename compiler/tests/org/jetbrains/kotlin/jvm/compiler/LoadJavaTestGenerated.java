@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -291,6 +291,41 @@ public class LoadJavaTestGenerated extends AbstractLoadJavaTest {
             @TestMetadata("AnnotatedMethod.java")
             public void testAnnotatedMethod() throws Exception {
                 runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedMethod.java");
+            }
+
+            @TestMetadata("AnnotatedParameterInEnumClassConstructor.java")
+            public void testAnnotatedParameterInEnumClassConstructor() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedParameterInEnumClassConstructor.java");
+            }
+
+            @TestMetadata("AnnotatedParameterInInnerClassConstructor.java")
+            public void testAnnotatedParameterInInnerClassConstructor() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedParameterInInnerClassConstructor.java");
+            }
+
+            @TestMetadata("AnnotatedTypeInEnumClassConstructor.java")
+            public void testAnnotatedTypeInEnumClassConstructor() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedTypeInEnumClassConstructor.java");
+            }
+
+            @TestMetadata("AnnotatedTypeInEnumClassConstructor2.java")
+            public void testAnnotatedTypeInEnumClassConstructor2() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedTypeInEnumClassConstructor2.java");
+            }
+
+            @TestMetadata("AnnotatedTypeInFun.java")
+            public void testAnnotatedTypeInFun() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedTypeInFun.java");
+            }
+
+            @TestMetadata("AnnotatedTypeInInnerClassConstructor.java")
+            public void testAnnotatedTypeInInnerClassConstructor() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedTypeInInnerClassConstructor.java");
+            }
+
+            @TestMetadata("AnnotatedTypeInInnerClassConstructor2.java")
+            public void testAnnotatedTypeInInnerClassConstructor2() throws Exception {
+                runTest("compiler/testData/loadJava/compiledJava/annotations/AnnotatedTypeInInnerClassConstructor2.java");
             }
 
             @TestMetadata("AnnotatedValueParameter.java")
@@ -1712,6 +1747,11 @@ public class LoadJavaTestGenerated extends AbstractLoadJavaTest {
                 runTest("compiler/testData/loadJava/compiledKotlin/annotations/AnnotationInAnnotationArguments.kt");
             }
 
+            @TestMetadata("ClassLiteralArguments.kt")
+            public void testClassLiteralArguments() throws Exception {
+                runTest("compiler/testData/loadJava/compiledKotlin/annotations/ClassLiteralArguments.kt");
+            }
+
             @TestMetadata("EnumArgumentWithCustomToString.kt")
             public void testEnumArgumentWithCustomToString() throws Exception {
                 runTest("compiler/testData/loadJava/compiledKotlin/annotations/EnumArgumentWithCustomToString.kt");
@@ -1784,9 +1824,19 @@ public class LoadJavaTestGenerated extends AbstractLoadJavaTest {
                     runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/Getter.kt");
                 }
 
+                @TestMetadata("HiddenConstructorWithInlineClassParameters.kt")
+                public void testHiddenConstructorWithInlineClassParameters() throws Exception {
+                    runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/HiddenConstructorWithInlineClassParameters.kt");
+                }
+
                 @TestMetadata("PropertyField.kt")
                 public void testPropertyField() throws Exception {
                     runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/PropertyField.kt");
+                }
+
+                @TestMetadata("PublishedApiAnnotationOnInlineClassCosntructor.kt")
+                public void testPublishedApiAnnotationOnInlineClassCosntructor() throws Exception {
+                    runTest("compiler/testData/loadJava/compiledKotlin/annotations/classMembers/PublishedApiAnnotationOnInlineClassCosntructor.kt");
                 }
 
                 @TestMetadata("Setter.kt")
@@ -2140,6 +2190,11 @@ public class LoadJavaTestGenerated extends AbstractLoadJavaTest {
                 @TestMetadata("FieldTarget.kt")
                 public void testFieldTarget() throws Exception {
                     runTest("compiler/testData/loadJava/compiledKotlin/annotations/withUseSiteTarget/FieldTarget.kt");
+                }
+
+                @TestMetadata("PropertyAndAccessor.kt")
+                public void testPropertyAndAccessor() throws Exception {
+                    runTest("compiler/testData/loadJava/compiledKotlin/annotations/withUseSiteTarget/PropertyAndAccessor.kt");
                 }
 
                 @TestMetadata("ReceiverTarget.kt")

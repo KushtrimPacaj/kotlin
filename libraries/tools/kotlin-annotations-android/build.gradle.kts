@@ -22,9 +22,14 @@ sourceSets {
     }
 }
 
+dependencies {
+    compile(project(":core:builtins"))
+}
+
+publish()
+
 sourcesJar()
 javadocJar()
 runtimeJar()
 dist()
 
-publish()

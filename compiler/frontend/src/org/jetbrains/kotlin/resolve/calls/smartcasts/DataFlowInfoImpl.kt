@@ -64,8 +64,7 @@ internal class DataFlowInfoImpl private constructor(
         nullability: Nullability,
         languageVersionSettings: LanguageVersionSettings,
         newTypeInfoBuilder: SetMultimap<DataFlowValue, KotlinType>? = null,
-        // TODO: remove me in version 1.3! I'm very dirty hack!
-        // In normal circumstances this should be always true
+        // XXX: set to false only as a workaround for OI, see KT-26357 for details (in NI everything works automagically)
         recordUnstable: Boolean = true
     ) {
         if (value.isStable || recordUnstable) {
@@ -143,7 +142,7 @@ internal class DataFlowInfoImpl private constructor(
 
     private fun KotlinType.canBeDefinitelyNotNullOrNotNull(settings: LanguageVersionSettings): Boolean {
         return if (settings.supportsFeature(LanguageFeature.NewInference))
-            this.isMarkedNullable || DefinitelyNotNullType.makesSenseToBeDefinitelyNotNull(this.unwrap())
+            TypeUtils.isNullableType(this)
         else
             this.isMarkedNullable
     }
@@ -251,7 +250,14 @@ internal class DataFlowInfoImpl private constructor(
         if (!value.type.isFlexible() && value.type.isSubtypeOf(type)) return this
 
         val nullabilityInfo = hashMapOf<DataFlowValue, Nullability>()
-        if (!type.isMarkedNullable) {
+
+        val isTypeNotNull =
+            if (languageVersionSettings.supportsFeature(LanguageFeature.NewInference))
+                !TypeUtils.isNullableType(type)
+            else
+                !type.isMarkedNullable
+
+        if (isTypeNotNull) {
             putNullabilityAndTypeInfo(nullabilityInfo, value, NOT_NULL, languageVersionSettings)
         }
 

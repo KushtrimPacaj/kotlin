@@ -6,7 +6,7 @@
 package kotlin.js.internal
 
 @JsName("DoubleCompanionObject")
-private object DoubleCompanionObject {
+internal object DoubleCompanionObject {
     @JsName("MIN_VALUE")
     val MIN_VALUE: Double = js("Number.MIN_VALUE")
 
@@ -24,7 +24,7 @@ private object DoubleCompanionObject {
 }
 
 @JsName("FloatCompanionObject")
-private object FloatCompanionObject {
+internal  object FloatCompanionObject {
     @JsName("MIN_VALUE")
     val MIN_VALUE: Float = js("Number.MIN_VALUE")
 
@@ -42,43 +42,73 @@ private object FloatCompanionObject {
 }
 
 @JsName("IntCompanionObject")
-private object IntCompanionObject {
+internal  object IntCompanionObject {
     @JsName("MIN_VALUE")
     val MIN_VALUE: Int = -2147483647 - 1
 
     @JsName("MAX_VALUE")
     val MAX_VALUE: Int = 2147483647
+
+    @JsName("SIZE_BYTES")
+    const val SIZE_BYTES = 4
+
+    @JsName("SIZE_BITS")
+    const val SIZE_BITS = 32
 }
 
 @JsName("LongCompanionObject")
-private object LongCompanionObject {
+internal  object LongCompanionObject {
     @JsName("MIN_VALUE")
     val MIN_VALUE: Long = js("Kotlin.Long.MIN_VALUE")
 
     @JsName("MAX_VALUE")
     val MAX_VALUE: Long = js("Kotlin.Long.MAX_VALUE")
+
+    @JsName("SIZE_BYTES")
+    const val SIZE_BYTES = 8
+
+    @JsName("SIZE_BITS")
+    const val SIZE_BITS = 64
 }
 
 @JsName("ShortCompanionObject")
-private object ShortCompanionObject {
+internal  object ShortCompanionObject {
     @JsName("MIN_VALUE")
     val MIN_VALUE: Short = -32768
 
     @JsName("MAX_VALUE")
     val MAX_VALUE: Short = 32767
+
+    @JsName("SIZE_BYTES")
+    const val SIZE_BYTES = 2
+
+    @JsName("SIZE_BITS")
+    const val SIZE_BITS = 16
 }
 
 @JsName("ByteCompanionObject")
-private object ByteCompanionObject {
+internal  object ByteCompanionObject {
     @JsName("MIN_VALUE")
     val MIN_VALUE: Byte = -128
 
     @JsName("MAX_VALUE")
     val MAX_VALUE: Byte = 127
+
+    @JsName("SIZE_BYTES")
+    const val SIZE_BYTES = 1
+
+    @JsName("SIZE_BITS")
+    const val SIZE_BITS = 8
 }
 
 @JsName("CharCompanionObject")
-private object CharCompanionObject {
+internal  object CharCompanionObject {
+    @JsName("MIN_VALUE")
+    public const val MIN_VALUE: Char = '\u0000'
+
+    @JsName("MAX_VALUE")
+    public const val MAX_VALUE: Char = '\uFFFF'
+
     @JsName("MIN_HIGH_SURROGATE")
     public const val MIN_HIGH_SURROGATE: Char = '\uD800'
 
@@ -96,7 +126,15 @@ private object CharCompanionObject {
 
     @JsName("MAX_SURROGATE")
     public const val MAX_SURROGATE: Char = MAX_LOW_SURROGATE
+
+    @JsName("SIZE_BYTES")
+    const val SIZE_BYTES = 2
+
+    @JsName("SIZE_BITS")
+    const val SIZE_BITS = 16
 }
 
-private object StringCompanionObject {}
+internal  object StringCompanionObject {}
+
+internal  object BooleanCompanionObject {}
 

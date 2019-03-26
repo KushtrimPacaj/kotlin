@@ -38,7 +38,8 @@ import org.jetbrains.kotlin.utils.KotlinPaths
 import java.io.File
 
 class K2MetadataCompiler : CLICompiler<K2MetadataCompilerArguments>() {
-    private val performanceManager: K2MetadataCompilerPerformanceManager = K2MetadataCompilerPerformanceManager()
+
+    override val performanceManager = K2MetadataCompilerPerformanceManager()
 
     override fun createArguments() = K2MetadataCompilerArguments()
 
@@ -60,7 +61,7 @@ class K2MetadataCompiler : CLICompiler<K2MetadataCompilerArguments>() {
         if (pluginLoadResult != ExitCode.OK) return pluginLoadResult
 
         for (arg in arguments.freeArgs) {
-            configuration.addKotlinSourceRoot(arg)
+            configuration.addKotlinSourceRoot(arg, isCommon = true)
         }
         if (arguments.classpath != null) {
             configuration.addJvmClasspathRoots(arguments.classpath!!.split(File.pathSeparatorChar).map(::File))
@@ -112,8 +113,6 @@ class K2MetadataCompiler : CLICompiler<K2MetadataCompilerArguments>() {
 
     override fun createMetadataVersion(versionArray: IntArray): BinaryVersion = BuiltInsBinaryVersion(*versionArray)
 
-    override fun getPerformanceManager(): CommonCompilerPerformanceManager = performanceManager
-
     companion object {
         @JvmStatic
         fun main(args: Array<String>) {
@@ -121,5 +120,5 @@ class K2MetadataCompiler : CLICompiler<K2MetadataCompilerArguments>() {
         }
     }
 
-    private class K2MetadataCompilerPerformanceManager : CommonCompilerPerformanceManager("Kotlin to Metadata compiler")
+    protected class K2MetadataCompilerPerformanceManager : CommonCompilerPerformanceManager("Kotlin to Metadata compiler")
 }

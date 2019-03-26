@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -59,6 +59,11 @@ public class TypingIndentationTestBaseGenerated extends AbstractTypingIndentatio
         @TestMetadata("Annotation.after.kt")
         public void testAnnotation() throws Exception {
             runTest("idea/testData/indentationOnNewline/Annotation.after.kt");
+        }
+
+        @TestMetadata("AnnotationInDeclaration.after.kt")
+        public void testAnnotationInDeclaration() throws Exception {
+            runTest("idea/testData/indentationOnNewline/AnnotationInDeclaration.after.kt");
         }
 
         @TestMetadata("ArgumentListNormalIndent.after.kt")
@@ -229,6 +234,11 @@ public class TypingIndentationTestBaseGenerated extends AbstractTypingIndentatio
         @TestMetadata("KT20783.after.kt")
         public void testKT20783() throws Exception {
             runTest("idea/testData/indentationOnNewline/KT20783.after.kt");
+        }
+
+        @TestMetadata("ModifierListInUnfinishedDeclaration.after.kt")
+        public void testModifierListInUnfinishedDeclaration() throws Exception {
+            runTest("idea/testData/indentationOnNewline/ModifierListInUnfinishedDeclaration.after.kt");
         }
 
         @TestMetadata("MultideclarationAfterEq.after.kt")

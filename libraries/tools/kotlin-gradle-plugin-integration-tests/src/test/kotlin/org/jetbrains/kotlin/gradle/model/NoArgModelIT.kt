@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.gradle.model
 
 import org.jetbrains.kotlin.gradle.BaseGradleIT
+import org.jetbrains.kotlin.gradle.GradleVersionRequired
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,7 +14,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class NoArgModelIT : BaseGradleIT() {
-
     @Test
     fun testNoArgKt18668() {
         val project = Project("noArgKt18668")

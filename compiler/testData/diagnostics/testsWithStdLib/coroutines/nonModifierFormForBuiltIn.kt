@@ -1,6 +1,6 @@
 // !LANGUAGE: +ReleaseCoroutines
-// !API_VERSION: 1.3
 // SKIP_TXT
+
 fun bar() {
     suspend {
         println()
@@ -34,3 +34,12 @@ fun bar() {
 @Target(AnnotationTarget.EXPRESSION)
 @Retention(AnnotationRetention.SOURCE)
 annotation class Ann
+
+fun main(suspend: WLambdaInvoke) {
+
+    <!MODIFIER_FORM_FOR_NON_BUILT_IN_SUSPEND!>suspend<!> {}
+}
+
+class WLambdaInvoke {
+    operator fun invoke(<!UNUSED_PARAMETER!>l<!>: () -> Unit) {}
+}

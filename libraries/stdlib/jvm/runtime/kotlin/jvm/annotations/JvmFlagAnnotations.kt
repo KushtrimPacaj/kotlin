@@ -11,7 +11,6 @@ import kotlin.annotation.AnnotationTarget.*
  * Marks the JVM backing field of the annotated property as `volatile`, meaning that writes to this field
  * are immediately made visible to other threads.
  */
-@Suppress("ACTUAL_WITHOUT_EXPECT") // for building kotlin-runtime
 @Target(FIELD)
 @Retention(AnnotationRetention.SOURCE)
 @MustBeDocumented
@@ -24,7 +23,7 @@ public actual annotation class Volatile
 @Target(FIELD)
 @Retention(AnnotationRetention.SOURCE)
 @MustBeDocumented
-public annotation class Transient
+public actual annotation class Transient
 
 /**
  * Marks the JVM method generated from the annotated function as `strictfp`, meaning that the precision
@@ -34,7 +33,7 @@ public annotation class Transient
 @Target(FUNCTION, CONSTRUCTOR, PROPERTY_GETTER, PROPERTY_SETTER, CLASS)
 @Retention(AnnotationRetention.SOURCE)
 @MustBeDocumented
-public annotation class Strictfp
+public actual annotation class Strictfp
 
 /**
  * Marks the JVM method generated from the annotated function as `synchronized`, meaning that the method
@@ -44,4 +43,4 @@ public annotation class Strictfp
 @Target(FUNCTION, PROPERTY_GETTER, PROPERTY_SETTER)
 @Retention(AnnotationRetention.SOURCE)
 @MustBeDocumented
-public annotation class Synchronized
+public actual annotation class Synchronized

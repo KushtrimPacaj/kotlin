@@ -58,13 +58,13 @@ import org.jetbrains.kotlin.codegen.AsmUtil
 import org.jetbrains.kotlin.codegen.JvmCodegenUtil
 import org.jetbrains.kotlin.config.IncrementalCompilation
 import org.jetbrains.kotlin.config.KotlinCompilerVersion.TEST_IS_PRE_RELEASE_SYSTEM_PROPERTY
-import org.jetbrains.kotlin.incremental.CacheVersion
 import org.jetbrains.kotlin.incremental.components.LookupTracker
+import org.jetbrains.kotlin.jps.incremental.CacheAttributesDiff
 import org.jetbrains.kotlin.incremental.withIC
 import org.jetbrains.kotlin.jps.build.KotlinJpsBuildTest.LibraryDependency.*
 import org.jetbrains.kotlin.jps.model.kotlinCommonCompilerArguments
 import org.jetbrains.kotlin.jps.model.kotlinCompilerArguments
-import org.jetbrains.kotlin.jps.platforms.productionBuildTarget
+import org.jetbrains.kotlin.jps.targets.KotlinModuleBuildTarget
 import org.jetbrains.kotlin.load.kotlin.PackagePartClassUtils
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.test.KotlinTestUtils
@@ -99,7 +99,7 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
 
         private fun getMethodsOfClass(classFile: File): Set<String> {
             val result = TreeSet<String>()
-            ClassReader(FileUtil.loadFileBytes(classFile)).accept(object : ClassVisitor(Opcodes.ASM5) {
+            ClassReader(FileUtil.loadFileBytes(classFile)).accept(object : ClassVisitor(Opcodes.API_VERSION) {
                 override fun visitMethod(access: Int, name: String, desc: String, signature: String?, exceptions: Array<String>?): MethodVisitor? {
                     result.add(name)
                     return null
@@ -227,7 +227,7 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
     }
 
     fun testSourcePackageLongPrefix() {
-        initProject()
+        initProject(JVM_MOCK_RUNTIME)
         val buildResult = buildAllModules()
         buildResult.assertSuccessful()
         val warnings = buildResult.getMessages(BuildMessage.Kind.WARNING)
@@ -236,7 +236,7 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
     }
 
     fun testSourcePackagePrefixWithInnerClasses() {
-        initProject()
+        initProject(JVM_MOCK_RUNTIME)
         buildAllModules().assertSuccessful()
     }
 
@@ -266,6 +266,13 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
         }
 
         return list.toTypedArray()
+    }
+
+    fun testKotlinJavaScriptProjectNewSourceRootTypes() {
+        initProject(JS_STDLIB)
+        buildAllModules().assertSuccessful()
+
+        checkOutputFilesList()
     }
 
     fun testKotlinJavaScriptProjectWithCustomOutputPaths() {
@@ -970,6 +977,9 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
             }
         }
 
+        // c  -> b  -exported-> a
+        // c2 -> b2 ------------^
+
         val a = addModuleWithSourceAndTestRoot("a")
         val b = addModuleWithSourceAndTestRoot("b")
         val c = addModuleWithSourceAndTestRoot("c")
@@ -983,15 +993,22 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
 
         val actual = StringBuilder()
         buildCustom(CanceledStatus.NULL, TestProjectBuilderLogger(), BuildResult()) {
-            project.setTestingContext(TestingContext(LookupTracker.DO_NOTHING, object : BuildLogger {
-                override fun buildStarted(context: CompileContext, chunk: ModuleChunk) {
-                    actual.append("Targets dependent on ${chunk.targets.joinToString() }:\n")
-                    actual.append(getDependentTargets(chunk.targets, context).map { it.toString() }.sorted().joinToString("\n"))
+            project.setTestingContext(TestingContext(LookupTracker.DO_NOTHING, object : TestingBuildLogger {
+                override fun chunkBuildStarted(context: CompileContext, chunk: ModuleChunk) {
+                    actual.append("Targets dependent on ${chunk.targets.joinToString()}:\n")
+                    val dependentRecursively = mutableSetOf<KotlinChunk>()
+                    context.kotlin.getChunk(chunk)!!.collectDependentChunksRecursivelyExportedOnly(dependentRecursively)
+                    dependentRecursively.asSequence().map { it.targets.joinToString() }.sorted().joinTo(actual, "\n")
                     actual.append("\n---------\n")
                 }
 
-                override fun afterBuildStarted(context: CompileContext, chunk: ModuleChunk) {}
-                override fun actionsOnCacheVersionChanged(actions: List<CacheVersion.Action>) {}
+                override fun afterChunkBuildStarted(context: CompileContext, chunk: ModuleChunk) {}
+                override fun invalidOrUnusedCache(
+                    chunk: KotlinChunk?,
+                    target: KotlinModuleBuildTarget<*>?,
+                    attributesDiff: CacheAttributesDiff<*>
+                ) {}
+                override fun addCustomMessage(message: String) {}
                 override fun buildFinished(exitCode: ModuleLevelBuilder.ExitCode) {}
                 override fun markedAsDirtyBeforeRound(files: Iterable<File>) {}
                 override fun markedAsDirtyAfterRound(files: Iterable<File>) {}

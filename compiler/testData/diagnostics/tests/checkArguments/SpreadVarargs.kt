@@ -4,7 +4,7 @@
 
 fun <T> array1(vararg a : T) = a
 
-fun main(args : Array<String>) {
+fun main() {
     val a = array1("a", "b")
     val b = array1(1, 1)
     join(1)
@@ -27,7 +27,7 @@ fun main(args : Array<String>) {
     join(1, "4", *a, *<!TYPE_MISMATCH!>b<!>, "3")
     join(a = *a, x = 1)
     join(a = *<!TYPE_MISMATCH!>b<!>, x = 1)
-    join(a = <!TYPE_MISMATCH, ASSIGNING_SINGLE_ELEMENT_TO_VARARG_IN_NAMED_FORM_FUNCTION_ERROR!>a<!>, x = 1)
+    join(a = <!ASSIGNING_SINGLE_ELEMENT_TO_VARARG_IN_NAMED_FORM_FUNCTION_ERROR, TYPE_MISMATCH!>a<!>, x = 1)
 
     joinG<String>(1, "2")
     joinG<String>(<!NON_VARARG_SPREAD!>*<!>1, "2")

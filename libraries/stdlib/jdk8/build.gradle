@@ -44,15 +44,27 @@ sourceSets {
 }
 
 jar {
-    manifestAttributes(manifest, project, 'Main', true)
+    manifestAttributes(manifest, project, 'Main' /*true*/)
     // TODO: enable as soon as this doesn't cause D8/DX to crash
     // from sourceSets.java9.output
 }
 
+task modularJar(type: Jar) {
+    dependsOn(jar)
+    manifestAttributes(manifest, project, 'Main', true)
+    classifier = 'modular'
+
+    from zipTree(jar.outputs.files.singleFile)
+    from sourceSets.java9.output
+}
+
+
 artifacts {
     archives sourcesJar
-    archives javadocJar
+    archives modularJar
 }
+
+javadocJar()
 
 dist {
     from (jar, sourcesJar)
@@ -73,19 +85,18 @@ compileKotlin {
 }
 
 compileTestKotlin {
-    kotlinOptions.freeCompilerArgs = ["-Xallow-kotlin-package", "-Xmulti-platform"]
+    kotlinOptions.freeCompilerArgs = ["-Xallow-kotlin-package", "-Xmulti-platform", "-Xuse-experimental=kotlin.ExperimentalUnsignedTypes"]
 }
 
 compileJava9Sources(project, 'kotlin.stdlib.jdk8')
-
-kotlin.experimental.coroutines 'enable'
 
 test {
     executable = "$JDK_18/bin/java"
 }
 
-task testJdk6Tests(type: Test) {
+task testJdk6Tests(type: Test) { thisTask ->
     dependsOn(':kotlin-stdlib:testClasses')
+    check.dependsOn(thisTask)
     group = "verification"
 
     executable = "$JDK_18/bin/java"
@@ -99,4 +110,13 @@ task testJdk6Tests(type: Test) {
     }
 }
 
-check.dependsOn testJdk6Tests
+
+[9, 10, 11].forEach { v ->
+    task(type: Test, "jdk${v}Test") { thisTask ->
+        check.dependsOn(thisTask)
+        group = "verification"
+        executable = "${project.property("JDK_$v")}/bin/java"
+        if (v > 9)
+            enabled(file(executable).parentFile.isDirectory())
+    }
+}

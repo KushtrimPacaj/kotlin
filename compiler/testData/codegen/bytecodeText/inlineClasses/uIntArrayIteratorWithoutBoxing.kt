@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 inline class UInt(private val value: Int)
 
@@ -27,7 +28,7 @@ fun test() {
 
 fun takeUInt(u: UInt) {}
 
-// 1 INVOKESTATIC UInt\$Erased.box
+// 1 INVOKESTATIC UInt\.box
 // 1 INVOKEVIRTUAL UInt.unbox
 
 // 0 INVOKEVIRTUAL UIntIterator.iterator

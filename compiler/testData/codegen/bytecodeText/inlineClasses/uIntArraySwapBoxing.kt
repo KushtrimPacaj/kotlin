@@ -1,4 +1,5 @@
 // !LANGUAGE: +InlineClasses
+// IGNORE_BACKEND: JVM_IR
 
 // FILE: utils.kt
 
@@ -23,5 +24,6 @@ fun UIntArray.swap(i: Int, j: Int) {
 // @TestKt.class:
 // 0 INVOKEVIRTUAL UInt.unbox
 // 0 INVOKESTATIC UInt\$Erased.box
+// 0 INVOKESTATIC UInt\.box
 // 0 intValue
 // 0 valueOf

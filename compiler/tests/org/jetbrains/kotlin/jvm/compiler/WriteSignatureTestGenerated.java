@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -197,6 +197,11 @@ public class WriteSignatureTestGenerated extends AbstractWriteSignatureTest {
         @TestMetadata("propertyReferenceGet.kt")
         public void testPropertyReferenceGet() throws Exception {
             runTest("compiler/testData/writeSignature/callableReference/propertyReferenceGet.kt");
+        }
+
+        @TestMetadata("suspendFunctionReference.kt")
+        public void testSuspendFunctionReference() throws Exception {
+            runTest("compiler/testData/writeSignature/callableReference/suspendFunctionReference.kt");
         }
     }
 
@@ -570,6 +575,24 @@ public class WriteSignatureTestGenerated extends AbstractWriteSignatureTest {
         @TestMetadata("simpleSignatureWithInlineClassTypesAsReference.kt")
         public void testSimpleSignatureWithInlineClassTypesAsReference() throws Exception {
             runTest("compiler/testData/writeSignature/inlineClasses/simpleSignatureWithInlineClassTypesAsReference.kt");
+        }
+    }
+
+    @TestMetadata("compiler/testData/writeSignature/java8")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Java8 extends AbstractWriteSignatureTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+        }
+
+        public void testAllFilesPresentInJava8() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/writeSignature/java8"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+        }
+
+        @TestMetadata("mutableMapRemove.kt")
+        public void testMutableMapRemove() throws Exception {
+            runTest("compiler/testData/writeSignature/java8/mutableMapRemove.kt");
         }
     }
 

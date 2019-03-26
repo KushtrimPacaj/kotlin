@@ -12,7 +12,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SamWithReceiverModelIT : BaseGradleIT() {
-
     @Test
     fun testSamWithReceiverSimple() {
         val project = Project("samWithReceiverSimple")

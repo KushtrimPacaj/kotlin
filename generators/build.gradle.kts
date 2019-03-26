@@ -1,4 +1,3 @@
-
 plugins {
     kotlin("jvm")
     id("jps-compatible")
@@ -20,21 +19,25 @@ dependencies {
     compile(projectTests(":j2k"))
     compile(projectTests(":idea:idea-android"))
     compile(projectTests(":jps-plugin"))
+    compile(projectTests(":plugins:jvm-abi-gen"))
     compile(projectTests(":plugins:android-extensions-compiler"))
     compile(projectTests(":plugins:android-extensions-ide"))
-    compile(projectTests(":plugins:android-extensions-jps"))
     compile(projectTests(":kotlin-annotation-processing"))
+    compile(projectTests(":kotlin-annotation-processing-cli"))
     compile(projectTests(":kotlin-allopen-compiler-plugin"))
     compile(projectTests(":kotlin-noarg-compiler-plugin"))
     compile(projectTests(":kotlin-sam-with-receiver-compiler-plugin"))
     compile(projectTests(":generators:test-generator"))
     builtinsCompile("org.jetbrains.kotlin:kotlin-stdlib:$bootstrapKotlinVersion")
-    testCompileOnly(intellijDep("jps-build-test"))
     testCompileOnly(project(":kotlin-reflect-api"))
-    testCompile(intellijDep("jps-build-test"))
     testCompile(builtinsSourceSet.output)
     testRuntime(intellijDep()) { includeJars("idea_rt") }
-    testRuntime(projectDist(":kotlin-reflect"))
+    testRuntime(project(":kotlin-reflect"))
+
+    if (Ide.IJ()) {
+        testCompileOnly(jpsBuildTest())
+        testCompile(jpsBuildTest())
+    }
 }
 
 

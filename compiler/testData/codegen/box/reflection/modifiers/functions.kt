@@ -1,5 +1,4 @@
 // !LANGUAGE: +ReleaseCoroutines
-// !API_VERSION: 1.3
 // IGNORE_BACKEND: JVM_IR
 // IGNORE_BACKEND: JS_IR
 // TODO: muted automatically, investigate should it be ran for JS or not
@@ -60,6 +59,7 @@ fun box(): String {
     assertFalse(::inlineProperty.getter.isExternal)
     assertTrue(::inlineProperty.getter.isInline)
     assertTrue(::inlineProperty.setter.isInline)
+    assertFalse(::inlineProperty.isSuspend)
 
     return "OK"
 }

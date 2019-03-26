@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -62,6 +62,11 @@ public class DiagnosticsWithUnsignedTypesGenerated extends AbstractDiagnosticsWi
     @TestMetadata("unsignedLiteralsInsideConstVals.kt")
     public void testUnsignedLiteralsInsideConstVals() throws Exception {
         runTest("compiler/testData/diagnostics/testsWithUnsignedTypes/unsignedLiteralsInsideConstVals.kt");
+    }
+
+    @TestMetadata("unsignedLiteralsOn1_2.kt")
+    public void testUnsignedLiteralsOn1_2() throws Exception {
+        runTest("compiler/testData/diagnostics/testsWithUnsignedTypes/unsignedLiteralsOn1_2.kt");
     }
 
     @TestMetadata("unsignedLiteralsOverflowSignedBorder.kt")

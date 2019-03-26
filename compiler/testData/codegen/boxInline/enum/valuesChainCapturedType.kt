@@ -1,7 +1,7 @@
 // IGNORE_BACKEND: JVM_IR
-// IGNORE_BACKEND: JS_IR
 // FILE: 1.kt
 // WITH_RUNTIME
+// KJS_WITH_FULL_RUNTIME
 package test
 
 inline fun <reified Y : Enum<Y>> myValues2(): String {

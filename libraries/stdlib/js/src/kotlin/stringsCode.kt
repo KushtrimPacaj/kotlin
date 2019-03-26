@@ -16,7 +16,8 @@ internal actual inline fun String.nativeLastIndexOf(ch: Char, fromIndex: Int): I
 /**
  * Returns `true` if this string starts with the specified prefix.
  */
-public fun String.startsWith(prefix: String, ignoreCase: Boolean = false): Boolean {
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun String.startsWith(prefix: String, ignoreCase: Boolean = false): Boolean {
     if (!ignoreCase)
         return nativeStartsWith(prefix, 0)
     else
@@ -26,7 +27,8 @@ public fun String.startsWith(prefix: String, ignoreCase: Boolean = false): Boole
 /**
  * Returns `true` if a substring of this string starting at the specified offset [startIndex] starts with the specified prefix.
  */
-public fun String.startsWith(prefix: String, startIndex: Int, ignoreCase: Boolean = false): Boolean {
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun String.startsWith(prefix: String, startIndex: Int, ignoreCase: Boolean = false): Boolean {
     if (!ignoreCase)
         return nativeStartsWith(prefix, startIndex)
     else
@@ -36,7 +38,8 @@ public fun String.startsWith(prefix: String, startIndex: Int, ignoreCase: Boolea
 /**
  * Returns `true` if this string ends with the specified suffix.
  */
-public fun String.endsWith(suffix: String, ignoreCase: Boolean = false): Boolean {
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun String.endsWith(suffix: String, ignoreCase: Boolean = false): Boolean {
     if (!ignoreCase)
         return nativeEndsWith(suffix)
     else
@@ -67,18 +70,20 @@ public actual fun CharSequence.regionMatches(thisOffset: Int, other: CharSequenc
 
 
 /**
- * Returns a copy of this string capitalised if it is not empty or already starting with an uppper case letter, otherwise returns this
+ * Returns a copy of this string having its first letter uppercased, or the original string,
+ * if it's empty or already starts with an upper case letter.
  *
- * @includeFunctionBody ../../test/StringTest.kt capitalize
+ * @sample samples.text.Strings.capitalize
  */
 public actual fun String.capitalize(): String {
     return if (isNotEmpty()) substring(0, 1).toUpperCase() + substring(1) else this
 }
 
 /**
- * Returns a copy of this string with the first letter lower case if it is not empty or already starting with a lower case letter, otherwise returns this
+ * Returns a copy of this string having its first letter lowercased, or the original string,
+ * if it's empty or already starts with a lower case letter.
  *
- * @includeFunctionBody ../../test/StringTest.kt decapitalize
+ * @sample samples.text.Strings.decapitalize
  */
 public actual fun String.decapitalize(): String {
     return if (isNotEmpty()) substring(0, 1).toLowerCase() + substring(1) else this

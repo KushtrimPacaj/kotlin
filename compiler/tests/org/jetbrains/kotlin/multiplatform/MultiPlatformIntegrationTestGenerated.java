@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -37,6 +37,11 @@ public class MultiPlatformIntegrationTestGenerated extends AbstractMultiPlatform
     @TestMetadata("compilerArguments")
     public void testCompilerArguments() throws Exception {
         runTest("compiler/testData/multiplatform/compilerArguments/");
+    }
+
+    @TestMetadata("contracts")
+    public void testContracts() throws Exception {
+        runTest("compiler/testData/multiplatform/contracts/");
     }
 
     @TestMetadata("createImplClassInPlatformModule")
@@ -332,6 +337,19 @@ public class MultiPlatformIntegrationTestGenerated extends AbstractMultiPlatform
 
         public void testAllFilesPresentInCompilerArguments() throws Exception {
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/multiplatform/compilerArguments"), Pattern.compile("^([^\\.]+)$"), TargetBackend.ANY, true);
+        }
+    }
+
+    @TestMetadata("compiler/testData/multiplatform/contracts")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Contracts extends AbstractMultiPlatformIntegrationTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+        }
+
+        public void testAllFilesPresentInContracts() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/multiplatform/contracts"), Pattern.compile("^([^\\.]+)$"), TargetBackend.ANY, true);
         }
     }
 
@@ -663,6 +681,11 @@ public class MultiPlatformIntegrationTestGenerated extends AbstractMultiPlatform
             runTest("compiler/testData/multiplatform/regressions/kt17001/");
         }
 
+        @TestMetadata("kt28385")
+        public void testKt28385() throws Exception {
+            runTest("compiler/testData/multiplatform/regressions/kt28385/");
+        }
+
         @TestMetadata("compiler/testData/multiplatform/regressions/incompatibleClassScopesWithImplTypeAlias")
         @TestDataPath("$PROJECT_ROOT")
         @RunWith(JUnit3RunnerWithInners.class)
@@ -686,6 +709,19 @@ public class MultiPlatformIntegrationTestGenerated extends AbstractMultiPlatform
 
             public void testAllFilesPresentInKt17001() throws Exception {
                 KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/multiplatform/regressions/kt17001"), Pattern.compile("^([^\\.]+)$"), TargetBackend.ANY, true);
+            }
+        }
+
+        @TestMetadata("compiler/testData/multiplatform/regressions/kt28385")
+        @TestDataPath("$PROJECT_ROOT")
+        @RunWith(JUnit3RunnerWithInners.class)
+        public static class Kt28385 extends AbstractMultiPlatformIntegrationTest {
+            private void runTest(String testDataFilePath) throws Exception {
+                KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+            }
+
+            public void testAllFilesPresentInKt28385() throws Exception {
+                KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/multiplatform/regressions/kt28385"), Pattern.compile("^([^\\.]+)$"), TargetBackend.ANY, true);
             }
         }
     }

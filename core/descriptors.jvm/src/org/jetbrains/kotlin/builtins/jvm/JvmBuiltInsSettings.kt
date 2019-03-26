@@ -5,10 +5,9 @@
 
 package org.jetbrains.kotlin.builtins.jvm
 
-import org.jetbrains.kotlin.builtins.BuiltInsInitializer
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationsImpl
+import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.descriptors.annotations.createDeprecatedAnnotation
 import org.jetbrains.kotlin.descriptors.deserialization.AdditionalClassPartsProvider
 import org.jetbrains.kotlin.descriptors.deserialization.PLATFORM_DEPENDENT_ANNOTATION_FQ_NAME
@@ -64,9 +63,10 @@ open class JvmBuiltInsSettings(
 
     // Most this properties are lazy because they depends on KotlinBuiltIns initialization that depends on JvmBuiltInsSettings object
     private val notConsideredDeprecation by storageManager.createLazyValue {
-        moduleDescriptor.builtIns.createDeprecatedAnnotation(
+        val annotation = moduleDescriptor.builtIns.createDeprecatedAnnotation(
             "This member is not fully supported by Kotlin compiler, so it may be absent or have different signature in next major version"
-        ).let { AnnotationsImpl(listOf(it)) }
+        )
+        Annotations.create(listOf(annotation))
     }
 
     private fun StorageManager.createMockJavaIoSerializableType(): KotlinType {
@@ -371,7 +371,8 @@ open class JvmBuiltInsSettings(
                             "startsWith(Ljava/lang/String;I)Z", "startsWith(Ljava/lang/String;)Z", "substring(II)Ljava/lang/String;",
                             "substring(I)Ljava/lang/String;", "toCharArray()[C", "toLowerCase()Ljava/lang/String;",
                             "toLowerCase(Ljava/util/Locale;)Ljava/lang/String;", "toUpperCase()Ljava/lang/String;",
-                            "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;", "trim()Ljava/lang/String;"
+                            "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;", "trim()Ljava/lang/String;",
+                            "isBlank()Z", "lines()Ljava/util/stream/Stream;", "repeat(I)Ljava/lang/String;"
                         ) +
 
                         inJavaLang("Double", "isInfinite()Z", "isNaN()Z") +
@@ -492,19 +493,15 @@ open class JvmBuiltInsSettings(
     }
 }
 
-private class FallbackBuiltIns private constructor() : KotlinBuiltIns(LockBasedStorageManager()) {
+private class FallbackBuiltIns private constructor() : KotlinBuiltIns(LockBasedStorageManager("FallbackBuiltIns")) {
     init {
-        createBuiltInsModule()
+        createBuiltInsModule(true)
     }
 
     companion object {
-        private val initializer = BuiltInsInitializer {
-            FallbackBuiltIns()
-        }
-
         @JvmStatic
-        val Instance: KotlinBuiltIns
-            get() = initializer.get()
+        val Instance: KotlinBuiltIns =
+            FallbackBuiltIns()
     }
 
     override fun getPlatformDependentDeclarationFilter() = PlatformDependentDeclarationFilter.All

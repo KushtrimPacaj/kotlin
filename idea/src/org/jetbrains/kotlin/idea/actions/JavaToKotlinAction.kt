@@ -31,8 +31,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageType
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.ex.MessagesEx
-import com.intellij.openapi.util.Key
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileVisitor
@@ -49,6 +49,7 @@ import org.jetbrains.kotlin.idea.refactoring.toPsiFile
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.idea.util.application.progressIndicatorNullable
 import org.jetbrains.kotlin.idea.util.application.runReadAction
+import org.jetbrains.kotlin.idea.util.isRunningInCidrIde
 import org.jetbrains.kotlin.j2k.ConverterSettings
 import org.jetbrains.kotlin.j2k.JavaToKotlinConverter
 import org.jetbrains.kotlin.psi.KtFile
@@ -130,7 +131,7 @@ class JavaToKotlinAction : AnAction() {
 
             if (enableExternalCodeProcessing && converterResult!!.externalCodeProcessing != null) {
                 val question = "Some code in the rest of your project may require corrections after performing this conversion. Do you want to find such code and correct it too?"
-                if (!askExternalCodeProcessing || (Messages.showOkCancelDialog(project, question, title, Messages.getQuestionIcon()) == Messages.OK)) {
+                if (!askExternalCodeProcessing || (Messages.showYesNoDialog(project, question, title, Messages.getQuestionIcon()) == Messages.YES)) {
                     ProgressManager.getInstance().runProcessWithProgressSynchronously(
                             {
                                 runReadAction {
@@ -202,10 +203,14 @@ class JavaToKotlinAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
-        val virtualFiles = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY) ?: return
-        val project = e.project ?: return
+        if (isRunningInCidrIde) {
+            e.presentation.isEnabledAndVisible = false
+        } else {
+            val virtualFiles = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY) ?: return
+            val project = e.project ?: return
 
-        e.presentation.isEnabled = isAnyJavaFileSelected(project, virtualFiles)
+            e.presentation.isEnabled = isAnyJavaFileSelected(project, virtualFiles)
+        }
     }
 
     private fun isAnyJavaFileSelected(project: Project, files: Array<VirtualFile>): Boolean {

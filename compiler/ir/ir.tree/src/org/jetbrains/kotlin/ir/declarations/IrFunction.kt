@@ -18,19 +18,17 @@ package org.jetbrains.kotlin.ir.declarations
 
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
-import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.ir.expressions.IrBody
 import org.jetbrains.kotlin.ir.expressions.IrExpressionBody
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
-import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.ir.types.IrType
 
-interface IrFunction : IrDeclaration, IrTypeParametersContainer, IrSymbolOwner, IrDeclarationParent, IrReturnTarget {
+interface IrFunction :
+    IrDeclarationWithName, IrDeclarationWithVisibility, IrTypeParametersContainer, IrSymbolOwner, IrDeclarationParent, IrReturnTarget {
+
     override val descriptor: FunctionDescriptor
     override val symbol: IrFunctionSymbol
 
-    val name: Name
-    val visibility: Visibility
     val isInline: Boolean // NB: there's an inline constructor for Array and each primitive array class
     val isExternal: Boolean
     var returnType: IrType
@@ -40,6 +38,8 @@ interface IrFunction : IrDeclaration, IrTypeParametersContainer, IrSymbolOwner, 
     val valueParameters: MutableList<IrValueParameter>
 
     var body: IrBody?
+
+    override val metadata: MetadataSource?
 }
 
 
@@ -58,3 +58,6 @@ fun IrFunction.getDefault(parameter: ValueParameterDescriptor): IrExpressionBody
 fun IrFunction.putDefault(parameter: ValueParameterDescriptor, expressionBody: IrExpressionBody) {
     getIrValueParameter(parameter).defaultValue = expressionBody
 }
+
+val IrFunction.isStaticMethodOfClass: Boolean
+    get() = this is IrSimpleFunction && parent is IrClass && dispatchReceiverParameter == null

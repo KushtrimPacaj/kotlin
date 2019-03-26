@@ -66,7 +66,7 @@ class FindImplicitNothingAction : AnAction() {
         val progressIndicator = ProgressManager.getInstance().progressIndicatorNullable
         val found = ArrayList<KtCallExpression>()
         for ((i, file) in files.withIndex()) {
-            progressIndicator?.text = "Scanning files: $i of ${files.size} file. ${found.size} occurences found"
+            progressIndicator?.text = "Scanning files: $i of ${files.size} file. ${found.size} occurrences found"
             progressIndicator?.text2 = file.virtualFile.path
 
             val resolutionFacade = file.getResolutionFacade()
@@ -135,14 +135,8 @@ class FindImplicitNothingAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
-        if (!ApplicationManager.getApplication().isInternal) {
-            e.presentation.isVisible = false
-            e.presentation.isEnabled = false
-        }
-        else {
-            e.presentation.isVisible = true
-            e.presentation.isEnabled = selectedKotlinFiles(e).any()
-        }
+        e.presentation.isVisible = ApplicationManager.getApplication().isInternal
+        e.presentation.isEnabled = ApplicationManager.getApplication().isInternal
     }
 
     private fun selectedKotlinFiles(e: AnActionEvent): Sequence<KtFile> {
