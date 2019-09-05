@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.fir
@@ -14,6 +14,7 @@ import org.jetbrains.kotlin.fir.FirRenderer
 import org.jetbrains.kotlin.fir.builder.RawFirBuilder
 import org.jetbrains.kotlin.fir.declarations.FirDeclaration
 import org.jetbrains.kotlin.fir.declarations.FirFile
+import org.jetbrains.kotlin.fir.declarations.classId
 import org.jetbrains.kotlin.fir.dependenciesWithoutSelf
 import org.jetbrains.kotlin.fir.java.FirJavaModuleBasedSession
 import org.jetbrains.kotlin.fir.java.FirLibrarySession
@@ -24,17 +25,18 @@ import org.jetbrains.kotlin.fir.java.declarations.FirJavaMethod
 import org.jetbrains.kotlin.fir.java.scopes.JavaClassEnhancementScope
 import org.jetbrains.kotlin.fir.resolve.FirProvider
 import org.jetbrains.kotlin.fir.resolve.FirSymbolProvider
+import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.impl.FirCompositeSymbolProvider
 import org.jetbrains.kotlin.fir.resolve.impl.FirProviderImpl
 import org.jetbrains.kotlin.fir.resolve.transformers.FirTotalResolveTransformer
 import org.jetbrains.kotlin.fir.scopes.ProcessorAction
 import org.jetbrains.kotlin.fir.scopes.impl.FirCompositeScope
 import org.jetbrains.kotlin.fir.service
-import org.jetbrains.kotlin.fir.symbols.impl.FirFunctionSymbol
 import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.idea.caches.project.IdeaModuleInfo
 import org.jetbrains.kotlin.idea.caches.project.isLibraryClasses
 import org.jetbrains.kotlin.idea.caches.project.productionSourceInfo
+import org.jetbrains.kotlin.idea.caches.resolve.IDEPackagePartProvider
 import org.jetbrains.kotlin.idea.multiplatform.setupMppProjectFromDirStructure
 import org.jetbrains.kotlin.idea.stubs.AbstractMultiModuleTest
 import org.jetbrains.kotlin.idea.test.ConfigLibraryUtil
@@ -71,7 +73,7 @@ abstract class AbstractFirMultiModuleResolveTest : AbstractMultiModuleTest() {
 
     private fun createLibrarySession(moduleInfo: IdeaModuleInfo, provider: FirProjectSessionProvider): FirLibrarySession {
         val contentScope = moduleInfo.contentScope()
-        return FirLibrarySession(moduleInfo, provider, contentScope)
+        return FirLibrarySession.create(moduleInfo, provider, contentScope, project, IDEPackagePartProvider(contentScope))
     }
 
     private fun doFirResolveTest(dirPath: String) {
@@ -134,7 +136,7 @@ abstract class AbstractFirMultiModuleResolveTest : AbstractMultiModuleTest() {
                 val javaProvider = symbolProvider.providers.filterIsInstance<JavaSymbolProvider>().first()
                 for (javaClass in javaProvider.getJavaTopLevelClasses().sortedBy { it.name }) {
                     if (javaClass !is FirJavaClass || javaClass in processedJavaClasses) continue
-                    val enhancementScope = javaClass.buildClassSpecificUseSiteScope(session).let {
+                    val enhancementScope = javaProvider.getClassUseSiteMemberScope(javaClass.classId, session, ScopeSession()).let {
                         when (it) {
                             is FirCompositeScope -> it.scopes.filterIsInstance<JavaClassEnhancementScope>().first()
                             is JavaClassEnhancementScope -> it
@@ -156,7 +158,7 @@ abstract class AbstractFirMultiModuleResolveTest : AbstractMultiModuleTest() {
                                     renderedDeclarations += declaration
                                 } else {
                                     enhancementScope.processFunctionsByName(declaration.name) { symbol ->
-                                        val enhanced = (symbol as? FirFunctionSymbol)?.fir
+                                        val enhanced = symbol.fir
                                         if (enhanced != null && enhanced !in renderedDeclarations) {
                                             enhanced.accept(renderer, null)
                                             renderer.newLine()

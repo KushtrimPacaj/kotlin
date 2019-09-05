@@ -9,6 +9,7 @@ dependencies {
     runtime(kotlinStdlib())
     runtime(project(":kotlin-script-runtime"))
     runtime(project(":kotlin-reflect"))
+    runtime(project(":kotlin-daemon-embeddable"))
     runtime(commonDep("org.jetbrains.intellij.deps", "trove4j"))
 }
 
@@ -23,6 +24,8 @@ compilerDummyJar(compilerDummyForDependenciesRewriting("compilerDummy") {
 
 runtimeJar(embeddableCompiler()) {
     exclude("com/sun/jna/**")
+    exclude("org/jetbrains/annotations/**")
+    mergeServiceFiles()
 }
 
 sourcesJar()

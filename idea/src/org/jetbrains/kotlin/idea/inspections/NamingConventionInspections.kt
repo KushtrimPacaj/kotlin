@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections
@@ -28,7 +28,6 @@ import org.jetbrains.annotations.NonNls
 import org.jetbrains.kotlin.idea.core.packageMatchesDirectoryOrImplicit
 import org.jetbrains.kotlin.idea.quickfix.RenameIdentifierFix
 import org.jetbrains.kotlin.idea.refactoring.isInjectedFragment
-import org.jetbrains.kotlin.idea.util.compat.psiFile
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
@@ -407,7 +406,7 @@ class PackageNameInspection : BaseGlobalInspection() {
     ): Array<CommonProblemDescriptor>? {
         when (refEntity) {
             is RefFile -> {
-                val psiFile = refEntity.psiFile
+                val psiFile = refEntity.psiElement
                 if (psiFile is KtFile && !psiFile.isInjectedFragment && !psiFile.packageMatchesDirectoryOrImplicit()) {
                     val packageDirective = psiFile.packageDirective
                     if (packageDirective != null) {

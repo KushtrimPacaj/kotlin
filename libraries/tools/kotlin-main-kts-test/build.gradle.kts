@@ -3,14 +3,14 @@ description = "Kotlin \"main\" script definition tests"
 
 plugins {
     kotlin("jvm")
-    id("jps-compatible")
 }
 
 dependencies {
-    testCompile(projectRuntimeJar(":kotlin-main-kts")) // runtimeJar needed to for proper dependency on the jar with relocations
-    testCompile(project(":kotlin-scripting-jvm-host-embeddable"))
+    testCompile(project(":kotlin-main-kts"))
+    testCompileOnly(project(":compiler:cli"))
+    testCompileOnly(project(":kotlin-scripting-jvm-host"))
     testCompile(commonDep("junit"))
-    compileOnly("org.apache.ivy:ivy:2.4.0") // for jps/pill
+    testCompile(projectTests(":kotlin-scripting-compiler")) { isTransitive = false }
 }
 
 sourceSets {
@@ -18,3 +18,7 @@ sourceSets {
     "test" { projectDefault() }
 }
 
+projectTest(parallel = true) {
+    dependsOn(":dist")
+    workingDir = rootDir
+}

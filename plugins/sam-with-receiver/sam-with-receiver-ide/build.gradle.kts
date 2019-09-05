@@ -14,17 +14,15 @@ dependencies {
     compile(project(":compiler:frontend.java"))
     compile(project(":idea:idea-core"))
 
-    Ide.AS33.orHigher.not {
+    Ide.IJ183 {
         compile(project(":idea:idea-android"))
     }
 
     compile(project(":idea"))
     compile(project(":idea:idea-jvm"))
 
-    compile(intellijDep()) { includeJars("openapi", "extensions", "util") }
-    Platform[181].orHigher {
-        compile(intellijDep()) { includeJars("platform-api") }
-    }
+    compileOnly(intellijDep()) { includeJars("openapi", "extensions", "util") }
+    compileOnly(intellijDep()) { includeJars("platform-api") }
 }
 
 sourceSets {
@@ -33,6 +31,3 @@ sourceSets {
 }
 
 runtimeJar()
-
-ideaPlugin()
-

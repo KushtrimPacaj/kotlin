@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.base.test.org.jetbrains.kotlin.kapt3.base.incremental
@@ -27,18 +27,16 @@ class TestSimpleIncrementalAptCache {
 
     @Before
     fun setUp() {
-        val classpathHistory = tmp.newFolder()
-        cache = JavaClassCacheManager(tmp.newFolder(), classpathHistory)
+        cache = JavaClassCacheManager(tmp.newFolder())
         generatedSources = tmp.newFolder()
         cache.close()
-        classpathHistory.resolve("0").createNewFile()
     }
 
     @Test
     fun testAggregatingAnnotations() {
         runProcessor(SimpleProcessor().toAggregating())
 
-        val dirtyFiles = cache.invalidateAndGetDirtyFiles(listOf(TEST_DATA_DIR.resolve("User.java"))) as SourcesToReprocess.Incremental
+        val dirtyFiles = cache.invalidateAndGetDirtyFiles(listOf(TEST_DATA_DIR.resolve("User.java")), emptyList()) as SourcesToReprocess.Incremental
         assertEquals(
             listOf(TEST_DATA_DIR.resolve("User.java").absoluteFile, TEST_DATA_DIR.resolve("Address.java").absoluteFile),
             dirtyFiles.toReprocess
@@ -51,7 +49,7 @@ class TestSimpleIncrementalAptCache {
     fun testIsolatingAnnotations() {
         runProcessor(SimpleProcessor().toIsolating())
 
-        val dirtyFiles = cache.invalidateAndGetDirtyFiles(listOf(TEST_DATA_DIR.resolve("User.java"))) as SourcesToReprocess.Incremental
+        val dirtyFiles = cache.invalidateAndGetDirtyFiles(listOf(TEST_DATA_DIR.resolve("User.java")), emptyList()) as SourcesToReprocess.Incremental
         assertFalse(generatedSources.resolve("test/UserGenerated.java").exists())
         assertEquals(
             listOf(TEST_DATA_DIR.resolve("User.java").absoluteFile),
@@ -63,7 +61,7 @@ class TestSimpleIncrementalAptCache {
     fun testNonIncremental() {
         runProcessor(SimpleProcessor().toNonIncremental())
 
-        val dirtyFiles = cache.invalidateAndGetDirtyFiles(listOf(TEST_DATA_DIR.resolve("User.java")))
+        val dirtyFiles = cache.invalidateAndGetDirtyFiles(listOf(TEST_DATA_DIR.resolve("User.java")), emptyList())
         assertTrue(dirtyFiles is SourcesToReprocess.FullRebuild)
     }
 
@@ -73,7 +71,7 @@ class TestSimpleIncrementalAptCache {
             srcFiles,
             listOf(processor),
             generatedSources
-        ) { elementUtils -> MentionedTypesTaskListener(cache.javaCache, elementUtils) }
+        ) { elementUtils, trees -> MentionedTypesTaskListener(cache.javaCache, elementUtils, trees) }
         cache.updateCache(listOf(processor))
     }
 }

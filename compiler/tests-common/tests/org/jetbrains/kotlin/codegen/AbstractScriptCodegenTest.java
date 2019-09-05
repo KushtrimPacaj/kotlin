@@ -21,13 +21,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.kotlin.config.CompilerConfiguration;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.test.ConfigurationKind;
-import org.jetbrains.kotlin.test.TestJdkKind;
 import org.jetbrains.kotlin.utils.ExceptionUtilsKt;
 
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.util.List;
 
 import static org.jetbrains.kotlin.script.ScriptTestUtilKt.loadScriptingPlugin;
 
@@ -80,7 +78,7 @@ public abstract class AbstractScriptCodegenTest extends CodegenTestCase {
             }
         }
         catch (Throwable e) {
-            System.out.println(generateToText());
+            printReport(new File(filename));
             throw ExceptionUtilsKt.rethrow(e);
         }
     }

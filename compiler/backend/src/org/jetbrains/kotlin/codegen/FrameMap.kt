@@ -31,7 +31,7 @@ open class FrameMapBase<T : Any> {
     var currentSize = 0
         private set
 
-    fun enter(descriptor: T, type: Type): Int {
+    open fun enter(descriptor: T, type: Type): Int {
         val index = currentSize
         myVarIndex.put(descriptor, index)
         currentSize += type.size
@@ -39,7 +39,7 @@ open class FrameMapBase<T : Any> {
         return index
     }
 
-    fun leave(descriptor: T): Int {
+    open fun leave(descriptor: T): Int {
         val size = myVarSizes.get(descriptor)
         currentSize -= size
         myVarSizes.remove(descriptor)
@@ -97,7 +97,7 @@ open class FrameMapBase<T : Any> {
         val descriptors = Lists.newArrayList<Trinity<T, Int, Int>>()
 
         for (descriptor0 in myVarIndex.keys()) {
-            val descriptor = descriptor0 as T
+            @Suppress("UNCHECKED_CAST") val descriptor = descriptor0 as T
             val varIndex = myVarIndex.get(descriptor)
             val varSize = myVarSizes.get(descriptor)
             descriptors.add(Trinity.create(descriptor, varIndex, varSize))

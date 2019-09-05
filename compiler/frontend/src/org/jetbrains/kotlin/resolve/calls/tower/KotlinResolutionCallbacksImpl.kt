@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.tower
@@ -44,6 +44,7 @@ import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.expressions.DoubleColonExpressionResolver
 import org.jetbrains.kotlin.types.expressions.ExpressionTypingServices
 import org.jetbrains.kotlin.types.expressions.KotlinTypeInfo
+import org.jetbrains.kotlin.types.refinement.TypeRefinement
 import org.jetbrains.kotlin.types.typeUtil.isUnit
 import org.jetbrains.kotlin.types.typeUtil.makeNullable
 import org.jetbrains.kotlin.utils.addIfNotNull
@@ -91,6 +92,7 @@ class KotlinResolutionCallbacksImpl(
         receiverType: UnwrappedType?,
         parameters: List<UnwrappedType>,
         expectedReturnType: UnwrappedType?,
+        annotations: Annotations,
         stubsForPostponedVariables: Map<NewTypeVariable, StubType>
     ): Pair<List<KotlinCallArgument>, InferenceSession?> {
         val psiCallArgument = lambdaArgument.psiCallArgument as PSIFunctionKotlinCallArgument
@@ -129,8 +131,22 @@ class KotlinResolutionCallbacksImpl(
         trace.record(BindingContext.NEW_INFERENCE_LAMBDA_INFO, psiCallArgument.ktFunction, lambdaInfo)
 
         val builtIns = outerCallContext.scope.ownerDescriptor.builtIns
+
+        // We have to refine receiverType because resolve inside lambda needs proper scope from receiver,
+        // and for implicit receivers there are no expression which type would've been refined in ExpTypingVisitor
+        // Relevant test: multiplatformTypeRefinement/lambdas
+        //
+        // It doesn't happen in similar cases with other implicit receivers (e.g., with scope of extension receiver
+        // inside extension function) because during resolution of types we correctly discriminate headers
+        //
+        // Also note that refining the whole type might be undesired because sometimes it contains NO_EXPECTED_TYPE
+        // which throws exceptions on attempt to call equals
+        val refinedReceiverType = receiverType?.let {
+            @UseExperimental(TypeRefinement::class) callComponents.kotlinTypeChecker.kotlinTypeRefiner.refineType(it)
+        }
+
         val expectedType = createFunctionType(
-            builtIns, Annotations.EMPTY, receiverType, parameters, null,
+            builtIns, annotations, refinedReceiverType, parameters, null,
             lambdaInfo.expectedType, isSuspend
         )
 
@@ -145,7 +161,7 @@ class KotlinResolutionCallbacksImpl(
                     psiCallResolver, postponedArgumentsAnalyzer, kotlinConstraintSystemCompleter,
                     callComponents, builtIns, topLevelCallContext, stubsForPostponedVariables, trace,
                     kotlinToResolvedCallTransformer, expressionTypingServices, argumentTypeResolver,
-                    doubleColonExpressionResolver, deprecationResolver, moduleDescriptor
+                    doubleColonExpressionResolver, deprecationResolver, moduleDescriptor, typeApproximator
                 )
             } else {
                 null
@@ -155,7 +171,7 @@ class KotlinResolutionCallbacksImpl(
             .replaceBindingTrace(trace)
             .replaceContextDependency(lambdaInfo.contextDependency)
             .replaceExpectedType(approximatesExpectedType)
-            .replaceDataFlowInfo(psiCallArgument.lambdaInitialDataFlowInfo).let {
+            .replaceDataFlowInfo(psiCallArgument.dataFlowInfoBeforeThisArgument).let {
                 if (coroutineSession != null) it.replaceInferenceSession(coroutineSession) else it
             }
 
@@ -205,7 +221,9 @@ class KotlinResolutionCallbacksImpl(
     }
 
     override fun bindStubResolvedCallForCandidate(candidate: ResolvedCallAtom) {
-        kotlinToResolvedCallTransformer.createStubResolvedCallAndWriteItToTrace<CallableDescriptor>(candidate, trace, emptyList())
+        kotlinToResolvedCallTransformer.createStubResolvedCallAndWriteItToTrace<CallableDescriptor>(
+            candidate, trace, emptyList(), substitutor = null
+        )
     }
 
     override fun createReceiverWithSmartCastInfo(resolvedAtom: ResolvedCallAtom): ReceiverValueWithSmartCastInfo? {
@@ -261,5 +279,11 @@ class KotlinResolutionCallbacksImpl(
         val resultType = expectedType.unwrap()
         trace.record(BindingContext.CAST_TYPE_USED_AS_EXPECTED_TYPE, binaryParent)
         return resultType
+    }
+
+    override fun disableContractsIfNecessary(resolvedAtom: ResolvedCallAtom) {
+        val atom = resolvedAtom.atom as? PSIKotlinCall ?: return
+        val context = topLevelCallContext ?: return
+        disableContractsInsideContractsBlock(atom.psiCall, resolvedAtom.candidateDescriptor, context.scope, trace)
     }
 }

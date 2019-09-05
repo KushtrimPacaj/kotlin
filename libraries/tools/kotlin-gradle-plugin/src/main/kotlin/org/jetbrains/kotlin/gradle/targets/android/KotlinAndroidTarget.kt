@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:Suppress("PackageDirectoryMismatch") // Old package for compatibility
@@ -170,14 +170,14 @@ open class KotlinAndroidTarget(
         artifactClassifier: String?
     ): Set<DefaultKotlinUsageContext> {
         val variantName = getVariantName(variant)
-        val outputTask = getLibraryOutputTask(variant) ?: return emptySet()
+        val outputTaskOrProvider = getLibraryOutputTask(variant) ?: return emptySet()
         val artifact = run {
             val archivesConfigurationName = lowerCamelCaseName(targetName, variantName, "archives")
             project.configurations.maybeCreate(archivesConfigurationName).apply {
                 isCanBeConsumed = false
                 isCanBeResolved = false
             }
-            project.artifacts.add(archivesConfigurationName, outputTask) { artifact ->
+            project.artifacts.add(archivesConfigurationName, outputTaskOrProvider) { artifact ->
                 artifact.classifier = artifactClassifier
             }
         }

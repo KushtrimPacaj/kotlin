@@ -1,15 +1,15 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.descriptors
 
-import org.jetbrains.kotlin.backend.common.descriptors.*
+import org.jetbrains.kotlin.backend.common.descriptors.WrappedTypeParameterDescriptor
+import org.jetbrains.kotlin.backend.common.descriptors.WrappedVariableDescriptor
 import org.jetbrains.kotlin.backend.common.ir.SharedVariablesManager
 import org.jetbrains.kotlin.backend.common.ir.addChild
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
-import org.jetbrains.kotlin.builtins.PrimitiveType
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.impl.EmptyPackageFragmentDescriptor
 import org.jetbrains.kotlin.ir.IrStatement
@@ -19,13 +19,17 @@ import org.jetbrains.kotlin.ir.builders.declarations.buildConstructor
 import org.jetbrains.kotlin.ir.builders.declarations.buildField
 import org.jetbrains.kotlin.ir.builders.declarations.buildValueParameter
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.declarations.impl.*
+import org.jetbrains.kotlin.ir.declarations.impl.IrExternalPackageFragmentImpl
+import org.jetbrains.kotlin.ir.declarations.impl.IrTypeParameterImpl
+import org.jetbrains.kotlin.ir.declarations.impl.IrVariableImpl
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFieldSymbol
 import org.jetbrains.kotlin.ir.symbols.IrVariableSymbol
-import org.jetbrains.kotlin.ir.symbols.impl.*
+import org.jetbrains.kotlin.ir.symbols.impl.IrExternalPackageFragmentSymbolImpl
+import org.jetbrains.kotlin.ir.symbols.impl.IrTypeParameterSymbolImpl
+import org.jetbrains.kotlin.ir.symbols.impl.IrVariableSymbolImpl
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
@@ -33,7 +37,7 @@ import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.util.parentAsClass
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.Variance
 
 private val SHARED_VARIABLE_ORIGIN = object : IrDeclarationOriginImpl("SHARED_VARIABLE_ORIGIN") {}
 private val SHARED_VARIABLE_CONSTRUCTOR_CALL_ORIGIN = object : IrStatementOriginImpl("SHARED_VARIABLE_CONSTRUCTOR_CALL") {}
@@ -85,12 +89,10 @@ class JvmSharedVariablesManager(
         }
     }
 
-    private inner class PrimitiveRefProvider(primitiveType: PrimitiveType) : RefProvider() {
-        override val elementType = builtIns.getPrimitiveKotlinType(primitiveType).toIrType()!!
-
+    private inner class PrimitiveRefProvider(override val elementType: IrType) : RefProvider() {
         override val refClass = buildClass {
             origin = SHARED_VARIABLE_ORIGIN
-            name = Name.identifier(primitiveType.typeName.asString() + "Ref")
+            name = Name.identifier(elementType.classOrNull!!.owner.name.asString() + "Ref")
         }.apply {
             parent = refNamespaceClass
             refNamespaceClass.addMember(this)
@@ -106,8 +108,8 @@ class JvmSharedVariablesManager(
         override fun getRefType(valueType: IrType) = refClass.defaultType
     }
 
-    private val primitiveRefProviders = PrimitiveType.values().associate { primitiveType ->
-        primitiveType to PrimitiveRefProvider(primitiveType)
+    private val primitiveRefProviders = irBuiltIns.primitiveIrTypes.associate { primitiveType ->
+        primitiveType.classifierOrFail to PrimitiveRefProvider(primitiveType)
     }
 
     private val objectRefProvider = object : RefProvider() {
@@ -154,7 +156,11 @@ class JvmSharedVariablesManager(
         override fun getRefType(valueType: IrType) = refClass.typeWith(listOf(valueType))
     }
 
-    private fun getProvider(valueType: IrType) = primitiveRefProviders[getPrimitiveType(valueType)] ?: objectRefProvider
+    private fun getProvider(valueType: IrType): RefProvider =
+        if (valueType.isPrimitiveType())
+            primitiveRefProviders.getValue(valueType.classifierOrFail)
+        else
+            objectRefProvider
 
     private fun getElementFieldSymbol(valueType: IrType): IrFieldSymbol {
         return getProvider(valueType).elementField.symbol
@@ -165,16 +171,13 @@ class JvmSharedVariablesManager(
         val provider = getProvider(valueType)
         val refType = provider.getRefType(valueType)
         val refConstructor = provider.refConstructor
-        val typeArgumentsCount = refConstructor.parentAsClass.typeParameters.count()
 
-        val refConstructorCall = IrCallImpl(
-            originalDeclaration.startOffset, originalDeclaration.endOffset,
+        val refConstructorCall = IrConstructorCallImpl.fromSymbolOwner(
             refType,
-            refConstructor.symbol, refConstructor.descriptor,
-            typeArgumentsCount = typeArgumentsCount,
-            origin = SHARED_VARIABLE_CONSTRUCTOR_CALL_ORIGIN
+            refConstructor.symbol,
+            SHARED_VARIABLE_CONSTRUCTOR_CALL_ORIGIN
         ).apply {
-            refConstructor.parentAsClass.typeParameters.mapIndexed { i, param ->
+            List(refConstructor.parentAsClass.typeParameters.size) { i ->
                 putTypeArgument(i, valueType)
             }
         }
@@ -190,6 +193,7 @@ class JvmSharedVariablesManager(
         ).apply {
             (descriptor as WrappedVariableDescriptor).bind(this)
             initializer = refConstructorCall
+            parent = originalDeclaration.parent
         }
     }
 
@@ -221,7 +225,6 @@ class JvmSharedVariablesManager(
             originalGet.type,
             IrTypeOperator.IMPLICIT_CAST,
             originalGet.type,
-            (originalGet.type as IrSimpleType).classifier,
             IrGetFieldImpl(
                 originalGet.startOffset, originalGet.endOffset,
                 getElementFieldSymbol(originalGet.symbol.owner.type),
@@ -240,19 +243,4 @@ class JvmSharedVariablesManager(
             originalSet.type,
             originalSet.origin
         )
-
-    private fun getPrimitiveType(type: IrType): PrimitiveType? {
-        val kType = type.toKotlinType()
-        return when {
-            KotlinBuiltIns.isBoolean(kType) -> PrimitiveType.BOOLEAN
-            KotlinBuiltIns.isChar(kType) -> PrimitiveType.CHAR
-            KotlinBuiltIns.isByte(kType) -> PrimitiveType.BYTE
-            KotlinBuiltIns.isShort(kType) -> PrimitiveType.SHORT
-            KotlinBuiltIns.isInt(kType) -> PrimitiveType.INT
-            KotlinBuiltIns.isLong(kType) -> PrimitiveType.LONG
-            KotlinBuiltIns.isFloat(kType) -> PrimitiveType.FLOAT
-            KotlinBuiltIns.isDouble(kType) -> PrimitiveType.DOUBLE
-            else -> null
-        }
-    }
 }

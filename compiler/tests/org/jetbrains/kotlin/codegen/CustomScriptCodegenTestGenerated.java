@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen;
@@ -27,6 +27,11 @@ public class CustomScriptCodegenTestGenerated extends AbstractCustomScriptCodege
 
     public void testAllFilesPresentInCustomScript() throws Exception {
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/customScript"), Pattern.compile("^(.*)$"), TargetBackend.ANY, true);
+    }
+
+    @TestMetadata("pathPattern5.kts")
+    public void testPathPattern5_kts() throws Exception {
+        runTest("compiler/testData/codegen/customScript/pathPattern5.kts");
     }
 
     @TestMetadata("simpleEnvVars.kts")

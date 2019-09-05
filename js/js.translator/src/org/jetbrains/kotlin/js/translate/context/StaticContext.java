@@ -711,22 +711,11 @@ public final class StaticContext {
         if (currentModule == module) {
             return currentModuleAsImported;
         }
-        String moduleName = suggestModuleName(module);
+        String moduleName = JsDescriptorUtils.getModuleName(module);
 
         if (UNKNOWN_EXTERNAL_MODULE_NAME.equals(moduleName)) return null;
 
         return getImportedModule(moduleName, null);
-    }
-
-    @NotNull
-    private static String suggestModuleName(@NotNull ModuleDescriptor module) {
-        if (module == module.getBuiltIns().getBuiltInsModule()) {
-            return Namer.KOTLIN_LOWER_NAME;
-        }
-        else {
-            String moduleName = module.getName().asString();
-            return moduleName.substring(1, moduleName.length() - 1);
-        }
     }
 
     @NotNull
@@ -835,9 +824,7 @@ public final class StaticContext {
 
     @Nullable
     public JsExpression exportModuleForInline(@NotNull ModuleDescriptor declaration) {
-        if (getCurrentModule().getBuiltIns().getBuiltInsModule() == declaration) return null;
-
-        String moduleName = suggestModuleName(declaration);
+        String moduleName = JsDescriptorUtils.getModuleName(declaration);
         if (moduleName.equals(Namer.KOTLIN_LOWER_NAME)) return null;
 
         JsImportedModule importedModule = getJsImportedModule(declaration);
@@ -889,6 +876,11 @@ public final class StaticContext {
 
     @NotNull
     public JsExpression getReferenceToIntrinsic(@NotNull String name) {
+        return pureFqn(getNameForIntrinsic(name), null);
+    }
+
+    @NotNull
+    public JsName getNameForIntrinsic(@NotNull String name) {
         JsName resultName = intrinsicNames.computeIfAbsent(name, k -> {
             if (isStdlib) {
                 DeclarationDescriptor descriptor = findDescriptorForIntrinsic(name);
@@ -899,7 +891,7 @@ public final class StaticContext {
             return importDeclaration(NameSuggestion.sanitizeName(name), "intrinsic:" + name, TranslationUtils.getIntrinsicFqn(name));
         });
 
-        return pureFqn(resultName, null);
+        return resultName;
     }
 
     @Nullable

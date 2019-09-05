@@ -1,20 +1,25 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.caches.resolve
 
 import com.intellij.openapi.roots.libraries.PersistentLibraryKind
 import com.intellij.openapi.vfs.VirtualFile
+import org.jetbrains.kotlin.analyzer.ModuleInfo
+import org.jetbrains.kotlin.analyzer.PlatformAnalysisParameters
 import org.jetbrains.kotlin.analyzer.ResolverForModuleFactory
+import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.context.ProjectContext
-import org.jetbrains.kotlin.idea.caches.resolve.PlatformAnalysisSettings
+import org.jetbrains.kotlin.idea.caches.resolve.BuiltInsCacheKey
 import org.jetbrains.kotlin.idea.framework.JSLibraryKind
-import org.jetbrains.kotlin.js.resolve.JsAnalyzerFacade
-import org.jetbrains.kotlin.js.resolve.JsPlatform
+import org.jetbrains.kotlin.js.resolve.JsResolverForModuleFactory
+import org.jetbrains.kotlin.js.resolve.JsPlatformAnalyzerServices
 import org.jetbrains.kotlin.platform.impl.JsIdePlatformKind
+import org.jetbrains.kotlin.resolve.TargetEnvironment
+import org.jetbrains.kotlin.platform.TargetPlatform
 
 class JsPlatformKindResolution : IdePlatformKindResolution {
     override fun isLibraryFileForPlatform(virtualFile: VirtualFile): Boolean {
@@ -26,10 +31,17 @@ class JsPlatformKindResolution : IdePlatformKindResolution {
 
     override val kind get() = JsIdePlatformKind
 
-    override val resolverForModuleFactory: ResolverForModuleFactory
-        get() = JsAnalyzerFacade
-
-    override fun createBuiltIns(settings: PlatformAnalysisSettings, projectContext: ProjectContext): KotlinBuiltIns {
-        return JsPlatform.builtIns
+    override fun getKeyForBuiltIns(moduleInfo: ModuleInfo): BuiltInsCacheKey {
+        return BuiltInsCacheKey.DefaultBuiltInsKey
     }
+
+    override fun createBuiltIns(moduleInfo: ModuleInfo, projectContext: ProjectContext): KotlinBuiltIns {
+        return DefaultBuiltIns.Instance
+    }
+
+    override fun createResolverForModuleFactory(
+        settings: PlatformAnalysisParameters,
+        environment: TargetEnvironment,
+        platform: TargetPlatform
+    ): ResolverForModuleFactory = JsResolverForModuleFactory(environment)
 }

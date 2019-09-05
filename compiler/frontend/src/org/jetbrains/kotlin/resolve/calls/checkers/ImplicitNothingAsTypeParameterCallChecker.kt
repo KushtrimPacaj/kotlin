@@ -1,16 +1,20 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.checkers
 
 import com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.builtins.isBuiltinFunctionalType
 import org.jetbrains.kotlin.builtins.isFunctionType
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
+import org.jetbrains.kotlin.types.DeferredType
+import org.jetbrains.kotlin.types.TypeUtils
 import org.jetbrains.kotlin.types.expressions.ControlStructureTypingUtils
 import org.jetbrains.kotlin.types.typeUtil.isNothing
+import org.jetbrains.kotlin.types.typeUtil.isTypeParameter
 
 object ImplicitNothingAsTypeParameterCallChecker : CallChecker {
     private val SPECIAL_FUNCTION_NAMES = ControlStructureTypingUtils.ResolveConstruct.values().map { it.specialFunctionName }.toSet()
@@ -32,16 +36,24 @@ object ImplicitNothingAsTypeParameterCallChecker : CallChecker {
      *      }
      */
     override fun check(resolvedCall: ResolvedCall<*>, reportOn: PsiElement, context: CallCheckerContext) {
-        if (resolvedCall.candidateDescriptor.name !in SPECIAL_FUNCTION_NAMES && resolvedCall.call.typeArguments.isEmpty()) {
+        val resultingDescriptor = resolvedCall.resultingDescriptor
+        val inferredReturnType = resultingDescriptor.returnType
+        val isBuiltinFunctionalType =
+            resolvedCall.resultingDescriptor.dispatchReceiverParameter?.value?.type?.isBuiltinFunctionalType == true
+
+        if (inferredReturnType is DeferredType || isBuiltinFunctionalType)
+            return
+        if (resultingDescriptor.name !in SPECIAL_FUNCTION_NAMES && resolvedCall.call.typeArguments.isEmpty()) {
             val lambdasFromArgumentsReturnTypes =
                 resolvedCall.candidateDescriptor.valueParameters.filter { it.type.isFunctionType }
                     .map { it.returnType?.arguments?.last()?.type }.toSet()
+            val unsubstitutedReturnType = resultingDescriptor.original.returnType
+            val expectedType = context.resolutionContext.expectedType
+            val hasImplicitNothing = inferredReturnType?.isNothing() == true &&
+                    unsubstitutedReturnType?.isTypeParameter() == true &&
+                    (TypeUtils.noExpectedType(expectedType) || !expectedType.isNothing())
 
-            val hasImplicitNothingExceptLambdaReturnTypes = resolvedCall.typeArguments.any { (unsubstitutedType, resultingType) ->
-                resultingType.isNothing() && unsubstitutedType.defaultType !in lambdasFromArgumentsReturnTypes
-            }
-
-            if (hasImplicitNothingExceptLambdaReturnTypes) {
+            if (hasImplicitNothing && unsubstitutedReturnType !in lambdasFromArgumentsReturnTypes) {
                 context.trace.report(Errors.IMPLICIT_NOTHING_AS_TYPE_PARAMETER.on(reportOn))
             }
         }

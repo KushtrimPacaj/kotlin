@@ -1,5 +1,6 @@
 // !USE_EXPERIMENTAL: kotlin.ExperimentalStdlibApi
 // TARGET_BACKEND: JVM
+// IGNORE_BACKEND: JVM_IR
 // WITH_RUNTIME
 
 package test

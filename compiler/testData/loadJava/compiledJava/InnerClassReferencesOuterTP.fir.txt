@@ -1,2 +1,4 @@
-<P> public open class InnerClassReferencesOuterTP : R|java/lang/Object| {
+public open class InnerClassReferencesOuterTP<P> : R|kotlin/Any| {
+    public constructor<P>(): R|test/InnerClassReferencesOuterTP<P>|
+
 }

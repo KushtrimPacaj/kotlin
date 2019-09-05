@@ -1,4 +1,3 @@
-
 plugins {
     kotlin("jvm")
     id("jps-compatible")
@@ -19,6 +18,13 @@ dependencies {
     compile(project(":idea:idea-jps-common"))
 
     compileOnly(intellijDep())
+    Platform[192].orHigher {
+        compileOnly(intellijPluginDep("java"))
+        testCompileOnly(intellijPluginDep("java"))
+        testRuntimeOnly(intellijPluginDep("java"))
+        testRuntimeOnly(intellijPluginDep("java-ide-customization"))
+    }
+    
     excludeInAndroidStudio(rootProject) { compileOnly(intellijPluginDep("maven")) }
 
     testCompile(projectTests(":idea"))
@@ -56,6 +62,11 @@ dependencies {
     testRuntime(intellijPluginDep("coverage"))
     testRuntime(intellijPluginDep("android"))
     testRuntime(intellijPluginDep("smali"))
+
+    if (Ide.AS36.orHigher()) {
+        testRuntime(intellijPluginDep("android-layoutlib"))
+        testRuntime(intellijPluginDep("android-wizardTemplate-plugin"))
+    }
 }
 
 if (Ide.IJ()) {
@@ -72,15 +83,10 @@ if (Ide.IJ()) {
 
 testsJar()
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
 }
 
-
 if (Ide.IJ()) {
-    runtimeJar {
-        archiveName = "maven-ide.jar"
-    }
-
-    ideaPlugin()
+    runtimeJar()
 }

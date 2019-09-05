@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.types.expressions
@@ -45,7 +45,10 @@ import org.jetbrains.kotlin.resolve.scopes.receivers.TransientReceiver
 import org.jetbrains.kotlin.resolve.source.toSourceElement
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.TypeUtils.NO_EXPECTED_TYPE
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner
+import org.jetbrains.kotlin.types.expressions.FunctionWithBigAritySupport.LanguageVersionDependent
 import org.jetbrains.kotlin.types.expressions.typeInfoFactory.createTypeInfo
+import org.jetbrains.kotlin.types.refinement.TypeRefinement
 import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
 import org.jetbrains.kotlin.types.typeUtil.makeNotNullable
@@ -73,6 +76,28 @@ sealed class DoubleColonLHS(val type: KotlinType) {
     class Type(type: KotlinType, val possiblyBareType: PossiblyBareType) : DoubleColonLHS(type)
 }
 
+@TypeRefinement
+private fun KotlinTypeRefiner.refineBareType(type: PossiblyBareType): PossiblyBareType {
+    if (type.isBare) return type
+    val newType = type.actualType.let { refineType(it) }
+    return PossiblyBareType.type(newType)
+}
+
+@UseExperimental(TypeRefinement::class)
+private fun <T : DoubleColonLHS> KotlinTypeRefiner.refineLHS(lhs: T): T = when (lhs) {
+    is DoubleColonLHS.Expression -> {
+        val newType = lhs.typeInfo.type?.let { refineType(it) }
+        DoubleColonLHS.Expression(
+            lhs.typeInfo.replaceType(newType),
+            lhs.isObjectQualifier
+        ) as T
+    }
+    is DoubleColonLHS.Type -> {
+        DoubleColonLHS.Type(refineType(lhs.type), refineBareType(lhs.possiblyBareType)) as T
+    }
+    else -> throw IllegalStateException()
+}
+
 // Returns true if this expression has the form "A<B>" which means it's a type on the LHS of a double colon expression
 internal val KtCallExpression.isWithoutValueArguments: Boolean
     get() = valueArgumentList == null && lambdaArguments.isEmpty()
@@ -86,7 +111,9 @@ class DoubleColonExpressionResolver(
     val languageVersionSettings: LanguageVersionSettings,
     val additionalCheckers: Iterable<ClassLiteralChecker>,
     val dataFlowValueFactory: DataFlowValueFactory,
-    val bigAritySupport: FunctionWithBigAritySupport
+    val bigAritySupport: FunctionWithBigAritySupport,
+    val genericArrayClassLiteralSupport: GenericArrayClassLiteralSupport,
+    val kotlinTypeRefiner: KotlinTypeRefiner
 ) {
     private lateinit var expressionTypingServices: ExpressionTypingServices
 
@@ -139,7 +166,9 @@ class DoubleColonExpressionResolver(
         result as DoubleColonLHS.Type
         val descriptor = type.constructor.declarationDescriptor
         if (result.possiblyBareType.isBare) {
-            if (descriptor is ClassDescriptor && KotlinBuiltIns.isNonPrimitiveArray(descriptor)) {
+            if (descriptor is ClassDescriptor && KotlinBuiltIns.isNonPrimitiveArray(descriptor) &&
+                !languageVersionSettings.supportsFeature(LanguageFeature.BareArrayClassLiteral)
+            ) {
                 c.trace.report(ARRAY_CLASS_LITERAL_REQUIRES_ARGUMENT.on(expression))
             }
         }
@@ -342,7 +371,11 @@ class DoubleColonExpressionResolver(
         if (isReservedExpressionSyntax) return doubleColonLHS
 
         val resultForType = tryResolveLHS(doubleColonExpression, c, this::shouldTryResolveLHSAsType) { expression, context ->
-            resolveTypeOnLHS(expression, doubleColonExpression, context)
+            resolveTypeOnLHS(expression, doubleColonExpression, context)?.let {
+                // If lhs is not expression then ExpressionTypingVisitor don't refine it's type and we should do this manually
+                @UseExperimental(TypeRefinement::class)
+                DoubleColonLHS.Type(kotlinTypeRefiner.refineType(it.type), kotlinTypeRefiner.refineBareType(it.possiblyBareType))
+            }
         }
         if (resultForType != null) {
             val lhs = resultForType.lhs
@@ -479,14 +512,15 @@ class DoubleColonExpressionResolver(
     }
 
     private fun isAllowedInClassLiteral(type: KotlinType): Boolean {
-        val typeConstructor = type.constructor
-        val descriptor = typeConstructor.declarationDescriptor
-
-        when (descriptor) {
+        when (val descriptor = type.constructor.declarationDescriptor) {
             is ClassDescriptor -> {
-                if (KotlinBuiltIns.isNonPrimitiveArray(descriptor)) {
-                    return type.arguments.none { typeArgument ->
-                        typeArgument.isStarProjection || !isAllowedInClassLiteral(typeArgument.type)
+                if (genericArrayClassLiteralSupport.isEnabled ||
+                    !languageVersionSettings.supportsFeature(LanguageFeature.ProhibitGenericArrayClassLiteral)
+                ) {
+                    if (KotlinBuiltIns.isNonPrimitiveArray(descriptor)) {
+                        return type.arguments.none { typeArgument ->
+                            typeArgument.isStarProjection || !isAllowedInClassLiteral(typeArgument.type)
+                        }
                     }
                 }
 
@@ -820,14 +854,35 @@ class DoubleColonExpressionResolver(
     }
 }
 
-// By default, function types with big arity are supported. On platforms where they are not supported by default (e.g. JVM),
-// LANGUAGE_VERSION_DEPENDENT should be used which makes the code check if the corresponding language feature is enabled.
-@DefaultImplementation(FunctionWithBigAritySupport::class)
-class FunctionWithBigAritySupport private constructor(val shouldCheckLanguageVersionSettings: Boolean) {
-    constructor() : this(false)
+/**
+ * By default, function types with big arity are enabled. On platforms where they are not supported by default (e.g. JVM),
+ * [LanguageVersionDependent] should be used which makes the code check if the corresponding language feature is enabled.
+ */
+@DefaultImplementation(FunctionWithBigAritySupport.Enabled::class)
+interface FunctionWithBigAritySupport {
+    val shouldCheckLanguageVersionSettings: Boolean
 
-    companion object {
-        @JvmField
-        val LANGUAGE_VERSION_DEPENDENT = FunctionWithBigAritySupport(true)
+    object Enabled : FunctionWithBigAritySupport {
+        override val shouldCheckLanguageVersionSettings: Boolean = false
+    }
+
+    object LanguageVersionDependent : FunctionWithBigAritySupport {
+        override val shouldCheckLanguageVersionSettings: Boolean = true
+    }
+}
+
+/**
+ * Generic array class literals (`Array<String>::class.java`) are enabled on all platforms until 1.4, and only on JVM since 1.4.
+ */
+@DefaultImplementation(GenericArrayClassLiteralSupport.Disabled::class)
+interface GenericArrayClassLiteralSupport {
+    val isEnabled: Boolean
+
+    object Enabled : GenericArrayClassLiteralSupport {
+        override val isEnabled: Boolean = true
+    }
+
+    object Disabled : GenericArrayClassLiteralSupport {
+        override val isEnabled: Boolean = false
     }
 }

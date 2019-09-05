@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.parameterInfo.custom
@@ -22,6 +22,8 @@ class ReturnHintLinePainter : EditorLinePainter() {
     }
 
     override fun getLineExtensions(project: Project, file: VirtualFile, lineNumber: Int): List<LineExtensionInfo>? {
+        if (!file.isValid) return null
+
         val psiFile = PsiManager.getInstance(project).findFile(file) ?: return null
         if (psiFile.language != KotlinLanguage.INSTANCE) {
             return null

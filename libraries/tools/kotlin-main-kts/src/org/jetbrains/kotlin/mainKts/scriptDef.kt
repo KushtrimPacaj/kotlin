@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.mainKts
@@ -14,22 +14,30 @@ import kotlin.script.dependencies.ScriptContents
 import kotlin.script.dependencies.ScriptDependenciesResolver
 import kotlin.script.experimental.annotations.KotlinScript
 import kotlin.script.experimental.api.*
+import kotlin.script.experimental.host.FileBasedScriptSource
 import kotlin.script.experimental.host.FileScriptSource
 import kotlin.script.experimental.jvm.compat.mapLegacyDiagnosticSeverity
 import kotlin.script.experimental.jvm.compat.mapLegacyScriptPosition
 import kotlin.script.experimental.jvm.dependenciesFromClassContext
 import kotlin.script.experimental.jvm.jvm
 import kotlin.script.experimental.jvm.updateClasspath
+import kotlin.script.experimental.jvmhost.jsr223.configureProvidedPropertiesFromJsr223Context
+import kotlin.script.experimental.jvmhost.jsr223.importAllBindings
+import kotlin.script.experimental.jvmhost.jsr223.jsr223
 
 @Suppress("unused")
-@KotlinScript(fileExtension = "main.kts", compilationConfiguration = MainKtsScriptDefinition::class)
+@KotlinScript(
+    fileExtension = "main.kts",
+    compilationConfiguration = MainKtsScriptDefinition::class,
+    evaluationConfiguration = MainKtsEvaluationConfiguration::class
+)
 abstract class MainKtsScript(val args: Array<String>)
 
 object MainKtsScriptDefinition : ScriptCompilationConfiguration(
     {
         defaultImports(DependsOn::class, Repository::class, Import::class)
         jvm {
-            dependenciesFromClassContext(MainKtsScriptDefinition::class, "kotlin-main-kts")
+            dependenciesFromClassContext(MainKtsScriptDefinition::class, "kotlin-main-kts", "kotlin-stdlib", "kotlin-reflect")
         }
         refineConfiguration {
             onAnnotations(DependsOn::class, Repository::class, Import::class, handler = MainKtsConfigurator())
@@ -37,12 +45,29 @@ object MainKtsScriptDefinition : ScriptCompilationConfiguration(
         ide {
             acceptedLocations(ScriptAcceptedLocation.Everywhere)
         }
+        jsr223 {
+            importAllBindings(true)
+        }
     })
+
+object MainKtsEvaluationConfiguration : ScriptEvaluationConfiguration(
+    {
+        scriptsInstancesSharing(true)
+        refineConfigurationBeforeEvaluate(::configureProvidedPropertiesFromJsr223Context)
+    }
+)
 
 class MainKtsConfigurator : RefineScriptCompilationConfigurationHandler {
     private val resolver = FilesAndIvyResolver()
 
-    override operator fun invoke(context: ScriptConfigurationRefinementContext): ResultWithDiagnostics<ScriptCompilationConfiguration> {
+    override operator fun invoke(context: ScriptConfigurationRefinementContext): ResultWithDiagnostics<ScriptCompilationConfiguration> =
+        processAnnotations(context).onSuccess { updatedConfiguration ->
+            configureProvidedPropertiesFromJsr223Context(
+                ScriptConfigurationRefinementContext(context.script, updatedConfiguration, context.collectedData)
+            )
+        }
+
+    fun processAnnotations(context: ScriptConfigurationRefinementContext): ResultWithDiagnostics<ScriptCompilationConfiguration> {
         val diagnostics = arrayListOf<ScriptDiagnostic>()
 
         fun report(severity: ScriptDependenciesResolver.ReportSeverity, message: String, position: ScriptContents.Position?) {
@@ -59,7 +84,7 @@ class MainKtsConfigurator : RefineScriptCompilationConfigurationHandler {
         val annotations = context.collectedData?.get(ScriptCollectedData.foundAnnotations)?.takeIf { it.isNotEmpty() }
             ?: return context.compilationConfiguration.asSuccess()
 
-        val scriptBaseDir = (context.script as? FileScriptSource)?.file?.parentFile
+        val scriptBaseDir = (context.script as? FileBasedScriptSource)?.file?.parentFile
         val importedSources = annotations.flatMap {
             (it as? Import)?.paths?.map { sourceName ->
                 FileScriptSource(scriptBaseDir?.resolve(sourceName) ?: File(sourceName))

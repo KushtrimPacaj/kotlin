@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt3.base
@@ -57,11 +57,26 @@ open class KaptContext(val options: KaptOptions, val withJdk: Boolean, val logge
         KaptJavaCompiler.preRegister(context)
 
         cacheManager = options.incrementalCache?.let {
-            JavaClassCacheManager(it, options.classpathFqNamesHistory!!)
+            JavaClassCacheManager(it)
         }
-        sourcesToReprocess = cacheManager?.invalidateAndGetDirtyFiles(
-            options.changedFiles.filter { it.extension == "java" }
-        ) ?: SourcesToReprocess.FullRebuild
+        if (options.flags[KaptFlag.INCREMENTAL_APT]) {
+            sourcesToReprocess =
+                cacheManager?.invalidateAndGetDirtyFiles(
+                    options.changedFiles, options.classpathChanges
+                ) ?: SourcesToReprocess.FullRebuild
+
+            if (sourcesToReprocess == SourcesToReprocess.FullRebuild) {
+                // remove all generated sources and classes
+                fun deleteAndCreate(dir: File) {
+                    if (!dir.deleteRecursively()) logger.warn("Unable to delete $dir.")
+                    if (!dir.mkdir()) logger.warn("Unable to create $dir.")
+                }
+                deleteAndCreate(options.sourcesOutputDir)
+                deleteAndCreate(options.classesOutputDir)
+            }
+        } else {
+            sourcesToReprocess = SourcesToReprocess.FullRebuild
+        }
 
         javacOptions = Options.instance(context).apply {
             for ((key, value) in options.processingOptions) {
@@ -79,16 +94,18 @@ open class KaptContext(val options: KaptOptions, val withJdk: Boolean, val logge
 
             put(Option.PROC, "only") // Only process annotations
 
-            if (!withJdk) {
-                @Suppress("SpellCheckingInspection")
-                putJavacOption("BOOTCLASSPATH", "BOOT_CLASS_PATH", "") // No boot classpath
+            if (!withJdk && !isJava9OrLater()) {
+                // No boot classpath for JDK 8 and below. When running on JDK9+ and specifying source level 8 and below,
+                // boot classpath is not set to empty. This is to allow types to be resolved using boot classpath which defaults to
+                // classes defined in java.base module. See https://youtrack.jetbrains.com/issue/KT-33028 for details.
+                put(Option.valueOf("BOOTCLASSPATH"), "")
             }
 
             if (isJava9OrLater()) {
                 put("accessInternalAPI", "true")
             }
 
-            val compileClasspath = if (sourcesToReprocess is SourcesToReprocess.FullRebuild || options.changedFiles.isEmpty()) {
+            val compileClasspath = if (sourcesToReprocess is SourcesToReprocess.FullRebuild) {
                 options.compileClasspath
             } else {
                 options.compileClasspath + options.compiledSources

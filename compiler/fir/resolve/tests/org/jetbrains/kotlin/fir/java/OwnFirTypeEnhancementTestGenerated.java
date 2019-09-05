@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir.java;
@@ -112,6 +112,24 @@ public class OwnFirTypeEnhancementTestGenerated extends AbstractOwnFirTypeEnhanc
             public void testSpringNullablePackage() throws Exception {
                 runTest("compiler/fir/resolve/testData/enhancement/jsr305/typeQualifierDefault/SpringNullablePackage.java");
             }
+        }
+    }
+
+    @TestMetadata("compiler/fir/resolve/testData/enhancement/mapping")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Mapping extends AbstractOwnFirTypeEnhancementTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+        }
+
+        @TestMetadata("AbstractMap.java")
+        public void testAbstractMap() throws Exception {
+            runTest("compiler/fir/resolve/testData/enhancement/mapping/AbstractMap.java");
+        }
+
+        public void testAllFilesPresentInMapping() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/fir/resolve/testData/enhancement/mapping"), Pattern.compile("^(.+)\\.java$"), TargetBackend.ANY, true);
         }
     }
 

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.experimental
@@ -13,6 +13,7 @@ package kotlin.experimental
  * or by using the compiler argument `-Xuse-experimental=kotlin.experimental.ExperimentalTypeInference`.
  */
 @Experimental(level = Experimental.Level.ERROR)
+@MustBeDocumented
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.ANNOTATION_CLASS)
 @SinceKotlin("1.3")

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 // Auto-generated file. DO NOT EDIT!
@@ -1160,7 +1160,7 @@ public class Float private constructor() : Number(), Comparable<Float> {
     /**
      * Converts this [Float] value to [Int].
      *
-     * The fractional part, if any, is rounded down.
+     * The fractional part, if any, is rounded down towards zero.
      * Returns zero if this `Float` value is `NaN`, [Int.MIN_VALUE] if it's less than `Int.MIN_VALUE`,
      * [Int.MAX_VALUE] if it's bigger than `Int.MAX_VALUE`.
      */
@@ -1168,7 +1168,7 @@ public class Float private constructor() : Number(), Comparable<Float> {
     /**
      * Converts this [Float] value to [Long].
      *
-     * The fractional part, if any, is rounded down.
+     * The fractional part, if any, is rounded down towards zero.
      * Returns zero if this `Float` value is `NaN`, [Long.MIN_VALUE] if it's less than `Long.MIN_VALUE`,
      * [Long.MAX_VALUE] if it's bigger than `Long.MAX_VALUE`.
      */
@@ -1378,7 +1378,7 @@ public class Double private constructor() : Number(), Comparable<Double> {
     /**
      * Converts this [Double] value to [Int].
      *
-     * The fractional part, if any, is rounded down.
+     * The fractional part, if any, is rounded down towards zero.
      * Returns zero if this `Double` value is `NaN`, [Int.MIN_VALUE] if it's less than `Int.MIN_VALUE`,
      * [Int.MAX_VALUE] if it's bigger than `Int.MAX_VALUE`.
      */
@@ -1386,7 +1386,7 @@ public class Double private constructor() : Number(), Comparable<Double> {
     /**
      * Converts this [Double] value to [Long].
      *
-     * The fractional part, if any, is rounded down.
+     * The fractional part, if any, is rounded down towards zero.
      * Returns zero if this `Double` value is `NaN`, [Long.MIN_VALUE] if it's less than `Long.MIN_VALUE`,
      * [Long.MAX_VALUE] if it's bigger than `Long.MAX_VALUE`.
      */

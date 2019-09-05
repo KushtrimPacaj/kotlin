@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.state
@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.codegen.inline.GlobalInlineContext
 import org.jetbrains.kotlin.codegen.inline.InlineCache
 import org.jetbrains.kotlin.codegen.intrinsics.IntrinsicMethods
 import org.jetbrains.kotlin.codegen.optimization.OptimizationClassBuilderFactory
+import org.jetbrains.kotlin.codegen.serialization.JvmSerializationBindings
 import org.jetbrains.kotlin.config.*
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.ScriptDescriptor
@@ -214,15 +215,15 @@ class GenerationState private constructor(
     val factory: ClassFileFactory
     private lateinit var duplicateSignatureFactory: BuilderFactoryForDuplicateSignatureDiagnostics
 
-    val replSpecific = ForRepl()
+    val scriptSpecific = ForScript()
 
-    //TODO: should be refactored out
-    class ForRepl {
+    // TODO: review usages and consider replace mutability with explicit passing of input and output
+    class ForScript {
+        // quite a mess, this one is an input from repl interpreter
         var earlierScriptsForReplInterpreter: List<ScriptDescriptor>? = null
-        var scriptResultFieldName: String? = null
-        val shouldGenerateScriptResultValue: Boolean get() = scriptResultFieldName != null
+        // and the rest is an output from the codegen
+        var resultFieldName: String? = null
         var resultType: KotlinType? = null
-        var hasResult: Boolean = false
     }
 
     val isCallAssertionsDisabled: Boolean = configuration.getBoolean(JVMConfigurationKeys.DISABLE_CALL_ASSERTIONS)
@@ -256,6 +257,8 @@ class GenerationState private constructor(
 
     val metadataVersion = configuration.get(CommonConfigurationKeys.METADATA_VERSION) ?: JvmMetadataVersion.INSTANCE
 
+    val globalSerializationBindings = JvmSerializationBindings()
+
     init {
         this.interceptedBuilderFactory = builderFactory
             .wrapWith(
@@ -278,8 +281,8 @@ class GenerationState private constructor(
                         ?.let { destination -> SignatureDumpingBuilderFactory(it, File(destination)) } ?: it
                 }
             )
-            .wrapWith(ClassBuilderInterceptorExtension.getInstances(project)) { builderFactory, extension ->
-                extension.interceptClassBuilderFactory(builderFactory, bindingContext, diagnostics)
+            .wrapWith(ClassBuilderInterceptorExtension.getInstances(project)) { classBuilderFactory, extension ->
+                extension.interceptClassBuilderFactory(classBuilderFactory, bindingContext, diagnostics)
             }
 
         this.factory = ClassFileFactory(this, interceptedBuilderFactory)

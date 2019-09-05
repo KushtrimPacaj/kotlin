@@ -45,6 +45,7 @@ import org.intellij.lang.annotations.Language
 import org.jetbrains.annotations.NonNls
 import org.jetbrains.kotlin.idea.test.KotlinSdkCreationChecker
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase
+import org.jetbrains.kotlin.test.JUnitParameterizedWithIdeaConfigurationRunner
 import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.jetbrains.plugins.gradle.settings.DistributionType
 import org.jetbrains.plugins.gradle.settings.GradleProjectSettings
@@ -66,7 +67,7 @@ import org.junit.AfterClass
 import org.junit.Assume.assumeTrue
 
 // part of org.jetbrains.plugins.gradle.importing.GradleImportingTestCase
-@RunWith(value = Parameterized::class)
+@RunWith(value = JUnitParameterizedWithIdeaConfigurationRunner::class)
 abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
 
     protected var sdkCreationChecker : KotlinSdkCreationChecker? = null
@@ -92,6 +93,17 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
 
     open fun isApplicableTest(): Boolean = true
 
+    open fun jvmHeapArgsByGradleVersion(version: String) : String = when {
+        version.startsWith("4.") ->
+            // work-around due to memory leak in class loaders in gradle. The amount of used memory in the gradle daemon
+            // is drammatically increased on every reimport of project due to sequential compilation of build scripts.
+            // see more details in https://github.com/gradle/gradle/commit/b483d29f315758913791fe58d572fa6bafa0395c
+            "-Xmx256m -XX:MaxPermSize=64m"
+        else ->
+            // 128M should be enough for gradle 5.0+ (leak is fixed), and <4.0 (amount of tests is less)
+            "-Xmx128m -XX:MaxPermSize=64m"
+    }
+
     override fun setUp() {
         myJdkHome = IdeaTestUtil.requireRealJdkHome()
         super.setUp()
@@ -111,7 +123,10 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
         myProjectSettings = GradleProjectSettings().apply {
             this.isUseQualifiedModuleNames = false
         }
-        GradleSettings.getInstance(myProject).gradleVmOptions = "-Xmx128m -XX:MaxPermSize=64m"
+
+        GradleSettings.getInstance(myProject).gradleVmOptions =
+            "${jvmHeapArgsByGradleVersion(gradleVersion)} -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${System.getProperty("user.dir")}"
+
         System.setProperty(ExternalSystemExecutionSettings.REMOTE_PROCESS_IDLE_TTL_IN_MS_KEY, GRADLE_DAEMON_TTL_MS.toString())
         configureWrapper()
         sdkCreationChecker = KotlinSdkCreationChecker()
@@ -143,8 +158,6 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
     override fun getName(): String {
         return if (name.methodName == null) super.getName() else FileUtil.sanitizeFileName(name.methodName)
     }
-
-    override fun getTestsTempDir(): String = "gradleImportTests"
 
     override fun getExternalSystemConfigFileName(): String = "build.gradle"
 
@@ -280,7 +293,7 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
         @JvmStatic
         @Parameterized.Parameters(name = "{index}: with Gradle-{0}")
         fun data(): Collection<Array<Any>> {
-            return Arrays.asList(*AbstractModelBuilderTest.SUPPORTED_GRADLE_VERSIONS)
+            return listOf(*AbstractModelBuilderTest.SUPPORTED_GRADLE_VERSIONS)
         }
 
         fun wrapperJar(): File {

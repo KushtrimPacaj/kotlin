@@ -32,18 +32,15 @@ import org.jetbrains.kotlin.idea.codeInsight.DescriptorToSourceUtilsIde
 import org.jetbrains.kotlin.idea.refactoring.*
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.references.KtSimpleNameReference
-import org.jetbrains.kotlin.idea.runSynchronouslyWithProgress
+import org.jetbrains.kotlin.idea.core.util.runSynchronouslyWithProgress
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
-import org.jetbrains.kotlin.idea.util.application.progressIndicatorNullable
 import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.idea.util.hasJvmFieldAnnotation
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.load.java.JvmAbi
-import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
-import org.jetbrains.kotlin.psi.KtProperty
-import org.jetbrains.kotlin.psi.KtPsiFactory
-import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
+import org.jetbrains.kotlin.psi.psiUtil.hasActualModifier
 import org.jetbrains.kotlin.psi.psiUtil.siblings
 import org.jetbrains.kotlin.resolve.calls.callUtil.getCall
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
@@ -78,6 +75,11 @@ class ConvertPropertyToFunctionIntention : SelfTargetingIntention<KtProperty>(Kt
                         .first { it !is PsiWhiteSpace }
                         .nextSibling
                     property.deleteChildRange(dropPropertyFrom, getter.prevSibling)
+
+                    val typeReference = property.typeReference
+                    if (typeReference != null) {
+                        property.addAfter(psiFactory.createWhiteSpace(), typeReference)
+                    }
                 }
             }
             property.setName(newName)
@@ -99,13 +101,21 @@ class ConvertPropertyToFunctionIntention : SelfTargetingIntention<KtProperty>(Kt
                 runReadAction {
                     val progressStep = 1.0 / callables.size
                     for ((i, callable) in callables.withIndex()) {
-                        ProgressManager.getInstance().progressIndicatorNullable!!.fraction = (i + 1) * progressStep
+                        ProgressManager.getInstance().progressIndicator!!.fraction = (i + 1) * progressStep
 
                         if (callable !is PsiNamedElement) continue
 
                         if (!checkModifiable(callable)) {
                             val renderedCallable = RefactoringUIUtil.getDescription(callable, true).capitalize()
                             conflicts.putValue(callable, "Can't modify $renderedCallable")
+                        }
+
+                        if (callable is KtParameter) {
+                            conflicts.putValue(
+                                callable,
+                                if (callable.hasActualModifier()) "Property has an actual declaration in the class constructor"
+                                else "Property overloaded in child class constructor"
+                            )
                         }
 
                         if (callable is KtProperty) {

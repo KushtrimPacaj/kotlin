@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.jvm.diagnostics;
@@ -58,6 +58,7 @@ public class DefaultErrorMessagesJvm implements DefaultErrorMessages.Extension {
         MAP.put(VOLATILE_ON_DELEGATE, "'@Volatile' annotation cannot be used on delegated properties");
         MAP.put(SYNCHRONIZED_ON_ABSTRACT, "'@Synchronized' annotation cannot be used on abstract functions");
         MAP.put(SYNCHRONIZED_ON_INLINE, "'@Synchronized' annotation has no effect on inline functions");
+        MAP.put(SYNCHRONIZED_IN_INTERFACE, "'@Synchronized' annotation cannot be used on interface members");
         MAP.put(EXTERNAL_DECLARATION_CANNOT_BE_ABSTRACT, "External declaration can not be abstract");
         MAP.put(EXTERNAL_DECLARATION_CANNOT_HAVE_BODY, "External declaration can not have a body");
         MAP.put(EXTERNAL_DECLARATION_IN_INTERFACE, "Members of interfaces can not be external");

@@ -1,12 +1,14 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.lower
 
+import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.DeclarationContainerLoweringPass
 import org.jetbrains.kotlin.backend.common.ir.isElseBranch
+import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
@@ -21,9 +23,17 @@ import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.utils.addIfNotNull
 
-class BlockDecomposerLowering(context: JsIrBackendContext) : DeclarationContainerLoweringPass {
+class JsBlockDecomposerLowering(val context: JsIrBackendContext) : AbstractBlockDecomposerLowering(context) {
+    override fun unreachableExpression(): IrExpression =
+        JsIrBuilder.buildCall(context.intrinsics.unreachable.symbol, context.irBuiltIns.nothingType)
+}
 
-    private val decomposerTransformer = BlockDecomposerTransformer(context)
+abstract class AbstractBlockDecomposerLowering(context: CommonBackendContext) : DeclarationContainerLoweringPass {
+
+    // Expression with Nothing type to be inserted in places of unreachable expression
+    abstract fun unreachableExpression(): IrExpression
+
+    private val decomposerTransformer = BlockDecomposerTransformer(context, ::unreachableExpression)
     private val nothingType = context.irBuiltIns.nothingType
 
     override fun lower(irDeclarationContainer: IrDeclarationContainer) {
@@ -60,7 +70,7 @@ class BlockDecomposerLowering(context: JsIrBackendContext) : DeclarationContaine
                 irField.name.asString() + "\$init\$",
                 expression.type,
                 container,
-                irField.visibility
+                Visibilities.PRIVATE
             )
 
             val newBody = toBlockBody(initFunction)
@@ -80,7 +90,10 @@ class BlockDecomposerLowering(context: JsIrBackendContext) : DeclarationContaine
     }
 }
 
-class BlockDecomposerTransformer(private val context: JsIrBackendContext) : IrElementTransformerVoid() {
+class BlockDecomposerTransformer(
+    private val context: CommonBackendContext,
+    private val unreachableExpression: () -> IrExpression
+) : IrElementTransformerVoid() {
     private lateinit var function: IrFunction
     private var tmpVarCounter: Int = 0
 
@@ -92,9 +105,8 @@ class BlockDecomposerTransformer(private val context: JsIrBackendContext) : IrEl
     private val nothingType = context.irBuiltIns.nothingNType
 
     private val unitType = context.irBuiltIns.unitType
-    private val unitValue get() = JsIrBuilder.buildGetObjectValue(unitType, context.symbolTable.referenceClass(context.builtIns.unit))
+    private val unitValue get() = JsIrBuilder.buildGetObjectValue(unitType, context.irBuiltIns.unitClass)
 
-    private val unreachableFunction = context.intrinsics.unreachable
     private val booleanNotSymbol = context.irBuiltIns.booleanNotSymbol
 
     override fun visitFunction(declaration: IrFunction): IrStatement {
@@ -429,13 +441,13 @@ class BlockDecomposerTransformer(private val context: JsIrBackendContext) : IrEl
         override fun visitSetField(expression: IrSetField) = expression.asExpression(unitValue)
 
         override fun visitBreakContinue(jump: IrBreakContinue) =
-            jump.asExpression(JsIrBuilder.buildCall(unreachableFunction.symbol, nothingType))
+            jump.asExpression(unreachableExpression())
 
         override fun visitThrow(expression: IrThrow) =
-            expression.asExpression(JsIrBuilder.buildCall(unreachableFunction.symbol, nothingType))
+            expression.asExpression(unreachableExpression())
 
         override fun visitReturn(expression: IrReturn) =
-            expression.asExpression(JsIrBuilder.buildCall(unreachableFunction.symbol, nothingType))
+            expression.asExpression(unreachableExpression())
 
         override fun visitVariable(declaration: IrVariable) = declaration.asExpression(unitValue)
 
@@ -456,26 +468,30 @@ class BlockDecomposerTransformer(private val context: JsIrBackendContext) : IrEl
         private fun mapArguments(
             oldArguments: Collection<IrExpression?>,
             compositeCount: Int,
-            newStatements: MutableList<IrStatement>
+            newStatements: MutableList<IrStatement>,
+            dontDetachFirstArgument: Boolean = false
         ): List<IrExpression?> {
             var compositesLeft = compositeCount
             val arguments = mutableListOf<IrExpression?>()
 
-            for (arg in oldArguments) {
+            for ((index, arg) in oldArguments.withIndex()) {
                 val value = if (arg is IrComposite) {
                     compositesLeft--
                     newStatements += arg.statements.run { subList(0, lastIndex) }
                     arg.statements.last() as IrExpression
                 } else arg
 
-                val newArg = if (compositesLeft != 0) {
-                    if (value != null) {
+                val newArg = when {
+                    compositesLeft == 0 -> value
+                    index == 0 && dontDetachFirstArgument -> value
+                    value == null -> value
+                    else -> {
                         // TODO: do not wrap if value is pure (const, variable, etc)
                         val irVar = makeTempVar(value.type, value)
                         newStatements += irVar
                         JsIrBuilder.buildGetValue(irVar.symbol)
-                    } else value
-                } else value
+                    }
+                }
 
                 arguments += newArg
             }
@@ -561,7 +577,12 @@ class BlockDecomposerTransformer(private val context: JsIrBackendContext) : IrEl
             if (compositeCount == 0) return expression
 
             val newStatements = mutableListOf<IrStatement>()
-            val newArguments = mapArguments(oldArguments, compositeCount, newStatements)
+            val newArguments = mapArguments(
+                oldArguments,
+                compositeCount,
+                newStatements,
+                dontDetachFirstArgument = expression.isReceiverNonDetachable()
+            )
 
             expression.receiver = newArguments[0]
                 ?: error("No new receiver in destructured composite for:\n${expression.dump()}")
@@ -574,6 +595,22 @@ class BlockDecomposerTransformer(private val context: JsIrBackendContext) : IrEl
             newStatements.add(expression)
 
             return expression.run { IrCompositeImpl(startOffset, endOffset, type, null, newStatements) }
+        }
+
+        // Return if receiver expression cannot be detached from this expression
+        private fun IrDynamicOperatorExpression.isReceiverNonDetachable(): Boolean {
+            val receiver = when (val r = this.receiver) {
+                is IrComposite -> r.statements.lastOrNull() ?: return false
+                else -> r
+            }
+
+            val receiverIsMemberAccess =
+                receiver is IrDynamicMemberExpression ||
+                        (receiver is IrDynamicOperatorExpression && receiver.operator == IrDynamicOperator.ARRAY_ACCESS)
+
+            val operatorDependsOnMemberAccess = (operator == IrDynamicOperator.INVOKE)
+
+            return operator.isAssignmentOperator || (receiverIsMemberAccess && operatorDependsOnMemberAccess)
         }
 
         override fun visitContainerExpression(expression: IrContainerExpression): IrExpression {

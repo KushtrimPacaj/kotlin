@@ -1,19 +1,22 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import gnu.trove.TObjectIntHashMap
 import org.jetbrains.kotlin.backend.common.ClassLoweringPass
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedClassConstructorDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedFieldDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedValueParameterDescriptor
 import org.jetbrains.kotlin.backend.common.ir.copyTo
+import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.backend.jvm.ir.createJvmIrBuilder
+import org.jetbrains.kotlin.backend.jvm.ir.irArray
+import org.jetbrains.kotlin.descriptors.ClassKind
+import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.*
@@ -27,12 +30,13 @@ import org.jetbrains.kotlin.ir.symbols.IrValueParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrFieldSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
-import org.jetbrains.kotlin.ir.types.*
+import org.jetbrains.kotlin.ir.types.typeWith
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.TypeProjectionImpl
+import org.jetbrains.kotlin.types.TypeSubstitutor
 import java.util.*
 
 internal val enumClassPhase = makeIrFilePhase(
@@ -51,34 +55,6 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
     private interface EnumConstructorCallTransformer {
         fun transform(enumConstructorCall: IrEnumConstructorCall): IrExpression
         fun transform(delegatingConstructorCall: IrDelegatingConstructorCall): IrExpression
-    }
-
-    private fun createArrayOfExpression(arrayElementType: IrSimpleType, arrayElements: List<IrExpression>): IrExpression {
-        val arrayOfFun = context.ir.symbols.arrayOf.owner
-
-        /* Substituted descriptor is only needed to construct IrCall */
-        val unsubstitutedArrayOfFunDescriptor = arrayOfFun.descriptor
-        val typeParameter0 = unsubstitutedArrayOfFunDescriptor.typeParameters[0]
-        val typeSubstitutor = TypeSubstitutor.create(
-            mapOf(typeParameter0.typeConstructor to TypeProjectionImpl(arrayElementType.toKotlinType()))
-        )
-        val substitutedArrayOfDescriptor = unsubstitutedArrayOfFunDescriptor.substitute(typeSubstitutor)!!
-
-        val arrayType = context.irBuiltIns.arrayClass.typeWith(arrayElementType)
-        val arg0 =
-            IrVarargImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, arrayType, arrayElementType, arrayElements)
-
-        return IrCallImpl(
-            UNDEFINED_OFFSET,
-            UNDEFINED_OFFSET,
-            arrayType,
-            arrayOfFun.symbol,
-            substitutedArrayOfDescriptor,
-            arrayOfFun.typeParameters.size
-        ).apply {
-            putTypeArgument(0, arrayElementType)
-            putValueArgument(0, arg0)
-        }
     }
 
     private inner class EnumClassTransformer(val irClass: IrClass) {
@@ -153,7 +129,7 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
                     }
                 })
 
-                body = enumConstructor.body // will be transformed later
+                body = enumConstructor.body?.patchDeclarationParents(this)
 
                 loweredEnumConstructors[enumConstructor.symbol] = this
                 metadata = enumConstructor.metadata
@@ -219,7 +195,9 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
             context.declarationFactory.getFieldForEnumEntry(
                 enumEntry, (enumEntry.correspondingClass ?: enumEntry.parentAsClass).defaultType
             ).also {
-                it.initializer = IrExpressionBodyImpl(enumEntry.initializerExpression!!)
+                it.initializer = IrExpressionBodyImpl(
+                    enumEntry.initializerExpression!!.patchDeclarationParents(it)
+                )
                 it.annotations.addAll(enumEntry.annotations)
                 enumEntryFields.add(it)
                 enumEntriesByField[it] = enumEntry
@@ -269,11 +247,11 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
         }
 
         private fun createSyntheticValuesFieldInitializerExpression(): IrExpression =
-            createArrayOfExpression(
-                irClass.defaultType,
-                enumEntryFields.map { irField ->
-                    IrGetFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irField.symbol, irField.symbol.owner.type)
-                })
+            context.createJvmIrBuilder(irClass.symbol).irArray(context.irBuiltIns.arrayClass.typeWith(irClass.defaultType)) {
+                enumEntryFields.forEach { irField ->
+                    +IrGetFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irField.symbol, irField.symbol.owner.type)
+                }
+            }
 
         private fun lowerEnumClassBody() {
             irClass.transformChildrenVoid(EnumClassBodyTransformer())
@@ -397,7 +375,7 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
 
         private inner class InEnumEntryInitializer(enumEntry: IrEnumEntry) : InEnumEntry(enumEntry) {
             override fun createConstructorCall(startOffset: Int, endOffset: Int, loweredConstructor: IrConstructor) =
-                IrCallImpl(
+                IrConstructorCallImpl.fromSymbolDescriptor(
                     startOffset,
                     endOffset,
                     loweredConstructor.symbol.owner.parentAsClass.defaultType,
@@ -494,7 +472,7 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
             }
 
             private fun createEnumValueOfBody(): IrBody {
-                val enumValueOf = context.irBuiltIns.enumValueOfFun
+                val enumValueOf = context.irBuiltIns.enumValueOfSymbol
                 val returnType = irClass.defaultType
 
                 val unsubstitutedValueOfDescriptor = enumValueOf.descriptor
@@ -508,9 +486,9 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
                         UNDEFINED_OFFSET,
                         UNDEFINED_OFFSET,
                         returnType,
-                        enumValueOf.symbol,
+                        enumValueOf,
                         substitutedValueOfDescriptor,
-                        enumValueOf.typeParameters.size
+                        enumValueOf.owner.typeParameters.size
                     )
                 irValueOfCall.putTypeArgument(0, irClass.defaultType)
                 irValueOfCall.putValueArgument(
@@ -533,11 +511,11 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
 
             private fun createEnumValuesBody(valuesField: IrField): IrBody {
                 val cloneFun = context.irBuiltIns.arrayClass.owner.functions.find { it.name.asString() == "clone" }!!
-
+                val returnType = valuesFunction.symbol.owner.returnType
                 val irCloneValues =
-                    IrCallImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, cloneFun.returnType, cloneFun.symbol, cloneFun.descriptor, 0).apply {
+                    IrCallImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, returnType, cloneFun.symbol, cloneFun.descriptor, 0).apply {
                         dispatchReceiver =
-                                IrGetFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, valuesField.symbol, valuesField.symbol.owner.type)
+                            IrGetFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, valuesField.symbol, valuesField.symbol.owner.type)
                     }
 
                 return IrBlockBodyImpl(
@@ -546,7 +524,7 @@ private class EnumClassLowering(val context: JvmBackendContext) : ClassLoweringP
                         IrReturnImpl(
                             UNDEFINED_OFFSET,
                             UNDEFINED_OFFSET,
-                            valuesFunction.symbol.owner.returnType,
+                            returnType,
                             valuesFunction.symbol,
                             irCloneValues
                         )

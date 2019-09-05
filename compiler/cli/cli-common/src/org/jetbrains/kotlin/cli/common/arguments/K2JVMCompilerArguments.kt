@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.cli.common.arguments
@@ -263,8 +263,8 @@ class K2JVMCompilerArguments : CommonCompilerArguments() {
     @Argument(
         value = "-Xsanitize-parentheses",
         description = "Transform '(' and ')' in method names to some other character sequence.\n" +
-                "This mode can BREAK BINARY COMPATIBILITY and is only supposed to be used as a workaround\n" +
-                "of an issue in the ASM bytecode framework. See KT-29475 for more details"
+                "This mode can BREAK BINARY COMPATIBILITY and is only supposed to be used to workaround\n" +
+                "problems with parentheses in identifiers on certain platforms"
     )
     var sanitizeParentheses: Boolean by FreezableVar(false)
 

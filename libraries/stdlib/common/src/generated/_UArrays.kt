@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:kotlin.jvm.JvmMultifileClass
@@ -15,6 +15,8 @@ package kotlin.collections
 //
 
 import kotlin.random.*
+import kotlin.ranges.contains
+import kotlin.ranges.reversed
 
 /**
  * Returns 1st *element* from the collection.
@@ -2101,9 +2103,9 @@ public fun UIntArray.take(n: Int): List<UInt> {
     var count = 0
     val list = ArrayList<UInt>(n)
     for (item in this) {
-        if (count++ == n)
-            break
         list.add(item)
+        if (++count == n)
+            break
     }
     return list
 }
@@ -2125,9 +2127,9 @@ public fun ULongArray.take(n: Int): List<ULong> {
     var count = 0
     val list = ArrayList<ULong>(n)
     for (item in this) {
-        if (count++ == n)
-            break
         list.add(item)
+        if (++count == n)
+            break
     }
     return list
 }
@@ -2149,9 +2151,9 @@ public fun UByteArray.take(n: Int): List<UByte> {
     var count = 0
     val list = ArrayList<UByte>(n)
     for (item in this) {
-        if (count++ == n)
-            break
         list.add(item)
+        if (++count == n)
+            break
     }
     return list
 }
@@ -2173,9 +2175,9 @@ public fun UShortArray.take(n: Int): List<UShort> {
     var count = 0
     val list = ArrayList<UShort>(n)
     for (item in this) {
-        if (count++ == n)
-            break
         list.add(item)
+        if (++count == n)
+            break
     }
     return list
 }
@@ -3229,6 +3231,66 @@ public inline fun UShortArray.copyOfRange(fromIndex: Int, toIndex: Int): UShortA
 }
 
 /**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@ExperimentalUnsignedTypes
+public fun UIntArray.fill(element: UInt, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    storage.fill(element.toInt(), fromIndex, toIndex)
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@ExperimentalUnsignedTypes
+public fun ULongArray.fill(element: ULong, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    storage.fill(element.toLong(), fromIndex, toIndex)
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@ExperimentalUnsignedTypes
+public fun UByteArray.fill(element: UByte, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    storage.fill(element.toByte(), fromIndex, toIndex)
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@ExperimentalUnsignedTypes
+public fun UShortArray.fill(element: UShort, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    storage.fill(element.toShort(), fromIndex, toIndex)
+}
+
+/**
  * Returns the range of valid indices for the array.
  */
 @SinceKotlin("1.3")
@@ -3422,6 +3484,8 @@ public inline operator fun UShortArray.plus(elements: UShortArray): UShortArray 
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -3431,6 +3495,8 @@ public fun UIntArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -3440,6 +3506,8 @@ public fun ULongArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -3449,6 +3517,8 @@ public fun UByteArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4003,6 +4073,8 @@ public inline fun <K, V, M : MutableMap<in K, MutableList<V>>> UShortArray.group
 /**
  * Returns a list containing the results of applying the given [transform] function
  * to each element in the original array.
+ * 
+ * @sample samples.collections.Collections.Transformations.map
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4014,6 +4086,8 @@ public inline fun <R> UIntArray.map(transform: (UInt) -> R): List<R> {
 /**
  * Returns a list containing the results of applying the given [transform] function
  * to each element in the original array.
+ * 
+ * @sample samples.collections.Collections.Transformations.map
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4025,6 +4099,8 @@ public inline fun <R> ULongArray.map(transform: (ULong) -> R): List<R> {
 /**
  * Returns a list containing the results of applying the given [transform] function
  * to each element in the original array.
+ * 
+ * @sample samples.collections.Collections.Transformations.map
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4036,6 +4112,8 @@ public inline fun <R> UByteArray.map(transform: (UByte) -> R): List<R> {
 /**
  * Returns a list containing the results of applying the given [transform] function
  * to each element in the original array.
+ * 
+ * @sample samples.collections.Collections.Transformations.map
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4213,7 +4291,8 @@ public inline fun <R, C : MutableCollection<in R>> UShortArray.mapTo(destination
 }
 
 /**
- * Returns a lazy [Iterable] of [IndexedValue] for each element of the original array.
+ * Returns a lazy [Iterable] that wraps each element of the original array
+ * into an [IndexedValue] containing the index of that element and the element itself.
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4222,7 +4301,8 @@ public fun UIntArray.withIndex(): Iterable<IndexedValue<UInt>> {
 }
 
 /**
- * Returns a lazy [Iterable] of [IndexedValue] for each element of the original array.
+ * Returns a lazy [Iterable] that wraps each element of the original array
+ * into an [IndexedValue] containing the index of that element and the element itself.
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4231,7 +4311,8 @@ public fun ULongArray.withIndex(): Iterable<IndexedValue<ULong>> {
 }
 
 /**
- * Returns a lazy [Iterable] of [IndexedValue] for each element of the original array.
+ * Returns a lazy [Iterable] that wraps each element of the original array
+ * into an [IndexedValue] containing the index of that element and the element itself.
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4240,7 +4321,8 @@ public fun UByteArray.withIndex(): Iterable<IndexedValue<UByte>> {
 }
 
 /**
- * Returns a lazy [Iterable] of [IndexedValue] for each element of the original array.
+ * Returns a lazy [Iterable] that wraps each element of the original array
+ * into an [IndexedValue] containing the index of that element and the element itself.
  */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
@@ -4859,6 +4941,8 @@ public fun UShortArray.max(): UShort? {
 public inline fun <R : Comparable<R>> UIntArray.maxBy(selector: (UInt) -> R): UInt? {
     if (isEmpty()) return null
     var maxElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return maxElem
     var maxValue = selector(maxElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -4882,6 +4966,8 @@ public inline fun <R : Comparable<R>> UIntArray.maxBy(selector: (UInt) -> R): UI
 public inline fun <R : Comparable<R>> ULongArray.maxBy(selector: (ULong) -> R): ULong? {
     if (isEmpty()) return null
     var maxElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return maxElem
     var maxValue = selector(maxElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -4905,6 +4991,8 @@ public inline fun <R : Comparable<R>> ULongArray.maxBy(selector: (ULong) -> R): 
 public inline fun <R : Comparable<R>> UByteArray.maxBy(selector: (UByte) -> R): UByte? {
     if (isEmpty()) return null
     var maxElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return maxElem
     var maxValue = selector(maxElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -4928,6 +5016,8 @@ public inline fun <R : Comparable<R>> UByteArray.maxBy(selector: (UByte) -> R): 
 public inline fun <R : Comparable<R>> UShortArray.maxBy(selector: (UShort) -> R): UShort? {
     if (isEmpty()) return null
     var maxElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return maxElem
     var maxValue = selector(maxElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -5071,6 +5161,8 @@ public fun UShortArray.min(): UShort? {
 public inline fun <R : Comparable<R>> UIntArray.minBy(selector: (UInt) -> R): UInt? {
     if (isEmpty()) return null
     var minElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return minElem
     var minValue = selector(minElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -5094,6 +5186,8 @@ public inline fun <R : Comparable<R>> UIntArray.minBy(selector: (UInt) -> R): UI
 public inline fun <R : Comparable<R>> ULongArray.minBy(selector: (ULong) -> R): ULong? {
     if (isEmpty()) return null
     var minElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return minElem
     var minValue = selector(minElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -5117,6 +5211,8 @@ public inline fun <R : Comparable<R>> ULongArray.minBy(selector: (ULong) -> R): 
 public inline fun <R : Comparable<R>> UByteArray.minBy(selector: (UByte) -> R): UByte? {
     if (isEmpty()) return null
     var minElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return minElem
     var minValue = selector(minElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -5140,6 +5236,8 @@ public inline fun <R : Comparable<R>> UByteArray.minBy(selector: (UByte) -> R): 
 public inline fun <R : Comparable<R>> UShortArray.minBy(selector: (UShort) -> R): UShort? {
     if (isEmpty()) return null
     var minElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return minElem
     var minValue = selector(minElem)
     for (i in 1..lastIndex) {
         val e = this[i]

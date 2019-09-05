@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.cli;
@@ -256,9 +256,24 @@ public class CliTestGenerated extends AbstractCliTest {
             runTest("compiler/testData/cli/jvm/fileClassClashMultipleFiles.args");
         }
 
+        @TestMetadata("firHello.args")
+        public void testFirHello() throws Exception {
+            runTest("compiler/testData/cli/jvm/firHello.args");
+        }
+
         @TestMetadata("flagAllowingResultAsReturnType.args")
         public void testFlagAllowingResultAsReturnType() throws Exception {
             runTest("compiler/testData/cli/jvm/flagAllowingResultAsReturnType.args");
+        }
+
+        @TestMetadata("functionReferenceWithDefaultValuesFeatureIsEnabledWithNewInference.args")
+        public void testFunctionReferenceWithDefaultValuesFeatureIsEnabledWithNewInference() throws Exception {
+            runTest("compiler/testData/cli/jvm/functionReferenceWithDefaultValuesFeatureIsEnabledWithNewInference.args");
+        }
+
+        @TestMetadata("functionReferenceWithDefaultValuesFeatureIsEnabledWithXXNewInference.args")
+        public void testFunctionReferenceWithDefaultValuesFeatureIsEnabledWithXXNewInference() throws Exception {
+            runTest("compiler/testData/cli/jvm/functionReferenceWithDefaultValuesFeatureIsEnabledWithXXNewInference.args");
         }
 
         @TestMetadata("help.args")
@@ -294,6 +309,16 @@ public class CliTestGenerated extends AbstractCliTest {
         @TestMetadata("internalArgNoWarningForEnablingBugfix.args")
         public void testInternalArgNoWarningForEnablingBugfix() throws Exception {
             runTest("compiler/testData/cli/jvm/internalArgNoWarningForEnablingBugfix.args");
+        }
+
+        @TestMetadata("internalArgOverrideLanguageFeature.args")
+        public void testInternalArgOverrideLanguageFeature() throws Exception {
+            runTest("compiler/testData/cli/jvm/internalArgOverrideLanguageFeature.args");
+        }
+
+        @TestMetadata("internalArgOverrideOffLanguageFeature.args")
+        public void testInternalArgOverrideOffLanguageFeature() throws Exception {
+            runTest("compiler/testData/cli/jvm/internalArgOverrideOffLanguageFeature.args");
         }
 
         @TestMetadata("internalArgUnrecognizedFeature.args")
@@ -559,6 +584,26 @@ public class CliTestGenerated extends AbstractCliTest {
         @TestMetadata("singleJavaFileRoots.args")
         public void testSingleJavaFileRoots() throws Exception {
             runTest("compiler/testData/cli/jvm/singleJavaFileRoots.args");
+        }
+
+        @TestMetadata("standaloneSamConversionsAreDisabledExplicitlyWithNewInference.args")
+        public void testStandaloneSamConversionsAreDisabledExplicitlyWithNewInference() throws Exception {
+            runTest("compiler/testData/cli/jvm/standaloneSamConversionsAreDisabledExplicitlyWithNewInference.args");
+        }
+
+        @TestMetadata("standaloneSamConversionsAreEnabledWithNewInference.args")
+        public void testStandaloneSamConversionsAreEnabledWithNewInference() throws Exception {
+            runTest("compiler/testData/cli/jvm/standaloneSamConversionsAreEnabledWithNewInference.args");
+        }
+
+        @TestMetadata("standaloneSamConversionsAreEnabledWithNewInferenceInternalFlag.args")
+        public void testStandaloneSamConversionsAreEnabledWithNewInferenceInternalFlag() throws Exception {
+            runTest("compiler/testData/cli/jvm/standaloneSamConversionsAreEnabledWithNewInferenceInternalFlag.args");
+        }
+
+        @TestMetadata("standaloneSamConversionsBaseline_1_3.args")
+        public void testStandaloneSamConversionsBaseline_1_3() throws Exception {
+            runTest("compiler/testData/cli/jvm/standaloneSamConversionsBaseline_1_3.args");
         }
 
         @TestMetadata("suppressAllWarningsJvm.args")

@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.descriptors.impl;
@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.storage.StorageManager;
 import org.jetbrains.kotlin.types.ClassTypeConstructorImpl;
 import org.jetbrains.kotlin.types.KotlinType;
 import org.jetbrains.kotlin.types.TypeConstructor;
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -79,7 +80,7 @@ public class ClassDescriptorImpl extends ClassDescriptorBase {
 
     @NotNull
     @Override
-    public MemberScope getUnsubstitutedMemberScope() {
+    public MemberScope getUnsubstitutedMemberScope(@NotNull KotlinTypeRefiner kotlinTypeRefiner) {
         return unsubstitutedMemberScope;
     }
 

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 // Auto-generated file. DO NOT EDIT!
@@ -62,6 +62,13 @@ internal constructor(@PublishedApi internal val storage: LongArray) : Collection
     override fun isEmpty(): Boolean = this.storage.size == 0
 }
 
+/**
+ * Creates a new array of the specified [size], where each element is calculated by calling the specified
+ * [init] function.
+ *
+ * The function [init] is called for each array element sequentially starting from the first one.
+ * It should return the value for an array element given its index.
+ */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
 @kotlin.internal.InlineOnly

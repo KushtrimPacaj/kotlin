@@ -19,17 +19,14 @@ package org.jetbrains.kotlin.idea.refactoring.rename
 import com.intellij.openapi.editor.Editor
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReference
-import com.intellij.refactoring.JavaRefactoringSettings
+import org.jetbrains.kotlin.idea.refactoring.KotlinRefactoringSettings
 import com.intellij.refactoring.listeners.RefactoringElementListener
-import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.usageView.UsageInfo
 import org.jetbrains.kotlin.asJava.classes.KtLightClass
 import org.jetbrains.kotlin.asJava.classes.KtLightClassForFacade
 import org.jetbrains.kotlin.asJava.classes.KtLightClassForSourceDeclaration
 import org.jetbrains.kotlin.asJava.namedUnwrappedElement
-import org.jetbrains.kotlin.descriptors.ClassifierDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
-import org.jetbrains.kotlin.idea.caches.resolve.unsafeResolveToDescriptor
 import org.jetbrains.kotlin.idea.refactoring.withExpectedActuals
 import org.jetbrains.kotlin.idea.references.KtSimpleNameReference
 import org.jetbrains.kotlin.psi.*
@@ -43,16 +40,16 @@ class RenameKotlinClassifierProcessor : RenameKotlinPsiProcessor() {
         return element is KtClassOrObject || element is KtLightClass || element is KtConstructor<*> || element is KtTypeAlias
     }
 
-    override fun isToSearchInComments(psiElement: PsiElement) = JavaRefactoringSettings.getInstance().RENAME_SEARCH_IN_COMMENTS_FOR_CLASS
+    override fun isToSearchInComments(psiElement: PsiElement) = KotlinRefactoringSettings.instance.RENAME_SEARCH_IN_COMMENTS_FOR_CLASS
 
     override fun setToSearchInComments(element: PsiElement, enabled: Boolean) {
-        JavaRefactoringSettings.getInstance().RENAME_SEARCH_IN_COMMENTS_FOR_CLASS = enabled
+        KotlinRefactoringSettings.instance.RENAME_SEARCH_IN_COMMENTS_FOR_CLASS = enabled
     }
 
-    override fun isToSearchForTextOccurrences(element: PsiElement) = JavaRefactoringSettings.getInstance().RENAME_SEARCH_FOR_TEXT_FOR_CLASS
+    override fun isToSearchForTextOccurrences(element: PsiElement) = KotlinRefactoringSettings.instance.RENAME_SEARCH_FOR_TEXT_FOR_CLASS
 
     override fun setToSearchForTextOccurrences(element: PsiElement, enabled: Boolean) {
-        JavaRefactoringSettings.getInstance().RENAME_SEARCH_FOR_TEXT_FOR_CLASS = enabled
+        KotlinRefactoringSettings.instance.RENAME_SEARCH_FOR_TEXT_FOR_CLASS = enabled
     }
 
     override fun substituteElementToRename(element: PsiElement, editor: Editor?) = getClassOrObject(element)
@@ -70,7 +67,7 @@ class RenameKotlinClassifierProcessor : RenameKotlinPsiProcessor() {
                 if (nameWithoutExtensions == it.name) {
                     val newFileName = newName + "." + virtualFile.extension
                     allRenames.put(file, newFileName)
-                    RenamePsiElementProcessor.forElement(file).prepareRenaming(file, newFileName, allRenames)
+                    forElement(file).prepareRenaming(file, newFileName, allRenames)
                 }
             }
         }
@@ -98,10 +95,9 @@ class RenameKotlinClassifierProcessor : RenameKotlinPsiProcessor() {
             result: MutableList<UsageInfo>
     ) {
         val declaration = element.namedUnwrappedElement as? KtNamedDeclaration ?: return
-        val descriptor = declaration.unsafeResolveToDescriptor() as ClassifierDescriptor
 
         val collisions = SmartList<UsageInfo>()
-        checkRedeclarations(descriptor, newName, collisions)
+        checkRedeclarations(declaration, newName, collisions)
         checkOriginalUsagesRetargeting(declaration, newName, result, collisions)
         checkNewNameUsagesRetargeting(declaration, newName, collisions)
         result += collisions

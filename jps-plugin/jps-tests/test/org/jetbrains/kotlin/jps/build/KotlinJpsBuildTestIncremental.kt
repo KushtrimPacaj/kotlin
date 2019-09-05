@@ -17,31 +17,45 @@
 package org.jetbrains.kotlin.jps.build
 
 import com.intellij.openapi.util.io.FileUtil
+import org.jetbrains.jps.builders.CompileScopeTestBuilder
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.jps.builders.JpsBuildTestCase
+import org.jetbrains.jps.builders.logging.BuildLoggingManager
 import org.jetbrains.kotlin.compilerRunner.JpsKotlinCompilerRunner
-import org.jetbrains.kotlin.config.IncrementalCompilation
 import org.jetbrains.kotlin.config.LanguageVersion
 import kotlin.reflect.KMutableProperty1
 import org.jetbrains.kotlin.daemon.common.COMPILE_DAEMON_CUSTOM_RUN_FILES_PATH_FOR_TESTS
 import org.jetbrains.kotlin.daemon.common.COMPILE_DAEMON_ENABLED_PROPERTY
 import org.jetbrains.kotlin.daemon.common.isDaemonEnabled
+import org.jetbrains.kotlin.incremental.LookupSymbol
+import org.jetbrains.kotlin.jps.build.fixtures.EnableICFixture
 import org.jetbrains.kotlin.jps.model.kotlinCommonCompilerArguments
 import org.jetbrains.kotlin.jps.model.kotlinCompilerArguments
+import org.junit.Assert
 import java.io.File
 
 class KotlinJpsBuildTestIncremental : KotlinJpsBuildTest() {
-    var isICEnabledBackup: Boolean = false
+    private val enableICFixture = EnableICFixture()
 
     override fun setUp() {
         super.setUp()
-        isICEnabledBackup = IncrementalCompilation.isEnabledForJvm()
-        IncrementalCompilation.setIsEnabledForJvm(true)
+        enableICFixture.setUp()
     }
 
     override fun tearDown() {
-        IncrementalCompilation.setIsEnabledForJvm(isICEnabledBackup)
+        enableICFixture.tearDown()
         super.tearDown()
+    }
+
+    fun testKotlinJavaScriptChangePackage() {
+        initProject(LibraryDependency.JS_STDLIB)
+        buildAllModules().assertSuccessful()
+
+        val class2Kt = File(workDir, "src/Class2.kt")
+        val newClass2KtContent = class2Kt.readText().replace("package2", "package1")
+        JpsBuildTestCase.change(class2Kt.path, newClass2KtContent)
+        buildAllModules().assertSuccessful()
+        checkOutputFilesList(File(workDir, "out/production"))
     }
 
     fun testJpsDaemonIC() {

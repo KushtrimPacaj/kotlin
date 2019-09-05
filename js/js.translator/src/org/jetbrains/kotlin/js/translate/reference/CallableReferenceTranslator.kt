@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.js.translate.reference
 
+import com.intellij.psi.impl.source.tree.LeafPsiElement
 import org.jetbrains.kotlin.backend.common.CodegenUtil
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.js.backend.ast.*
@@ -24,9 +25,7 @@ import org.jetbrains.kotlin.js.translate.callTranslator.CallTranslator
 import org.jetbrains.kotlin.js.translate.context.Namer
 import org.jetbrains.kotlin.js.translate.context.TranslationContext
 import org.jetbrains.kotlin.js.translate.general.Translation
-import org.jetbrains.kotlin.js.translate.utils.JsDescriptorUtils
-import org.jetbrains.kotlin.js.translate.utils.TranslationUtils
-import org.jetbrains.kotlin.js.translate.utils.finalElement
+import org.jetbrains.kotlin.js.translate.utils.*
 import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.resolve.calls.callUtil.getFunctionResolvedCallWithAssert
@@ -127,7 +126,18 @@ object CallableReferenceTranslator {
             val type = functionDescriptor.valueParameters[index].type
             aliases[valueArg.getArgumentExpression()!!] = TranslationUtils.coerce(context, paramRef, type)
         }
-        val functionContext = context.innerBlock(function.body).innerContextWithAliasesForExpressions(aliases)
+
+        var functionContext = context.innerBlock(function.body).innerContextWithAliasesForExpressions(aliases).inner(functionDescriptor)
+
+        functionContext.continuationParameterDescriptor?.let { continuationDescriptor ->
+            function.parameters += JsParameter(context.getNameForDescriptor(continuationDescriptor))
+            functionContext = functionContext.innerContextWithDescriptorsAliased(mapOf(continuationDescriptor to JsAstUtils.stateMachineReceiver()))
+        }
+
+        if (functionDescriptor.isSuspend) {
+            function.fillCoroutineMetadata(functionContext, descriptor, hasController = false)
+        }
+
         val invocation = CallTranslator.translate(functionContext, fakeResolvedCall, receiverParam)
         function.body.statements += JsReturn(TranslationUtils.coerce(context, invocation, context.currentModule.builtIns.anyType))
 
@@ -154,8 +164,15 @@ object CallableReferenceTranslator {
             }
         }
 
-        val getter = translateForPropertyAccessor(call, expression, descriptor, context, receiver, false) { context, call, _, receiverParam ->
-            CallTranslator.translateGet(context, call, receiverParam)
+        val getter = translateForPropertyAccessor(
+            call,
+            expression,
+            descriptor,
+            context,
+            receiver,
+            false
+        ) { translationContext, resolvedCall, _, receiverParam ->
+            CallTranslator.translateGet(translationContext, resolvedCall, receiverParam)
         }
 
         val setter = if (isSetterVisible(descriptor, context)) {
@@ -188,7 +205,7 @@ object CallableReferenceTranslator {
             translator: (TranslationContext, ResolvedCall<out PropertyDescriptor>, JsExpression, JsExpression?) -> JsExpression
     ): JsExpression {
         val accessorFunction = JsFunction(context.scope(), JsBlock(), "")
-        accessorFunction.source = expression.finalElement
+        accessorFunction.source = expression
         val accessorContext = context.innerBlock(accessorFunction.body)
         val receiverParam = if (descriptor.dispatchReceiverParameter != null || descriptor.extensionReceiverParameter != null) {
             val name = JsScope.declareTemporaryName(Namer.getReceiverParameterName())
@@ -210,6 +227,7 @@ object CallableReferenceTranslator {
 
         val accessorResult = translator(accessorContext, call, valueParam, receiverParam)
         accessorFunction.body.statements += if (isSetter) accessorResult.makeStmt() else JsReturn(accessorResult)
+        accessorFunction.body.source = expression.finalElement as? LeafPsiElement
         return bindIfNecessary(accessorFunction, receiver)
     }
 

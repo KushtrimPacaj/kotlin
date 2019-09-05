@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.base.test.org.jetbrains.kotlin.kapt3.base.incremental
@@ -30,7 +30,7 @@ class TestInheritedAnnotation {
         @BeforeClass
         fun setUp() {
             val classpathHistory = tmp.newFolder()
-            cache = JavaClassCacheManager(tmp.newFolder(), classpathHistory)
+            cache = JavaClassCacheManager(tmp.newFolder())
             generatedSources = tmp.newFolder()
             cache.close()
             classpathHistory.resolve("0").createNewFile()
@@ -44,7 +44,7 @@ class TestInheritedAnnotation {
                 srcFiles,
                 listOf(processor),
                 generatedSources
-            ) { trees -> MentionedTypesTaskListener(cache.javaCache, trees) }
+            ) { elementUtils, trees -> MentionedTypesTaskListener(cache.javaCache, elementUtils, trees) }
             cache.updateCache(listOf(processor))
         }
     }
@@ -62,6 +62,5 @@ class TestInheritedAnnotation {
                 "test.BaseClass"
             ), shouldInheritAnnotation.getMentionedTypes()
         )
-        assertEquals(emptyMap<String, String>(), shouldInheritAnnotation.getDefinedConstants())
     }
 }

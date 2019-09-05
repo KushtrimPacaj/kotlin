@@ -1,5 +1,6 @@
-public final class FinalFieldAsVal : R|java/lang/Object| {
-    public final val f: R|kotlin/Int|
-        public get(): R|kotlin/Int|
+public final class FinalFieldAsVal : R|kotlin/Any| {
+    public final field f: R|kotlin/Int|
+
+    public constructor(): R|test/FinalFieldAsVal|
 
 }

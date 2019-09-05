@@ -39,20 +39,20 @@ import org.jetbrains.kotlin.idea.core.isAndroidModule
 import org.jetbrains.kotlin.idea.framework.KotlinSdkType
 import org.jetbrains.kotlin.idea.platform.tooling
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
-import org.jetbrains.kotlin.platform.DefaultIdeTargetPlatformKindProvider
-import org.jetbrains.kotlin.platform.IdePlatform
-import org.jetbrains.kotlin.platform.IdePlatformKind
+import org.jetbrains.kotlin.platform.*
+import org.jetbrains.kotlin.platform.compat.toNewPlatform
 import org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind
 import org.jetbrains.kotlin.psi.NotNullableUserDataProperty
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import kotlin.reflect.KProperty1
 
 var Module.hasExternalSdkConfiguration: Boolean
         by NotNullableUserDataProperty(Key.create<Boolean>("HAS_EXTERNAL_SDK_CONFIGURATION"), false)
 
-private fun getDefaultTargetPlatform(module: Module, rootModel: ModuleRootModel?): IdePlatform<*, *> {
+private fun getDefaultTargetPlatform(module: Module, rootModel: ModuleRootModel?): TargetPlatform {
     val platformKind = IdePlatformKind.ALL_KINDS.firstOrNull {
         getRuntimeLibraryVersions(module, rootModel, it).isNotEmpty()
-    } ?: DefaultIdeTargetPlatformKindProvider.defaultPlatform.kind
+    } ?: DefaultIdeTargetPlatformKindProvider.defaultPlatform.idePlatformKind
     if (platformKind == JvmIdePlatformKind) {
         var jvmTarget = Kotlin2JvmCompilerArgumentsHolder.getInstance(module.project).settings.jvmTarget?.let { JvmTarget.fromString(it) }
         if (jvmTarget == null) {
@@ -62,7 +62,7 @@ private fun getDefaultTargetPlatform(module: Module, rootModel: ModuleRootModel?
                 jvmTarget = JvmTarget.JVM_1_8
             }
         }
-        return if (jvmTarget != null) JvmIdePlatformKind.Platform(jvmTarget) else JvmIdePlatformKind.defaultPlatform
+        return if (jvmTarget != null) JvmPlatforms.jvmPlatformByTargetVersion(jvmTarget) else JvmPlatforms.defaultJvmPlatform
     }
     return platformKind.defaultPlatform
 }
@@ -70,7 +70,7 @@ private fun getDefaultTargetPlatform(module: Module, rootModel: ModuleRootModel?
 fun KotlinFacetSettings.initializeIfNeeded(
     module: Module,
     rootModel: ModuleRootModel?,
-    platform: IdePlatform<*, *>? = null, // if null, detect by module dependencies
+    platform: TargetPlatform? = null, // if null, detect by module dependencies
     compilerVersion: String? = null
 ) {
     val project = module.project
@@ -87,9 +87,10 @@ fun KotlinFacetSettings.initializeIfNeeded(
     if (compilerArguments == null) {
         val targetPlatform = platform ?: getDefaultTargetPlatform(module, rootModel)
         compilerArguments = targetPlatform.createArguments {
-            targetPlatform.kind.tooling.compilerArgumentsForProject(module.project)?.let { mergeBeans(it, this) }
+            targetPlatform.idePlatformKind.tooling.compilerArgumentsForProject(module.project)?.let { mergeBeans(it, this) }
             mergeBeans(commonArguments, this)
         }
+        this.targetPlatform = targetPlatform
     }
 
     if (shouldInferLanguageLevel) {
@@ -105,7 +106,7 @@ fun KotlinFacetSettings.initializeIfNeeded(
                 getLibraryLanguageLevel(
                     module,
                     rootModel,
-                    this.platform?.kind,
+                    this.targetPlatform?.idePlatformKind,
                     coerceRuntimeLibraryVersionToReleased = compilerVersion == null
                 )
             )
@@ -143,16 +144,32 @@ fun Module.getOrCreateFacet(
     return facet
 }
 
+//method used for non-mpp modules
 fun KotlinFacet.configureFacet(
     compilerVersion: String?,
     coroutineSupport: LanguageFeature.State,
-    platform: IdePlatform<*, *>?, // if null, detect by module dependencies
+    platform: TargetPlatform?,
     modelsProvider: IdeModifiableModelsProvider
+) {
+    configureFacet(compilerVersion, coroutineSupport, platform, modelsProvider, false, emptyList(), emptyList())
+}
+
+fun KotlinFacet.configureFacet(
+    compilerVersion: String?,
+    coroutineSupport: LanguageFeature.State,
+    platform: TargetPlatform?, // if null, detect by module dependencies
+    modelsProvider: IdeModifiableModelsProvider,
+    hmppEnabled: Boolean,
+    pureKotlinSourceFolders: List<String>,
+    dependsOnList: List<String>
 ) {
     val module = module
     with(configuration.settings) {
         compilerArguments = null
+        targetPlatform = null
         compilerSettings = null
+        isHmppEnabled = hmppEnabled
+        dependsOnModuleNames = dependsOnList
         initializeIfNeeded(
             module,
             modelsProvider.getModifiableRootModel(module),
@@ -165,10 +182,26 @@ fun KotlinFacet.configureFacet(
             this.apiLevel = languageLevel
         }
         this.coroutineSupport = if (languageLevel != null && languageLevel < LanguageVersion.KOTLIN_1_3) coroutineSupport else null
+        this.pureKotlinSourceFolders = pureKotlinSourceFolders
     }
 
     module.externalCompilerVersion = compilerVersion
 }
+
+@Suppress("DEPRECATION_ERROR", "DeprecatedCallableAddReplaceWith")
+@Deprecated(
+    message = "IdePlatform is deprecated and will be removed soon, please, migrate to org.jetbrains.kotlin.platform.TargetPlatform",
+    level = DeprecationLevel.ERROR
+)
+fun KotlinFacet.configureFacet(
+    compilerVersion: String?,
+    coroutineSupport: LanguageFeature.State,
+    platform: IdePlatform<*, *>,
+    modelsProvider: IdeModifiableModelsProvider
+) {
+    configureFacet(compilerVersion, coroutineSupport, platform.toNewPlatform(), modelsProvider)
+}
+
 
 fun KotlinFacet.noVersionAutoAdvance() {
     configuration.settings.compilerArguments?.let {

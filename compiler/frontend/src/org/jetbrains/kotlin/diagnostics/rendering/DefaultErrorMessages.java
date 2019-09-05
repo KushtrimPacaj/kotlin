@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.diagnostics.rendering;
@@ -159,6 +159,8 @@ public class DefaultErrorMessages {
         MAP.put(EXPERIMENTAL_UNSIGNED_LITERALS, "Unsigned literals are experimental and their usages should be marked with ''@{0}'' or ''@UseExperimental({0}::class)''", TO_STRING);
         MAP.put(EXPERIMENTAL_UNSIGNED_LITERALS_ERROR, "Unsigned literals are experimental and their usages must be marked with ''@{0}'' or ''@UseExperimental({0}::class)''", TO_STRING);
 
+        MAP.put(NON_PARENTHESIZED_ANNOTATIONS_ON_FUNCTIONAL_TYPES, "Non-parenthesized annotations on function types without receiver aren't yet supported (see KT-31734 for details)");
+
         MAP.put(REDUNDANT_MODIFIER, "Modifier ''{0}'' is redundant because ''{1}'' is present", TO_STRING, TO_STRING);
         MAP.put(REDUNDANT_OPEN_IN_INTERFACE, "Modifier 'open' is redundant for abstract interface members");
         MAP.put(REDUNDANT_MODIFIER_IN_GETTER, "Visibility modifiers are redundant in getter");
@@ -280,10 +282,14 @@ public class DefaultErrorMessages {
                 "Expected function source is not found, therefore it's impossible to generate default argument values declared there. " +
                 "Please add the corresponding file to compilation sources");
 
-        MAP.put(NO_ACTUAL_FOR_EXPECT, "Expected {0} has no actual declaration in module{1}{2}", DECLARATION_NAME_WITH_KIND,
-                PLATFORM, PlatformIncompatibilityDiagnosticRenderer.TEXT);
+        MAP.put(NO_ACTUAL_FOR_EXPECT, "Expected {0} has no actual declaration in module {1}{2}", DECLARATION_NAME_WITH_KIND,
+                MODULE_WITH_PLATFORM, PlatformIncompatibilityDiagnosticRenderer.TEXT);
         MAP.put(ACTUAL_WITHOUT_EXPECT, "{0} has no corresponding expected declaration{1}", CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM,
                 PlatformIncompatibilityDiagnosticRenderer.TEXT);
+        MAP.put(AMBIGUOUS_ACTUALS, "{0} has several compatible actual declarations in modules {1}", CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM, commaSeparated(
+                STRING));
+        MAP.put(AMBIGUOUS_EXPECTS, "{0} has several compatible expect declarations in modules {1}", CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM, commaSeparated(
+                STRING));
 
         MAP.put(NO_ACTUAL_CLASS_MEMBER_FOR_EXPECTED_CLASS, "Actual class ''{0}'' has no corresponding members for expected class members:{1}",
                 NAME, IncompatibleExpectedActualClassScopesRenderer.TEXT);
@@ -633,6 +639,7 @@ public class DefaultErrorMessages {
         MAP.put(UNSUPPORTED, "Unsupported [{0}]", STRING);
         MAP.put(NEW_INFERENCE_ERROR, "New inference error [{0}]", STRING);
         MAP.put(NEW_INFERENCE_DIAGNOSTIC, "New inference [{0}]", STRING);
+        MAP.put(NON_APPLICABLE_CALL_FOR_BUILDER_INFERENCE, "Non-applicable call for builder inference");
 
         MAP.put(UNSUPPORTED_FEATURE, "{0}", new LanguageFeatureMessageRenderer(LanguageFeatureMessageRenderer.Type.UNSUPPORTED));
         MAP.put(EXPERIMENTAL_FEATURE_WARNING, "{0}", new LanguageFeatureMessageRenderer(LanguageFeatureMessageRenderer.Type.WARNING));
@@ -830,6 +837,8 @@ public class DefaultErrorMessages {
         MAP.put(TYPE_INFERENCE_CONFLICTING_SUBSTITUTIONS, "Type inference failed: {0}", TYPE_INFERENCE_CONFLICTING_SUBSTITUTIONS_RENDERER);
         MAP.put(TYPE_INFERENCE_CANNOT_CAPTURE_TYPES, "Type inference failed: {0}", TYPE_INFERENCE_CANNOT_CAPTURE_TYPES_RENDERER);
         MAP.put(TYPE_INFERENCE_NO_INFORMATION_FOR_PARAMETER, "Type inference failed: {0}", TYPE_INFERENCE_NO_INFORMATION_FOR_PARAMETER_RENDERER);
+        MAP.put(NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER, "Not enough information to infer type variable {0}", STRING);
+
         MAP.put(TYPE_INFERENCE_PARAMETER_CONSTRAINT_ERROR, "Type inference failed: {0}", TYPE_INFERENCE_PARAMETER_CONSTRAINT_ERROR_RENDERER);
         MAP.put(TYPE_INFERENCE_INCORPORATION_ERROR, "Type inference failed. Please try to specify type arguments explicitly.");
         MAP.put(TYPE_INFERENCE_ONLY_INPUT_TYPES, "Type inference failed. The value of the type parameter {0} should be mentioned in input types " +

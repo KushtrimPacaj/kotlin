@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package templates
@@ -31,7 +31,10 @@ object Mapping : TemplateGroupBase() {
         include(CharSequences, ArraysOfUnsigned)
     } builder {
         doc {
-            "Returns a ${if (f == Sequences) f.mapResult else "lazy [Iterable]"} of [IndexedValue] for each ${f.element} of the original ${f.collection}."
+            """
+            Returns a ${if (f == Sequences) f.mapResult else "lazy [Iterable]"} that wraps each ${f.element} of the original ${f.collection}
+            into an [IndexedValue] containing the index of that ${f.element} and the ${f.element} itself.
+            """
         }
         returns("Iterable<IndexedValue<T>>")
         body {
@@ -92,6 +95,19 @@ object Mapping : TemplateGroupBase() {
             to each ${f.element} in the original ${f.collection}.
             """
         }
+
+        specialFor(Iterables, Sequences, ArraysOfObjects, ArraysOfPrimitives, ArraysOfUnsigned) {
+            sample("samples.collections.Collections.Transformations.map")
+        }
+
+        specialFor(Maps) {
+            sample("samples.collections.Maps.Transformations.mapToList")
+        }
+
+        specialFor(CharSequences) {
+            sample("samples.text.Strings.map")
+        }
+
         typeParam("R")
         returns("List<R>")
         body(Iterables) {

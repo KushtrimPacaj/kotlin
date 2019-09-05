@@ -15,7 +15,9 @@ dependencies {
     compileOnly(project(":compiler:plugin-api"))
     compileOnly(project(":kotlin-build-common"))
 
-    runtimeOnly(project(":kotlin-compiler"))
+    compileOnly(intellijCoreDep()) { includeJars("intellij-core", "asm-all", rootProject = rootProject) }
+
+    testRuntimeOnly(project(":kotlin-compiler"))
 
     testCompile(commonDep("junit:junit"))
     testCompile(projectTests(":compiler:tests-common"))
@@ -28,7 +30,7 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
     dependsOn(":dist")
 }
@@ -37,6 +39,5 @@ publish()
 
 sourcesJar()
 javadocJar()
-dist()
 
 testsJar()

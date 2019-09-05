@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2017 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.internal
@@ -42,7 +42,9 @@ class KotlinBytecodeDecompilerTask(val file: KtFile) : Task.Backgroundable(file.
                 if (!file.isValid || file.project.isDisposed) return@runWriteAction
 
                 if (decompiledText == null) {
-                    Messages.showErrorDialog("Cannot decompile ${file.name}", "Decompiler error")
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showErrorDialog("Cannot decompile ${file.name}", "Decompiler error")
+                    }
                     return@runWriteAction
                 }
 

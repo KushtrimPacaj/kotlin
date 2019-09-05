@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.completion.test.handlers
@@ -20,27 +20,41 @@ abstract class CompletionHandlerTestBase() : KotlinLightCodeInsightFixtureTestCa
         get() = myFixture
 
     protected fun doTestWithTextLoaded(
-            completionType: CompletionType,
-            time: Int,
-            lookupString: String?,
-            itemText: String?,
-            tailText: String?,
-            completionChar: Char,
-            afterFilePath: String
+        completionType: CompletionType,
+        time: Int,
+        lookupString: String?,
+        itemText: String?,
+        tailText: String?,
+        completionChars: String,
+        afterFilePath: String
     ) {
+        for (idx in 0 until completionChars.length - 1) {
+            fixture.type(completionChars[idx])
+        }
+
         fixture.complete(completionType, time)
 
         if (lookupString != null || itemText != null || tailText != null) {
             val item = getExistentLookupElement(lookupString, itemText, tailText)
             if (item != null) {
-                selectItem(item, completionChar)
+                selectItem(item, completionChars.last())
             }
         }
-
         fixture.checkResultByFile(afterFilePath)
     }
 
-    private fun getExistentLookupElement(lookupString: String?, itemText: String?, tailText: String?): LookupElement? {
+    protected fun completionChars(char: String?, chars: String?): String =
+        when (char) {
+            null -> when (chars) {
+                null -> "\n"
+                else -> chars.replace("\\n", "\n").replace("\\t", "\t")
+            }
+            "\\n" -> "\n"
+            "\\t" -> "\t"
+            else -> char.single().toString() ?: error("Incorrect completion char: \"$char\"")
+        }
+
+    protected fun getExistentLookupElement(lookupString: String?, itemText: String?, tailText: String?): LookupElement? {
         val lookup = LookupManager.getInstance(project)?.activeLookup as LookupImpl? ?: return null
         val items = lookup.items
 

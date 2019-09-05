@@ -1,15 +1,15 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.`when`
 
-import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.cfg.WhenChecker
 import org.jetbrains.kotlin.codegen.ExpressionCodegen
 import org.jetbrains.kotlin.codegen.StackValue
 import org.jetbrains.kotlin.descriptors.VariableDescriptor
+import org.jetbrains.kotlin.psi.KtWhenEntry
 import org.jetbrains.kotlin.psi.KtWhenExpression
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.constants.ConstantValue
@@ -109,7 +109,7 @@ abstract class SwitchCodegen(
 
             for (constant in switchCodegenProvider.getConstantsFromEntry(entry)) {
                 if (constant is NullValue || constant == null) continue
-                processConstant(constant, entryLabel)
+                processConstant(constant, entryLabel, entry)
             }
 
             if (entry.isElse) {
@@ -120,10 +120,7 @@ abstract class SwitchCodegen(
         }
     }
 
-    protected abstract fun processConstant(
-        constant: ConstantValue<*>,
-        entryLabel: Label
-    )
+    protected abstract fun processConstant(constant: ConstantValue<*>, entryLabel: Label, entry: KtWhenEntry)
 
     protected fun putTransitionOnce(value: Int, entryLabel: Label) {
         if (!transitionsTable.containsKey(value)) {

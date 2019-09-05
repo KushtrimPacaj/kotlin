@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.daemon.common
 
+import org.jetbrains.kotlin.incremental.IncrementalModuleInfo
 import java.io.File
 import java.io.Serializable
 import java.util.*
@@ -67,7 +68,6 @@ class IncrementalCompilationOptions(
         val outputFiles: List<File>,
     val multiModuleICSettings: MultiModuleICSettings,
     val modulesInfo: IncrementalModuleInfo,
-    val classpathFqNamesHistory: File? = null,
     kotlinScriptExtensions: Array<String>? = null
 ) : CompilationOptions(
     compilerMode,
@@ -91,7 +91,6 @@ class IncrementalCompilationOptions(
                "multiModuleICSettings=$multiModuleICSettings, " +
                "usePreciseJavaTracking=$usePreciseJavaTracking" +
                "outputFiles=$outputFiles" +
-               "classpathFqNamesHistory=$classpathFqNamesHistory" +
                ")"
     }
 }

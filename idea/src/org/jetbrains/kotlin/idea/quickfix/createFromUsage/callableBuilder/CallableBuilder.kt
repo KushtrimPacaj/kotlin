@@ -45,8 +45,9 @@ import org.jetbrains.kotlin.idea.caches.resolve.analyzeWithAllCompilerChecks
 import org.jetbrains.kotlin.idea.caches.resolve.analyzeWithContent
 import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptorIfAny
 import org.jetbrains.kotlin.idea.caches.resolve.util.getJavaClassDescriptor
-import org.jetbrains.kotlin.idea.codeInsight.CodeInsightUtils
 import org.jetbrains.kotlin.idea.core.*
+import org.jetbrains.kotlin.idea.core.util.CodeInsightUtils
+import org.jetbrains.kotlin.idea.core.util.isMultiLine
 import org.jetbrains.kotlin.idea.imports.importableFqName
 import org.jetbrains.kotlin.idea.quickfix.createFromUsage.createClass.ClassKind
 import org.jetbrains.kotlin.idea.refactoring.*
@@ -79,6 +80,7 @@ import org.jetbrains.kotlin.types.typeUtil.isAnyOrNullableAny
 import org.jetbrains.kotlin.types.typeUtil.isUnit
 import org.jetbrains.kotlin.types.typeUtil.makeNullable
 import java.util.*
+import kotlin.math.max
 
 /**
  * Represents a single choice for a type (e.g. parameter type or return type).
@@ -215,7 +217,7 @@ class CallableBuilder(val config: CallableBuilderConfiguration) {
     fun build(onFinish: () -> Unit = {}) {
         try {
             assert(config.currentEditor != null) { "Can't run build() without editor" }
-            if (finished) throw IllegalStateException("Current builder has already finished")
+            check(!finished) { "Current builder has already finished" }
             buildNext(config.callableInfos.iterator())
         } finally {
             finished = true
@@ -938,12 +940,13 @@ class CallableBuilder(val config: CallableBuilderConfiguration) {
             // it.
             val expression = setupTypeParameterListTemplate(builder, declaration)
 
+            PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(containingFileEditor.document)
             // the template built by TemplateBuilderImpl is ordered by element position, but we want types to be first, so hack it
             val templateImpl = builder.buildInlineTemplate() as TemplateImpl
             val variables = templateImpl.variables!!
             if (variables.isNotEmpty()) {
                 val typeParametersVar = if (expression != null) variables.removeAt(0) else null
-                for (i in 0..(callableInfo.parameterInfos.size - 1)) {
+                for (i in callableInfo.parameterInfos.indices) {
                     Collections.swap(variables, i * 2, i * 2 + 1)
                 }
                 typeParametersVar?.let { variables.add(it) }
@@ -1062,7 +1065,7 @@ internal fun <D : KtNamedDeclaration> placeDeclarationInContainer(
             else -> 1
         }
 
-        return Math.max(lineBreaksNeeded - lineBreaksPresent, 0)
+        return max(lineBreaksNeeded - lineBreaksPresent, 0)
     }
 
     val actualContainer = (container as? KtClassOrObject)?.getOrCreateBody() ?: container
@@ -1154,7 +1157,7 @@ internal fun <D : KtNamedDeclaration> placeDeclarationInContainer(
     return declarationInPlace
 }
 
-internal fun KtNamedDeclaration.getReturnTypeReference() = getReturnTypeReferences().singleOrNull()
+fun KtNamedDeclaration.getReturnTypeReference() = getReturnTypeReferences().singleOrNull()
 
 internal fun KtNamedDeclaration.getReturnTypeReferences(): List<KtTypeReference> {
     return when (this) {

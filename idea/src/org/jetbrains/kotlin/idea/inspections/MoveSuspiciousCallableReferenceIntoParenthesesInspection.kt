@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections
@@ -23,13 +23,16 @@ import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptorIfAny
 import org.jetbrains.kotlin.idea.intentions.ConvertLambdaToReferenceIntention
 import org.jetbrains.kotlin.idea.intentions.getCallableDescriptor
 import org.jetbrains.kotlin.idea.references.mainReference
-import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.idea.util.IdeDescriptorRenderers
+import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
+import org.jetbrains.kotlin.psi.KtLambdaExpression
+import org.jetbrains.kotlin.psi.ValueArgument
+import org.jetbrains.kotlin.psi.lambdaExpressionVisitor
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.calls.callUtil.getParameterForArgument
 import org.jetbrains.kotlin.resolve.calls.callUtil.getParentCall
 import org.jetbrains.kotlin.resolve.calls.callUtil.getParentResolvedCall
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
-import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
 
 class MoveSuspiciousCallableReferenceIntoParenthesesInspection : AbstractKotlinInspection() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
@@ -103,7 +106,7 @@ class MoveSuspiciousCallableReferenceIntoParenthesesInspection : AbstractKotlinI
                 ) {
                     callableReference.resolveToCall(BodyResolveMode.FULL)
                         ?.let { it.extensionReceiver ?: it.dispatchReceiver }
-                        ?.let { "${it.type}" } ?: ""
+                        ?.let { IdeDescriptorRenderers.SOURCE_CODE_SHORT_NAMES_NO_ANNOTATIONS.renderType(it.type) } ?: ""
                 } else {
                     receiverExpression.text
                 }

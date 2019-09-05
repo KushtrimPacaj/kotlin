@@ -380,7 +380,20 @@ class Kotlin2JsGradlePluginIT : BaseGradleIT() {
 
             assertFileExists(moduleDir + "kotlin-js-plugin-1.0-sources.jar")
 
-            assertTestResults("testProject/kotlin-js-plugin-project/tests.xml", "test")
+            assertFileExists("build/js/node_modules/kotlin/kotlin.js")
+            assertFileExists("build/js/node_modules/kotlin/kotlin.js.map")
+            assertFileExists("build/js/node_modules/kotlin-test/kotlin-test.js")
+            assertFileExists("build/js/node_modules/kotlin-test/kotlin-test.js.map")
+            assertFileExists("build/js/node_modules/kotlin-test-nodejs-runner/kotlin-test-nodejs-runner.js")
+            assertFileExists("build/js/node_modules/kotlin-test-nodejs-runner/kotlin-test-nodejs-runner.js.map")
+            assertFileExists("build/js/node_modules/kotlin-test-nodejs-runner/kotlin-nodejs-source-map-support.js")
+            assertFileExists("build/js/node_modules/kotlin-test-nodejs-runner/kotlin-nodejs-source-map-support.js.map")
+            assertFileExists("build/js/node_modules/kotlin-js-plugin/kotlin/kotlin-js-plugin.js")
+            assertFileExists("build/js/node_modules/kotlin-js-plugin/kotlin/kotlin-js-plugin.js.map")
+            assertFileExists("build/js/node_modules/kotlin-js-plugin-test/kotlin/kotlin-js-plugin-test.js")
+            assertFileExists("build/js/node_modules/kotlin-js-plugin-test/kotlin/kotlin-js-plugin-test.js.map")
+
+            assertTestResults("testProject/kotlin-js-plugin-project/tests.xml", "nodeTest")
         }
     }
 }

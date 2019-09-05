@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.lower.calls
@@ -8,9 +8,12 @@ package org.jetbrains.kotlin.ir.backend.js.lower.calls
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
 import org.jetbrains.kotlin.ir.declarations.IrConstructor
 import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.util.getSimpleFunction
 import org.jetbrains.kotlin.ir.util.getPropertyGetter
 
@@ -25,12 +28,12 @@ class PrimitiveContainerMemberCallTransformer(private val context: JsIrBackendCo
             add(context.intrinsics.array.sizeProperty, context.intrinsics.jsArrayLength, true)
             add(context.intrinsics.array.getFunction, context.intrinsics.jsArrayGet, true)
             add(context.intrinsics.array.setFunction, context.intrinsics.jsArraySet, true)
-            add(context.intrinsics.array.iterator, context.intrinsics.jsArrayIteratorFunction.owner, true)
+            add(context.intrinsics.array.iterator, context.intrinsics.jsArrayIteratorFunction, true)
             for ((key, elementType) in context.intrinsics.primitiveArrays) {
                 add(key.sizeProperty, context.intrinsics.jsArrayLength, true)
                 add(key.getFunction, context.intrinsics.jsArrayGet, true)
                 add(key.setFunction, context.intrinsics.jsArraySet, true)
-                add(key.iterator, context.intrinsics.jsPrimitiveArrayIteratorFunctions[elementType]!!.owner, true)
+                add(key.iterator, context.intrinsics.jsPrimitiveArrayIteratorFunctions[elementType]!!, true)
 
                 // TODO irCall?
                 add(key.sizeConstructor) { call ->
@@ -46,21 +49,23 @@ class PrimitiveContainerMemberCallTransformer(private val context: JsIrBackendCo
             }
 
             add(context.irBuiltIns.stringClass.lengthProperty, context.intrinsics.jsArrayLength, true)
-            add(context.irBuiltIns.stringClass.getFunction, intrinsics.jsCharSequenceGet.owner, true)
-            add(context.irBuiltIns.stringClass.subSequence, intrinsics.jsCharSequenceSubSequence.owner, true)
-            add(intrinsics.charSequenceLengthPropertyGetterSymbol, intrinsics.jsCharSequenceLength.owner, true)
-            add(intrinsics.charSequenceGetFunctionSymbol, intrinsics.jsCharSequenceGet.owner, true)
-            add(intrinsics.charSequenceSubSequenceFunctionSymbol, intrinsics.jsCharSequenceSubSequence.owner, true)
+            add(context.irBuiltIns.stringClass.getFunction, intrinsics.jsCharSequenceGet, true)
+            add(context.irBuiltIns.stringClass.subSequence, intrinsics.jsCharSequenceSubSequence, true)
+            add(intrinsics.charSequenceLengthPropertyGetterSymbol, intrinsics.jsCharSequenceLength, true)
+            add(intrinsics.charSequenceGetFunctionSymbol, intrinsics.jsCharSequenceGet, true)
+            add(intrinsics.charSequenceSubSequenceFunctionSymbol, intrinsics.jsCharSequenceSubSequence, true)
+            add(context.irBuiltIns.dataClassArrayMemberHashCodeSymbol, context.intrinsics.jsHashCode)
+            add(context.irBuiltIns.dataClassArrayMemberToStringSymbol, context.intrinsics.jsToString)
         }
     }
 
-    override fun transformCall(call: IrCall): IrExpression {
-        val symbol = call.symbol
+    override fun transformFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
+        val symbol = expression.symbol
         symbolToTransformer[symbol]?.let {
-            return it(call)
+            return it(expression)
         }
 
-        return call
+        return expression
     }
 }
 

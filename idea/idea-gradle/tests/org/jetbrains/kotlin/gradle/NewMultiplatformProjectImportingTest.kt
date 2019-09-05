@@ -1,19 +1,21 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle
 
-import com.intellij.openapi.roots.*
+import com.intellij.openapi.roots.DependencyScope
 import org.jetbrains.jps.model.java.JavaResourceRootType
 import org.jetbrains.jps.model.java.JavaSourceRootType
-import org.jetbrains.kotlin.config.*
-import org.jetbrains.kotlin.idea.codeInsight.gradle.ExternalSystemImportingTestCase
+import org.jetbrains.kotlin.config.ResourceKotlinRootType
+import org.jetbrains.kotlin.config.SourceKotlinRootType
+import org.jetbrains.kotlin.config.TestResourceKotlinRootType
+import org.jetbrains.kotlin.config.TestSourceKotlinRootType
 import org.jetbrains.kotlin.idea.codeInsight.gradle.MultiplePluginVersionGradleImportingTestCase
-import org.jetbrains.kotlin.platform.impl.CommonIdePlatformKind
-import org.jetbrains.kotlin.platform.impl.JsIdePlatformKind
-import org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind
+import org.jetbrains.kotlin.platform.CommonPlatforms
+import org.jetbrains.kotlin.platform.js.JsPlatforms
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.junit.After
 import org.junit.Before
@@ -26,14 +28,14 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
     fun saveSdksBeforeTest() {
         val kotlinSdks = sdkCreationChecker?.getKotlinSdks() ?: emptyList()
         if (kotlinSdks.isNotEmpty()) {
-            ExternalSystemImportingTestCase.fail("Found Kotlin SDK before importing test. Sdk list: $kotlinSdks")
+            fail("Found Kotlin SDK before importing test. Sdk list: $kotlinSdks")
         }
     }
 
     @After
     fun checkSdkCreated() {
         if (sdkCreationChecker?.isKotlinSdkCreated() == false) {
-            ExternalSystemImportingTestCase.fail("Kotlin SDK was not created during import of MPP Project.")
+            fail("Kotlin SDK was not created during import of MPP Project.")
         }
     }
 
@@ -60,7 +62,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
             module("project")
             module("app")
             module("app_commonMain") {
-                platform(CommonIdePlatformKind.Platform)
+                platform(CommonPlatforms.defaultCommonPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 moduleDependency("lib_commonMain", DependencyScope.COMPILE)
                 sourceFolder("app/src/commonMain/kotlin", SourceKotlinRootType)
@@ -68,7 +70,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 inheritProjectOutput()
             }
             module("app_commonTest") {
-                platform(CommonIdePlatformKind.Platform)
+                platform(CommonPlatforms.defaultCommonPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 moduleDependency("lib_commonMain", DependencyScope.TEST)
                 moduleDependency("app_commonMain", DependencyScope.TEST)
@@ -77,7 +79,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 inheritProjectOutput()
             }
             module("app_jsMain") {
-                platform(JsIdePlatformKind.Platform)
+                platform(JsPlatforms.defaultJsPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-js:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 moduleDependency("lib_jsMain", DependencyScope.COMPILE)
@@ -88,7 +90,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("app/build/classes/kotlin/js/main", true)
             }
             module("app_jsTest") {
-                platform(JsIdePlatformKind.Platform)
+                platform(JsPlatforms.defaultJsPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-js:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 moduleDependency("lib_jsMain", DependencyScope.TEST)
@@ -101,7 +103,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("app/build/classes/kotlin/js/test", false)
             }
             module("app_jvmMain") {
-                platform(JvmIdePlatformKind.Platform(JvmTarget.JVM_1_6))
+                platform(JvmPlatforms.jvm16)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains:annotations:13.0", DependencyScope.COMPILE)
@@ -114,7 +116,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("app/build/classes/kotlin/jvm/main", true)
             }
             module("app_jvmTest") {
-                platform(JvmIdePlatformKind.Platform(JvmTarget.JVM_1_6))
+                platform(JvmPlatforms.jvm16)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains:annotations:13.0", DependencyScope.TEST)
@@ -129,7 +131,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("app/build/classes/kotlin/jvm/test", false)
             }
             module("app_main") {
-                platform(JvmIdePlatformKind.Platform(JvmTarget.JVM_1_8))
+                platform(JvmPlatforms.jvm18)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains:annotations:13.0", DependencyScope.COMPILE)
@@ -140,7 +142,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 inheritProjectOutput()
             }
             module("app_test") {
-                platform(JvmIdePlatformKind.Platform(JvmTarget.JVM_1_8))
+                platform(JvmPlatforms.jvm18)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains:annotations:13.0", DependencyScope.TEST)
@@ -153,14 +155,14 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
             }
             module("lib")
             module("lib_commonMain") {
-                platform(CommonIdePlatformKind.Platform)
+                platform(CommonPlatforms.defaultCommonPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 sourceFolder("lib/src/commonMain/kotlin", SourceKotlinRootType)
                 sourceFolder("lib/src/commonMain/resources", ResourceKotlinRootType)
                 inheritProjectOutput()
             }
             module("lib_commonTest") {
-                platform(CommonIdePlatformKind.Platform)
+                platform(CommonPlatforms.defaultCommonPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 moduleDependency("lib_commonMain", DependencyScope.TEST)
                 sourceFolder("lib/src/commonTest/kotlin", TestSourceKotlinRootType)
@@ -168,7 +170,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 inheritProjectOutput()
             }
             module("lib_jsMain") {
-                platform(JsIdePlatformKind.Platform)
+                platform(JsPlatforms.defaultJsPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-js:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 moduleDependency("lib_commonMain", DependencyScope.COMPILE)
@@ -177,7 +179,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("lib/build/classes/kotlin/js/main", true)
             }
             module("lib_jsTest") {
-                platform(JsIdePlatformKind.Platform)
+                platform(JsPlatforms.defaultJsPlatform)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-js:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 moduleDependency("lib_commonMain", DependencyScope.TEST)
@@ -188,7 +190,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("lib/build/classes/kotlin/js/test", false)
             }
             module("lib_jvmMain") {
-                platform(JvmIdePlatformKind.Platform(JvmTarget.JVM_1_6))
+                platform(JvmPlatforms.jvm16)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.COMPILE)
                 libraryDependency("Gradle: org.jetbrains:annotations:13.0", DependencyScope.COMPILE)
@@ -198,7 +200,7 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 outputPath("lib/build/classes/kotlin/jvm/main", true)
             }
             module("lib_jvmTest") {
-                platform(JvmIdePlatformKind.Platform(JvmTarget.JVM_1_6))
+                platform(JvmPlatforms.jvm16)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains.kotlin:kotlin-stdlib-common:${kotlinVersion()}", DependencyScope.TEST)
                 libraryDependency("Gradle: org.jetbrains:annotations:13.0", DependencyScope.TEST)
@@ -263,25 +265,25 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
             module("app") {
                 libraryDependency("Gradle: android-android-26", DependencyScope.COMPILE)
                 libraryDependency("Gradle: android.arch.core:common:1.1.0@jar", DependencyScope.COMPILE)
-                libraryDependency("Gradle: android.arch.core:runtime-1.1.0", DependencyScope.COMPILE)
+                libraryDependency("Gradle: android.arch.core:runtime:1.1.0@aar", DependencyScope.COMPILE)
                 libraryDependency("Gradle: android.arch.lifecycle:common:1.1.0@jar", DependencyScope.COMPILE)
-                libraryDependency("Gradle: android.arch.lifecycle:livedata-core-1.1.0", DependencyScope.COMPILE)
-                libraryDependency("Gradle: android.arch.lifecycle:runtime-1.1.0", DependencyScope.COMPILE)
-                libraryDependency("Gradle: android.arch.lifecycle:viewmodel-1.1.0", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support.constraint:constraint-layout-1.1.3", DependencyScope.COMPILE)
+                libraryDependency("Gradle: android.arch.lifecycle:livedata-core:1.1.0@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: android.arch.lifecycle:runtime:1.1.0@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: android.arch.lifecycle:viewmodel:1.1.0@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support.constraint:constraint-layout:1.1.3@aar", DependencyScope.COMPILE)
                 libraryDependency("Gradle: com.android.support.constraint:constraint-layout-solver:1.1.3@jar", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support.test.espresso:espresso-core-3.0.2", DependencyScope.TEST)
-                libraryDependency("Gradle: com.android.support.test.espresso:espresso-idling-resource-3.0.2", DependencyScope.TEST)
-                libraryDependency("Gradle: com.android.support.test:monitor-1.0.2", DependencyScope.TEST)
-                libraryDependency("Gradle: com.android.support.test:runner-1.0.2", DependencyScope.TEST)
-                libraryDependency("Gradle: com.android.support:animated-vector-drawable-27.1.1", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support:appcompat-v7-27.1.1", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support.test.espresso:espresso-core:3.0.2@aar", DependencyScope.TEST)
+                libraryDependency("Gradle: com.android.support.test.espresso:espresso-idling-resource:3.0.2@aar", DependencyScope.TEST)
+                libraryDependency("Gradle: com.android.support.test:monitor:1.0.2@aar", DependencyScope.TEST)
+                libraryDependency("Gradle: com.android.support.test:runner:1.0.2@aar", DependencyScope.TEST)
+                libraryDependency("Gradle: com.android.support:animated-vector-drawable:27.1.1@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support:appcompat-v7:27.1.1@aar", DependencyScope.COMPILE)
                 libraryDependency("Gradle: com.android.support:support-annotations:27.1.1@jar", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support:support-compat-27.1.1", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support:support-core-ui-27.1.1", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support:support-core-utils-27.1.1", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support:support-fragment-27.1.1", DependencyScope.COMPILE)
-                libraryDependency("Gradle: com.android.support:support-vector-drawable-27.1.1", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support:support-compat:27.1.1@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support:support-core-ui:27.1.1@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support:support-core-utils:27.1.1@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support:support-fragment:27.1.1@aar", DependencyScope.COMPILE)
+                libraryDependency("Gradle: com.android.support:support-vector-drawable:27.1.1@aar", DependencyScope.COMPILE)
                 libraryDependency("Gradle: com.google.code.findbugs:jsr305:2.0.1@jar", DependencyScope.TEST)
                 libraryDependency("Gradle: com.squareup:javawriter:2.1.1@jar", DependencyScope.TEST)
                 libraryDependency("Gradle: javax.inject:javax.inject:1@jar", DependencyScope.TEST)
@@ -350,6 +352,46 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 sourceFolder("shared/src/iOSTest/kotlin", TestSourceKotlinRootType)
                 sourceFolder("shared/src/iOSTest/resources", TestResourceKotlinRootType)
             }
+        }
+    }
+
+    @Test
+    fun testTestTasks() {
+        val files = configureByFiles()
+        importProject()
+
+        checkProjectStructure(exhaustiveSourceSourceRootList = false) {
+            module("project")
+            module("common")
+            module("jvm")
+            module("js")
+
+            module("project_commonMain")
+            module("project_commonTest") {
+                moduleDependency("project_commonMain", DependencyScope.TEST)
+            }
+
+            module("project_jvmMain") {
+                moduleDependency("project_commonMain", DependencyScope.COMPILE)
+            }
+
+            module("project_jvmTest") {
+                moduleDependency("project_commonMain", DependencyScope.TEST)
+                moduleDependency("project_commonTest", DependencyScope.TEST)
+                moduleDependency("project_jvmMain", DependencyScope.TEST)
+            }
+        }
+
+        val commonTestFile = files.find { it.path.contains("commonTest") }!!
+        val commonTasks = findTasksToRun(commonTestFile)
+        if (commonTasks != null) {
+            assertEquals(listOf(":cleanJvmTest", ":jvmTest"), commonTasks)
+        }
+
+        val jvmTestFile = files.find { it.path.contains("jvmTest") }!!
+        val jvmTasks = findTasksToRun(jvmTestFile)
+        if (jvmTasks != null) {
+            assertEquals(listOf(":cleanJvmTest", ":jvmTest"), jvmTasks)
         }
     }
 
@@ -479,6 +521,23 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
         }
     }
 
+    @Test
+    fun testDetectAndroidSources() {
+        configureByFiles()
+        createProjectSubFile(
+            "local.properties",
+            "sdk.dir=/${KotlinTestUtils.getAndroidSdkSystemIndependentPath()}"
+        )
+        importProject(true)
+        checkProjectStructure(exhaustiveModuleList = false, exhaustiveDependencyList = false, exhaustiveSourceSourceRootList = false) {
+            module("multiplatformb") {
+                sourceFolder("multiplatformb/src/androidMain/kotlin", JavaSourceRootType.SOURCE)
+
+
+            }
+        }
+    }
+
     /**
      * This test is inherited form testPlatformToCommonExpectedByInComposite and actually tests
      * dependencies in multiplatform project included in composite build
@@ -517,6 +576,197 @@ class NewMultiplatformProjectImportingTest : MultiplePluginVersionGradleImportin
                 moduleDependency("toInclude.jvmMain", DependencyScope.TEST)
             }
         }
+    }
+
+    /**
+     * Test case for issue https://youtrack.jetbrains.com/issue/KT-29757
+     */
+    @Test
+    fun testJavaTransitiveOnMPP() {
+        configureByFiles()
+        importProject(true)
+
+        checkProjectStructure(true, false, true) {
+            module("project") {}
+            module("project.jvm") {}
+            module("project.jvm.main") {
+                moduleDependency("project.mpp-base.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp.commonMain", DependencyScope.COMPILE)
+            }
+            module("project.jvm.test") {
+                moduleDependency("project.jvm.main", DependencyScope.COMPILE)
+                moduleDependency("project.mpp-base.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp.commonMain", DependencyScope.COMPILE)
+            }
+            module("project.mpp") {}
+            module("project.mpp.commonMain") {
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.COMPILE)
+            }
+            module("project.mpp.commonTest") {
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.TEST)
+                moduleDependency("project.mpp.commonMain", DependencyScope.TEST)
+            }
+            module("project.mpp.jvmMain") {
+                moduleDependency("project.mpp.commonMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.COMPILE)
+                moduleDependency("project.mpp-base.jvmMain", DependencyScope.COMPILE)
+            }
+            module("project.mpp.jvmTest") {
+                moduleDependency("project.mpp.commonMain", DependencyScope.TEST)
+                moduleDependency("project.mpp.commonTest", DependencyScope.TEST, true)
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.TEST)
+                moduleDependency("project.mpp-base.jvmMain", DependencyScope.TEST)
+                moduleDependency("project.mpp.jvmMain", DependencyScope.TEST)
+            }
+
+            module("project.mpp-base") {}
+            module("project.mpp-base.commonMain") {}
+            module("project.mpp-base.commonTest") {
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.TEST)
+            }
+            module("project.mpp-base.jvmMain") {
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.COMPILE)
+            }
+            module("project.mpp-base.jvmTest") {
+                moduleDependency("project.mpp-base.commonMain", DependencyScope.TEST)
+                moduleDependency("project.mpp-base.jvmMain", DependencyScope.TEST)
+                moduleDependency("project.mpp-base.commonTest", DependencyScope.TEST, true)
+            }
+        }
+    }
+
+    /**
+     * Test case for issue https://youtrack.jetbrains.com/issue/KT-28822
+     */
+    @Test
+    fun testImportBeforeBuild() {
+        configureByFiles()
+        importProject(true)
+
+        checkProjectStructure(true, false, true) {
+            module("mpp-jardep") {}
+            module("mpp-jardep.java-project") {}
+            module("mpp-jardep.java-project.main") {
+                moduleDependency("mpp-jardep.library1.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library2.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library2.commonMain", DependencyScope.COMPILE)
+
+            }
+            module("mpp-jardep.java-project.test") {
+                moduleDependency("mpp-jardep.java-project.main", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library1.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library2.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library2.commonMain", DependencyScope.COMPILE)
+            }
+
+            module("mpp-jardep.library1") {}
+            module("mpp-jardep.library1.commonMain") {}
+            module("mpp-jardep.library1.commonTest") {
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.TEST)
+
+            }
+            module("mpp-jardep.library1.jvmMain") {
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.COMPILE)
+
+            }
+            module("mpp-jardep.library1.jvmTest") {
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.TEST)
+                moduleDependency("mpp-jardep.library1.commonTest", DependencyScope.TEST, true)
+                moduleDependency("mpp-jardep.library1.jvmMain", DependencyScope.TEST)
+            }
+
+            module("mpp-jardep.library2") {}
+            module("mpp-jardep.library2.commonMain") {}
+            module("mpp-jardep.library2.commonTest") {
+                moduleDependency("mpp-jardep.library2.commonMain", DependencyScope.TEST)
+
+            }
+            module("mpp-jardep.library2.jvmMain") {
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library1.jvmMain", DependencyScope.COMPILE)
+                moduleDependency("mpp-jardep.library2.commonMain", DependencyScope.COMPILE)
+
+            }
+            module("mpp-jardep.library2.jvmTest") {
+                moduleDependency("mpp-jardep.library1.commonMain", DependencyScope.TEST)
+                moduleDependency("mpp-jardep.library1.jvmMain", DependencyScope.TEST)
+                moduleDependency("mpp-jardep.library2.commonMain", DependencyScope.TEST)
+                moduleDependency("mpp-jardep.library2.commonTest", DependencyScope.TEST, true)
+                moduleDependency("mpp-jardep.library2.jvmMain", DependencyScope.TEST)
+            }
+        }
+    }
+
+
+    @Test
+    fun testProductionOnTestFlag() {
+        configureByFiles()
+        importProject(true)
+
+        checkProjectStructure(false, false, false ) {
+            module("project.javaModule.test") {
+                moduleDependency("project.mppModule.jvmTest", DependencyScope.COMPILE, true)
+            }
+        }
+    }
+
+    @Test
+    fun testJvmWithJava() {
+        configureByFiles()
+        importProject(true)
+
+        checkProjectStructure(true, false, true) {
+            module("jvm-on-mpp") {}
+            module("jvm-on-mpp.jvm-mod") {}
+            module("jvm-on-mpp.jvm-mod.main") {
+                moduleDependency("jvm-on-mpp.mpp-mod-a.jvmMain", DependencyScope.COMPILE, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.COMPILE, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.main", DependencyScope.COMPILE, false)
+            }
+            module("jvm-on-mpp.jvm-mod.test") {
+                moduleDependency("jvm-on-mpp.jvm-mod.main", DependencyScope.COMPILE, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.jvmMain", DependencyScope.COMPILE, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.COMPILE, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.main", DependencyScope.COMPILE, false)
+            }
+
+            module("jvm-on-mpp.mpp-mod-a") {
+            }
+            module("jvm-on-mpp.mpp-mod-a.commonMain") {
+            }
+            module("jvm-on-mpp.mpp-mod-a.commonTest") {
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.TEST, false)
+            }
+            module("jvm-on-mpp.mpp-mod-a.jsMain") {
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.COMPILE, false)
+            }
+            module("jvm-on-mpp.mpp-mod-a.jsTest") {
+                moduleDependency("jvm-on-mpp.mpp-mod-a.jsMain", DependencyScope.TEST, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.TEST, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonTest", DependencyScope.TEST, true)
+            }
+            module("jvm-on-mpp.mpp-mod-a.jvmMain") {
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.COMPILE, false)
+            }
+            module("jvm-on-mpp.mpp-mod-a.jvmTest") {
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonMain", DependencyScope.TEST, false)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.commonTest", DependencyScope.TEST, true)
+                moduleDependency("jvm-on-mpp.mpp-mod-a.jvmMain", DependencyScope.TEST, false)
+            }
+
+            //At the moment this is 'fake' source roots and they have no explicit dependencies.
+            module("jvm-on-mpp.mpp-mod-a.main") {
+            }
+            module("jvm-on-mpp.mpp-mod-a.test") {
+            }
+        }
+
     }
 
     private fun checkProjectStructure(

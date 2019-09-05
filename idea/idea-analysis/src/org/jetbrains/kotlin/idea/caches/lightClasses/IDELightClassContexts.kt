@@ -51,6 +51,7 @@ import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getElementTextWithContext
 import org.jetbrains.kotlin.resolve.*
@@ -63,7 +64,8 @@ import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfoFactory
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowValueFactory
 import org.jetbrains.kotlin.resolve.calls.util.CallMaker
 import org.jetbrains.kotlin.resolve.constants.evaluate.ConstantExpressionEvaluator
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
+import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_SYNTHETIC_ANNOTATION_FQ_NAME
+import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatformAnalyzerServices
 import org.jetbrains.kotlin.resolve.lazy.FileScopeProviderImpl
 import org.jetbrains.kotlin.resolve.lazy.ForceResolveUtil
 import org.jetbrains.kotlin.resolve.lazy.ResolveSession
@@ -80,9 +82,9 @@ import org.jetbrains.kotlin.utils.sure
 
 class IDELightClassConstructionContext(
     bindingContext: BindingContext, module: ModuleDescriptor,
-    langaugeVersionSettings: LanguageVersionSettings,
+    languageVersionSettings: LanguageVersionSettings,
     val mode: Mode
-) : LightClassConstructionContext(bindingContext, module, langaugeVersionSettings) {
+) : LightClassConstructionContext(bindingContext, module, languageVersionSettings) {
     enum class Mode {
         LIGHT,
         EXACT
@@ -186,9 +188,13 @@ internal object IDELightClassContexts {
 
         if (isDataClassWithGeneratedMembersOverridden(classOrObject)) return false
 
+        if (isDataClassWhichExtendsOtherClass(classOrObject)) return false
+
         if (hasMembersOverridingInternalMembers(classOrObject)) return false
 
         if (hasSerializationLikeAnnotations(classOrObject)) return false
+
+        if (hasJvmSyntheticMembers(classOrObject)) return false
 
         return classOrObject.declarations.filterIsInstance<KtClassOrObject>().all { isDummyResolveApplicable(it) }
     }
@@ -212,6 +218,12 @@ internal object IDELightClassContexts {
     private fun isSerializableOrSerializerFqName(fqName: FqName?) =
         fqName == KOTLINX_SERIALIZABLE_FQ_NAME || fqName == KOTLINX_SERIALIZER_FQ_NAME
 
+    private fun hasJvmSyntheticMembers(classOrObject: KtClassOrObject) =
+        classOrObject.declarations.filterIsInstance<KtFunction>().any { isJvmSynthetic(it) }
+
+    private fun isJvmSynthetic(fn: KtFunction) =
+        fn.annotationEntries.any { it.shortName == JVM_SYNTHETIC_ANNOTATION_FQ_NAME.shortName() }
+
     private fun hasDelegatedSupertypes(classOrObject: KtClassOrObject) =
         classOrObject.superTypeListEntries.any { it is KtDelegatedSuperTypeEntry }
 
@@ -229,6 +241,11 @@ internal object IDELightClassContexts {
                 name == FunctionsFromAny.HASH_CODE_METHOD_NAME ||
                 name == FunctionsFromAny.TO_STRING_METHOD_NAME ||
                 DataClassDescriptorResolver.isComponentLike(name)
+    }
+
+    private fun isDataClassWhichExtendsOtherClass(classOrObject: KtClassOrObject): Boolean {
+        return classOrObject.hasModifier(KtTokens.DATA_KEYWORD) &&
+                classOrObject.superTypeListEntries.isNotEmpty()
     }
 
     private fun hasMembersOverridingInternalMembers(classOrObject: KtClassOrObject): Boolean {
@@ -307,18 +324,18 @@ internal object IDELightClassContexts {
         moduleDescriptor.setDependencies(moduleDescriptor, moduleDescriptor.builtIns.builtInsModule)
 
         val moduleInfo = files.first().getModuleInfo()
-        val container = createContainer("LightClassStub", JvmPlatform) {
-            val jvmTarget = IDELanguageSettingsProvider.getTargetPlatform(moduleInfo, project) as? JvmTarget
+        val container = createContainer("LightClassStub", JvmPlatformAnalyzerServices) {
+            val jvmTarget = IDELanguageSettingsProvider.getTargetPlatform(moduleInfo, project) as? JvmTarget ?: JvmTarget.DEFAULT
             configureModule(
-                ModuleContext(moduleDescriptor, project), JvmPlatform,
-                jvmTarget ?: JvmTarget.DEFAULT, trace
+                ModuleContext(moduleDescriptor, project, "ad hoc resolve"), JvmPlatforms.jvmPlatformByTargetVersion(jvmTarget),
+                JvmPlatformAnalyzerServices, trace,
+                IDELanguageSettingsProvider.getLanguageVersionSettings(moduleInfo, project)
             )
 
             useInstance(GlobalSearchScope.EMPTY_SCOPE)
             useInstance(LookupTracker.DO_NOTHING)
             useInstance(ExpectActualTracker.DoNothing)
             useImpl<FileScopeProviderImpl>()
-            useInstance(IDELanguageSettingsProvider.getLanguageVersionSettings(moduleInfo, project))
             useInstance(FileBasedDeclarationProviderFactory(sm, files))
 
             useInstance(CodegenAffectingAnnotations(realWorldModule))

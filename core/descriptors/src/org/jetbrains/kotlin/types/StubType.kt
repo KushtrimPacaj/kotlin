@@ -1,12 +1,15 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.types
 
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner
+import org.jetbrains.kotlin.types.model.StubTypeMarker
+import org.jetbrains.kotlin.types.refinement.TypeRefinement
 
 // This type is used as a stub for postponed type variables, which are important for coroutine inference
 class StubType(
@@ -16,7 +19,7 @@ class StubType(
         ErrorUtils.createErrorTypeConstructor("Constructor for non fixed type: $originalTypeVariable"),
     override val memberScope: MemberScope =
         ErrorUtils.createErrorScope("Scope for non fixed type: $originalTypeVariable")
-) : SimpleType() {
+) : SimpleType(), StubTypeMarker {
 
     override val arguments: List<TypeProjection>
         get() = emptyList()
@@ -24,9 +27,7 @@ class StubType(
     override val annotations: Annotations
         get() = Annotations.EMPTY
 
-    override fun replaceAnnotations(newAnnotations: Annotations): SimpleType {
-        error("Shouldn't be called on non-fixed type")
-    }
+    override fun replaceAnnotations(newAnnotations: Annotations): SimpleType = this
 
     override fun makeNullableAsSpecified(newNullability: Boolean): SimpleType {
         return if (newNullability == isMarkedNullable)
@@ -38,4 +39,7 @@ class StubType(
     override fun toString(): String {
         return "NonFixed: $originalTypeVariable"
     }
+
+    @TypeRefinement
+    override fun refine(kotlinTypeRefiner: KotlinTypeRefiner) = this
 }

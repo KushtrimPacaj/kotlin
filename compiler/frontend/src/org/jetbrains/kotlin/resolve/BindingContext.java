@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve;
@@ -168,9 +168,10 @@ public interface BindingContext {
      * Has type of current expression has been already resolved
      */
     WritableSlice<KtExpression, Boolean> PROCESSED = Slices.createSimpleSlice();
+    // Please do not use this slice (USED_AS_EXPRESSION) directly,
+    // use extension element.isUsedAsExpression() instead
     WritableSlice<KtElement, Boolean> USED_AS_EXPRESSION = Slices.createSimpleSetSlice();
     WritableSlice<KtElement, Boolean> USED_AS_RESULT_OF_LAMBDA = Slices.createSimpleSetSlice();
-    WritableSlice<KtElement, Boolean> UNREACHABLE_CODE = Slices.createSimpleSetSlice();
 
     WritableSlice<VariableDescriptor, CaptureKind> CAPTURED_IN_CLOSURE = new BasicWritableSlice<>(DO_NOTHING);
     WritableSlice<KtDeclaration, PreliminaryDeclarationVisitor> PRELIMINARY_VISITOR = new BasicWritableSlice<>(DO_NOTHING);

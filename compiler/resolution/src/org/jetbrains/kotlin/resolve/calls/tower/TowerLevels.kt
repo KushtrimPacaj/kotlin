@@ -23,10 +23,7 @@ import org.jetbrains.kotlin.resolve.calls.smartcasts.getReceiverValueWithSmartCa
 import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForObject
 import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForTypeAliasObject
 import org.jetbrains.kotlin.resolve.calls.util.isLowPriorityFromStdlibJre7Or8
-import org.jetbrains.kotlin.resolve.descriptorUtil.HIDES_MEMBERS_NAME_LIST
-import org.jetbrains.kotlin.resolve.descriptorUtil.hasClassValueDescriptor
-import org.jetbrains.kotlin.resolve.descriptorUtil.hasHidesMembersAnnotation
-import org.jetbrains.kotlin.resolve.descriptorUtil.hasLowPriorityInOverloadResolution
+import org.jetbrains.kotlin.resolve.descriptorUtil.*
 import org.jetbrains.kotlin.resolve.scopes.*
 import org.jetbrains.kotlin.resolve.scopes.receivers.CastImplicitClassReceiver
 import org.jetbrains.kotlin.resolve.scopes.receivers.ImplicitClassReceiver
@@ -63,7 +60,7 @@ internal abstract class AbstractScopeTowerLevel(
             }
             if (dispatchReceiverSmartCastType != null) diagnostics.add(UsedSmartCastForDispatchReceiver(dispatchReceiverSmartCastType))
 
-            val shouldSkipVisibilityCheck = scopeTower.isDebuggerContext || scopeTower.isNewInferenceEnabled
+            val shouldSkipVisibilityCheck = scopeTower.isNewInferenceEnabled
             if (!shouldSkipVisibilityCheck) {
                 Visibilities.findInvisibleMember(
                     getReceiverValueWithSmartCast(dispatchReceiver?.receiverValue, dispatchReceiverSmartCastType),
@@ -86,6 +83,7 @@ internal class MemberScopeTowerLevel(
 
     private val syntheticScopes = scopeTower.syntheticScopes
     private val isNewInferenceEnabled = scopeTower.isNewInferenceEnabled
+    private val typeApproximator = scopeTower.typeApproximator
 
     private fun collectMembers(
         getMembers: ResolutionScope.(KotlinType?) -> Collection<CallableDescriptor>
@@ -111,9 +109,11 @@ internal class MemberScopeTowerLevel(
 
         if (dispatchReceiver.possibleTypes.isNotEmpty()) {
             if (unstableCandidates == null) {
-                result.retainAll(result.selectMostSpecificInEachOverridableGroup { descriptor.approximateCapturedTypes() })
+                result.retainAll(result.selectMostSpecificInEachOverridableGroup { descriptor.approximateCapturedTypes(typeApproximator) })
             } else {
-                result.addAll(unstableCandidates.selectMostSpecificInEachOverridableGroup { descriptor.approximateCapturedTypes() })
+                result.addAll(
+                    unstableCandidates.selectMostSpecificInEachOverridableGroup { descriptor.approximateCapturedTypes(typeApproximator) }
+                )
             }
         }
 
@@ -132,10 +132,9 @@ internal class MemberScopeTowerLevel(
      * So method get has signature get(Int): Capture(*). If we also have smartcast to MutableList<String>, then there is also method get(Int): String.
      * And we should chose get(Int): String.
      */
-    private fun CallableDescriptor.approximateCapturedTypes(): CallableDescriptor {
+    private fun CallableDescriptor.approximateCapturedTypes(approximator: TypeApproximator): CallableDescriptor {
         if (!isNewInferenceEnabled) return this
 
-        val approximator = TypeApproximator()
         val wrappedSubstitution = object : TypeSubstitution() {
             override fun get(key: KotlinType): TypeProjection? = null
             override fun prepareTopLevelType(topLevelType: KotlinType, position: Variance) = when (position) {

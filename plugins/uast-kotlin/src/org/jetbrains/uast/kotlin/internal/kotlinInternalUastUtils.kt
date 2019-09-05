@@ -40,6 +40,8 @@ import org.jetbrains.kotlin.load.java.sam.SamConstructorDescriptor
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinaryPackageSourceElement
 import org.jetbrains.kotlin.load.kotlin.TypeMappingMode
 import org.jetbrains.kotlin.metadata.ProtoBuf
+import org.jetbrains.kotlin.metadata.deserialization.getExtensionOrNull
+import org.jetbrains.kotlin.metadata.jvm.JvmProtoBuf
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.psi.*
@@ -48,7 +50,10 @@ import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
+import org.jetbrains.kotlin.resolve.calls.inference.model.TypeVariableTypeConstructor
 import org.jetbrains.kotlin.resolve.calls.model.ArgumentMatch
+import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
+import org.jetbrains.kotlin.resolve.calls.tower.NewResolvedCallImpl
 import org.jetbrains.kotlin.resolve.constants.IntegerLiteralTypeConstructor
 import org.jetbrains.kotlin.resolve.constants.IntegerValueTypeConstructor
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
@@ -57,6 +62,8 @@ import org.jetbrains.kotlin.serialization.deserialization.descriptors.Deserializ
 import org.jetbrains.kotlin.synthetic.SamAdapterExtensionFunctionDescriptor
 import org.jetbrains.kotlin.type.MapPsiToAsmDesc
 import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.typeUtil.builtIns
+import org.jetbrains.kotlin.types.typeUtil.contains
 import org.jetbrains.kotlin.types.typeUtil.isInterface
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import org.jetbrains.uast.*
@@ -95,7 +102,7 @@ internal fun resolveSource(context: KtElement, descriptor: DeclarationDescriptor
     return when (source) {
         is KtFunction -> LightClassUtil.getLightClassMethod(source)
         is PsiMethod -> source
-        null -> resolveDeserialized(context, descriptor)
+        null -> resolveDeserialized(context, descriptor) as? PsiMethod
         else -> null
     }
 }
@@ -127,7 +134,11 @@ internal fun resolveToPsiClass(uElement: UElement, declarationDescriptor: Declar
     }?.toPsiType(uElement, context, true).let { PsiTypesUtil.getPsiClass(it) }
 
 
-private fun resolveDeserialized(context: KtElement, descriptor: DeclarationDescriptor): PsiMethod? {
+internal fun resolveDeserialized(
+    context: KtElement,
+    descriptor: DeclarationDescriptor,
+    accessHint: ReferenceAccess? = null
+): PsiModifierListOwner? {
     if (descriptor !is DeserializedCallableMemberDescriptor) return null
 
     val psiClass = resolveContainingDeserializedClass(context, descriptor) ?: return null
@@ -138,11 +149,10 @@ private fun resolveDeserialized(context: KtElement, descriptor: DeclarationDescr
 
     return when (proto) {
         is ProtoBuf.Function -> {
-            val signature = JvmProtoBufUtil.getJvmMethodSignature(proto, nameResolver, typeTable)
-                ?: getMethodSignatureFromDescriptor(context, descriptor)
-                ?: return null
-
-            psiClass.methods.firstOrNull { it.name == signature.name && it.matchesDesc(signature.desc) }
+            psiClass.getMethodBySignature(
+                JvmProtoBufUtil.getJvmMethodSignature(proto, nameResolver, typeTable)
+                    ?: getMethodSignatureFromDescriptor(context, descriptor)
+            )
         }
         is ProtoBuf.Constructor -> {
             val signature = JvmProtoBufUtil.getJvmConstructorSignature(proto, nameResolver, typeTable)
@@ -151,9 +161,48 @@ private fun resolveDeserialized(context: KtElement, descriptor: DeclarationDescr
 
             psiClass.constructors.firstOrNull { it.matchesDesc(signature.desc) }
         }
+        is ProtoBuf.Property -> {
+            JvmProtoBufUtil.getJvmFieldSignature(proto, nameResolver, typeTable, false)
+                ?.let { signature -> psiClass.fields.firstOrNull { it.name == signature.name } }
+                ?.let { return it }
+
+            val propertySignature = proto.getExtensionOrNull(JvmProtoBuf.propertySignature)
+            if (propertySignature != null) {
+                with(propertySignature) {
+                    when {
+                        hasGetter() && accessHint?.isRead != false -> getter
+                        hasSetter() && accessHint?.isWrite != false -> setter
+                        else -> null // it should have been handled by the previous case
+                    }
+                }?.let { methodSignature ->
+                    psiClass.getMethodBySignature(
+                        nameResolver.getString(methodSignature.name),
+                        if (methodSignature.hasDesc()) nameResolver.getString(methodSignature.desc) else null
+                    )
+                }?.let { return it }
+
+            } else if (proto.hasName()) {
+                // Property without a Property signature, looks like a @JvmField
+                val name = nameResolver.getString(proto.name)
+                psiClass.fields
+                    .firstOrNull { it.name == name }
+                    ?.let { return it }
+            }
+
+            getMethodSignatureFromDescriptor(context, descriptor)
+                ?.let { signature -> psiClass.getMethodBySignature(signature) }
+                ?.let { return it }
+        }
         else -> null
     }
 }
+
+private fun PsiClass.getMethodBySignature(methodSignature: JvmMemberSignature?) = methodSignature?.let { signature ->
+    getMethodBySignature(signature.name, signature.desc)
+}
+
+private fun PsiClass.getMethodBySignature(name: String, descr: String?) =
+    methods.firstOrNull { method -> method.name == name && descr?.let { method.matchesDesc(it) } ?: true }
 
 private fun PsiMethod.matchesDesc(desc: String) = desc == buildString {
     parameterList.parameters.joinTo(this, separator = "", prefix = "(", postfix = ")") { MapPsiToAsmDesc.typeDesc(it.type) }
@@ -178,13 +227,17 @@ private fun getMethodSignatureFromDescriptor(context: KtElement, descriptor: Cal
 internal fun <T> lz(initializer: () -> T) = lazy(LazyThreadSafetyMode.SYNCHRONIZED, initializer)
 
 internal fun KotlinType.toPsiType(source: UElement, element: KtElement, boxed: Boolean): PsiType =
-    toPsiType(source.getParentOfType<UDeclaration>(false)?.psi, element, boxed)
+    toPsiType(source.getParentOfType<UDeclaration>(false)?.javaPsi as? PsiModifierListOwner, element, boxed)
 
 internal fun KotlinType.toPsiType(lightDeclaration: PsiModifierListOwner?, context: KtElement, boxed: Boolean): PsiType {
     if (this.isError) return UastErrorType
 
     (constructor.declarationDescriptor as? TypeAliasDescriptor)?.let { typeAlias ->
         return typeAlias.expandedType.toPsiType(lightDeclaration, context, boxed)
+    }
+
+    if (contains { type -> type.constructor is TypeVariableTypeConstructor }) {
+        return UastErrorType
     }
 
     (constructor.declarationDescriptor as? TypeParameterDescriptor)?.let { typeParameter ->
@@ -232,7 +285,7 @@ internal fun KotlinType.toPsiType(lightDeclaration: PsiModifierListOwner?, conte
 
     val signatureWriter = BothSignatureWriter(BothSignatureWriter.Mode.TYPE)
     val typeMappingMode = if (boxed) TypeMappingMode.GENERIC_ARGUMENT else TypeMappingMode.DEFAULT
-    val approximatedType = TypeApproximator().approximateDeclarationType(this, true, languageVersionSettings)
+    val approximatedType = TypeApproximator(this.builtIns).approximateDeclarationType(this, true, languageVersionSettings)
     typeMapper.mapType(approximatedType, signatureWriter, typeMappingMode)
 
     val signature = StringCharacterIterator(signatureWriter.toString())
@@ -318,7 +371,7 @@ internal fun KtElement.analyze(): BindingContext {
 }
 
 internal inline fun <reified T : UDeclaration, reified P : PsiElement> unwrap(element: P): P {
-    val unwrapped = if (element is T) element.psi else element
+    val unwrapped = if (element is T) element.javaPsi else element
     assert(unwrapped !is UElement)
     return unwrapped as P
 }
@@ -336,25 +389,53 @@ internal fun KotlinType.getFunctionalInterfaceType(source: UElement, element: Kt
     takeIf { it.isInterface() && !it.isBuiltinFunctionalTypeOrSubtype }?.toPsiType(source, element, false)
 
 internal fun KotlinULambdaExpression.getFunctionalInterfaceType(): PsiType? {
-    val parent = psi.parent
-    if (parent is KtBinaryExpressionWithTypeRHS) return parent.right?.getType()?.getFunctionalInterfaceType(this, psi)
+    val parent = sourcePsi.parent
+    if (parent is KtBinaryExpressionWithTypeRHS) return parent.right?.getType()?.getFunctionalInterfaceType(this, sourcePsi)
     if (parent is KtValueArgument) run {
         val callExpression = parent.parents.take(2).firstIsInstanceOrNull<KtCallExpression>() ?: return@run
         val resolvedCall = callExpression.getResolvedCall(callExpression.analyze()) ?: return@run
+
+        // NewResolvedCallImpl can be used as a marker meaning that this code is working under *new* inference
+        if (resolvedCall is NewResolvedCallImpl) {
+            val samConvertedArgument = resolvedCall.getExpectedTypeForSamConvertedArgument(parent)
+
+            // Same as if in old inference we would get SamDescriptor
+            if (samConvertedArgument != null) {
+                val type = getTypeByArgument(resolvedCall, resolvedCall.candidateDescriptor, parent) ?: return@run
+                return type.getFunctionalInterfaceType(this, sourcePsi)
+            }
+        }
+
         val candidateDescriptor = resolvedCall.candidateDescriptor as? SyntheticMemberDescriptor<*> ?: return@run
         when (candidateDescriptor) {
-            is SamConstructorDescriptor -> return candidateDescriptor.returnType?.getFunctionalInterfaceType(this, psi)
+            is SamConstructorDescriptor -> return candidateDescriptor.returnType?.getFunctionalInterfaceType(this, sourcePsi)
             is SamAdapterDescriptor<*>, is SamAdapterExtensionFunctionDescriptor -> {
-                val index = (resolvedCall.getArgumentMapping(parent) as? ArgumentMatch)?.valueParameter?.index ?: return@run
                 val functionDescriptor = candidateDescriptor.baseDescriptorForSynthetic as? FunctionDescriptor ?: return@run
-                val parameterDescriptor = functionDescriptor.valueParameters.getOrNull(index) ?: return@run
-                return parameterDescriptor.type.getFunctionalInterfaceType(this, psi)
+
+                val type = getTypeByArgument(resolvedCall, functionDescriptor, parent) ?: return@run
+                return type.getFunctionalInterfaceType(this, sourcePsi)
             }
         }
     }
-    return psi.getExpectedType()?.getFunctionalInterfaceType(this, psi)
+    return sourcePsi.getExpectedType()?.getFunctionalInterfaceType(this, sourcePsi)
+}
+
+private fun getTypeByArgument(
+    resolvedCall: ResolvedCall<*>,
+    descriptor: CallableDescriptor,
+    argument: ValueArgument
+): KotlinType? {
+    val index = (resolvedCall.getArgumentMapping(argument) as? ArgumentMatch)?.valueParameter?.index ?: return null
+    val parameterDescriptor = descriptor.valueParameters.getOrNull(index) ?: return null
+
+    return parameterDescriptor.type
 }
 
 internal fun unwrapFakeFileForLightClass(file: PsiFile): PsiFile = (file as? FakeFileForLightClass)?.ktFile ?: file
+
+// mb merge with org.jetbrains.kotlin.idea.references.ReferenceAccess ?
+internal enum class ReferenceAccess(val isRead: Boolean, val isWrite: Boolean) {
+    READ(true, false), WRITE(false, true), READ_WRITE(true, true)
+}
 
 

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.js.test.semantics;
@@ -37,6 +37,11 @@ public class SourceMapGenerationSmokeTestGenerated extends AbstractSourceMapGene
     @TestMetadata("emptyIfInsideInlineLambda.kt")
     public void testEmptyIfInsideInlineLambda() throws Exception {
         runTest("js/js.translator/testData/sourcemap/emptyIfInsideInlineLambda.kt");
+    }
+
+    @TestMetadata("expressionBody.kt")
+    public void testExpressionBody() throws Exception {
+        runTest("js/js.translator/testData/sourcemap/expressionBody.kt");
     }
 
     @TestMetadata("methodCallInMethod.kt")

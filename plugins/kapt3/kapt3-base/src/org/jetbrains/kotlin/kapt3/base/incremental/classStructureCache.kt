@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt3.base.incremental
@@ -51,6 +51,12 @@ class JavaClassCache() : Serializable {
                 dependants.add(sourceInfo.sourceFile)
                 dependencyCache[mentionedType] = dependants
             }
+            // Treat referred constants as ABI dependencies until we start supporting per-constant classpath updates.
+            for (mentionedConstants in sourceInfo.getMentionedConstants().keys) {
+                val dependants = dependencyCache[mentionedConstants] ?: mutableSetOf()
+                dependants.add(sourceInfo.sourceFile)
+                dependencyCache[mentionedConstants] = dependants
+            }
         }
         nonTransitiveCache = HashMap(sourceCache.size * 2)
         for (sourceInfo in sourceCache.values) {
@@ -67,7 +73,7 @@ class JavaClassCache() : Serializable {
         output.writeObject(generatedTypes)
     }
 
-    fun isAlreadyProcessed(sourceFile: URI) = sourceCache.containsKey(sourceFile)
+    fun isAlreadyProcessed(sourceFile: URI) = sourceCache.containsKey(sourceFile) || generatedTypes.containsKey(File(sourceFile))
 
     /** Used for testing only. */
     internal fun getStructure(sourceFile: File) = sourceCache[sourceFile.toURI()]
@@ -78,18 +84,19 @@ class JavaClassCache() : Serializable {
      * */
     fun invalidateEntriesForChangedFiles(changes: Changes): SourcesToReprocess {
         val allDirtyFiles = mutableSetOf<URI>()
-        var currentDirtyFiles = changes.sourceChanges.map { it.toURI() }
-        val allDirtyTypes = mutableSetOf<String>()
+        var currentDirtyFiles = changes.sourceChanges.map { it.toURI() }.toMutableSet()
 
-        // check for constants first because they cause full rebuilt
-        for (sourceChange in currentDirtyFiles) {
-            val structure = sourceCache[sourceChange] ?: continue
-            if (structure.getDefinedConstants().isNotEmpty()) {
-                // TODO(gavra): compare constant values, and only full rebuild if the value changes
-                invalidateAll()
-                return SourcesToReprocess.FullRebuild
+        for (classpathFqName in changes.dirtyFqNamesFromClasspath) {
+            nonTransitiveCache[classpathFqName]?.let {
+                allDirtyFiles.addAll(it)
+            }
+
+            dependencyCache[classpathFqName]?.let {
+                currentDirtyFiles.addAll(it)
             }
         }
+
+        val allDirtyTypes = mutableSetOf<String>()
 
         while (currentDirtyFiles.isNotEmpty()) {
 
@@ -112,7 +119,7 @@ class JavaClassCache() : Serializable {
                 }
             }
 
-            currentDirtyFiles = nextRound.filter { !allDirtyFiles.contains(it) }
+            currentDirtyFiles = nextRound.filter { !allDirtyFiles.contains(it) }.toMutableSet()
         }
 
         return SourcesToReprocess.Incremental(allDirtyFiles.map { File(it) }, allDirtyTypes)
@@ -159,14 +166,14 @@ class SourceFileStructure(
     private val mentionedTypes: MutableSet<String> = mutableSetOf()
     private val privateTypes: MutableSet<String> = mutableSetOf()
 
-    private val definedConstants: MutableMap<String, Any> = mutableMapOf()
     private val mentionedAnnotations: MutableSet<String> = mutableSetOf()
+    private val mentionedConstants: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
     fun getDeclaredTypes(): Set<String> = declaredTypes
     fun getMentionedTypes(): Set<String> = mentionedTypes
     fun getPrivateTypes(): Set<String> = privateTypes
-    fun getDefinedConstants(): Map<String, Any> = definedConstants
     fun getMentionedAnnotations(): Set<String> = mentionedAnnotations
+    fun getMentionedConstants(): Map<String, Set<String>> = mentionedConstants
 
     fun addDeclaredType(declaredType: String) {
         declaredTypes.add(declaredType)
@@ -178,16 +185,18 @@ class SourceFileStructure(
         }
     }
 
-    fun addDefinedConstant(name: String, value: Any) {
-        definedConstants[name] = value
-    }
-
     fun addMentionedAnnotations(name: String) {
         mentionedAnnotations.add(name)
     }
 
     fun addPrivateType(name: String) {
         privateTypes.add(name)
+    }
+
+    fun addMentionedConstant(containingClass: String, name: String) {
+        if (!declaredTypes.contains(containingClass)) {
+            mentionedConstants.getOrPut(containingClass) { HashSet() }.add(name)
+        }
     }
 }
 

@@ -25,7 +25,7 @@ import com.intellij.psi.*
 import com.intellij.psi.search.SearchScope
 import com.intellij.psi.search.searches.DirectClassInheritorsSearch
 import com.intellij.psi.search.searches.OverridingMethodsSearch
-import com.intellij.refactoring.JavaRefactoringSettings
+import org.jetbrains.kotlin.idea.refactoring.KotlinRefactoringSettings
 import com.intellij.refactoring.listeners.RefactoringElementListener
 import com.intellij.refactoring.rename.RenameProcessor
 import com.intellij.refactoring.util.MoveRenameUsageInfo
@@ -44,6 +44,7 @@ import org.jetbrains.kotlin.descriptors.PropertyDescriptor
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
 import org.jetbrains.kotlin.descriptors.VariableDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
+import org.jetbrains.kotlin.idea.caches.resolve.getResolutionFacade
 import org.jetbrains.kotlin.idea.caches.resolve.unsafeResolveToDescriptor
 import org.jetbrains.kotlin.idea.core.getDeepestSuperDeclarations
 import org.jetbrains.kotlin.idea.core.isEnumCompanionPropertyWithEntryConflict
@@ -77,16 +78,16 @@ class RenameKotlinPropertyProcessor : RenameKotlinPsiProcessor() {
         return namedUnwrappedElement is KtProperty || (namedUnwrappedElement is KtParameter && namedUnwrappedElement.hasValOrVar())
     }
 
-    override fun isToSearchInComments(psiElement: PsiElement) = JavaRefactoringSettings.getInstance().RENAME_SEARCH_IN_COMMENTS_FOR_FIELD
+    override fun isToSearchInComments(psiElement: PsiElement) = KotlinRefactoringSettings.instance.RENAME_SEARCH_IN_COMMENTS_FOR_FIELD
 
     override fun setToSearchInComments(element: PsiElement, enabled: Boolean) {
-        JavaRefactoringSettings.getInstance().RENAME_SEARCH_IN_COMMENTS_FOR_FIELD = enabled
+        KotlinRefactoringSettings.instance.RENAME_SEARCH_IN_COMMENTS_FOR_FIELD = enabled
     }
 
-    override fun isToSearchForTextOccurrences(element: PsiElement) = JavaRefactoringSettings.getInstance().RENAME_SEARCH_FOR_TEXT_FOR_FIELD
+    override fun isToSearchForTextOccurrences(element: PsiElement) = KotlinRefactoringSettings.instance.RENAME_SEARCH_FOR_TEXT_FOR_FIELD
 
     override fun setToSearchForTextOccurrences(element: PsiElement, enabled: Boolean) {
-        JavaRefactoringSettings.getInstance().RENAME_SEARCH_FOR_TEXT_FOR_FIELD = enabled
+        KotlinRefactoringSettings.instance.RENAME_SEARCH_FOR_TEXT_FOR_FIELD = enabled
     }
 
     private fun getJvmNames(element: PsiElement): Pair<String?, String?> {
@@ -204,10 +205,11 @@ class RenameKotlinPropertyProcessor : RenameKotlinPsiProcessor() {
             result: MutableList<UsageInfo>
     ) {
         val declaration = element.namedUnwrappedElement as? KtNamedDeclaration ?: return
-        val descriptor = declaration.unsafeResolveToDescriptor() as VariableDescriptor
+        val resolutionFacade = declaration.getResolutionFacade()
+        val descriptor = declaration.unsafeResolveToDescriptor(resolutionFacade) as VariableDescriptor
 
         val collisions = SmartList<UsageInfo>()
-        checkRedeclarations(descriptor, newName, collisions)
+        checkRedeclarations(declaration, newName, collisions, resolutionFacade, descriptor)
         checkAccidentalOverrides(declaration, newName, descriptor, collisions)
         checkOriginalUsagesRetargeting(declaration, newName, result, collisions)
         checkNewNameUsagesRetargeting(declaration, newName, collisions)

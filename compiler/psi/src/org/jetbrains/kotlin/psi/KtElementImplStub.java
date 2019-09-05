@@ -20,7 +20,6 @@ import com.intellij.extapi.psi.StubBasedPsiElementBase;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
 import com.intellij.psi.*;
-import com.intellij.psi.impl.source.resolve.reference.ReferenceProvidersRegistry;
 import com.intellij.psi.stubs.IStubElementType;
 import com.intellij.psi.stubs.StubElement;
 import com.intellij.util.IncorrectOperationException;
@@ -68,7 +67,8 @@ public class KtElementImplStub<T extends StubElement<?>> extends StubBasedPsiEle
     @Override
     public KtFile getContainingKtFile() {
         PsiFile file = getContainingFile();
-        if(!(file instanceof KtFile))  {
+        if (!(file instanceof KtFile)) {
+            // KtElementImpl.copy() might be the reason for this exception
             String fileString = file.isValid() ? file.getText() : "";
             throw new IllegalStateException("KtElement not inside KtFile: " + file + fileString +
                                             "for element " + this + " of type " + this.getClass() + " node = " + getNode());
@@ -109,7 +109,7 @@ public class KtElementImplStub<T extends StubElement<?>> extends StubBasedPsiEle
     @NotNull
     @Override
     public PsiReference[] getReferences() {
-        return ReferenceProvidersRegistry.getReferencesFromProviders(this, PsiReferenceService.Hints.NO_HINTS);
+        return KotlinReferenceProvidersService.getReferencesFromProviders(this);
     }
 
     @NotNull

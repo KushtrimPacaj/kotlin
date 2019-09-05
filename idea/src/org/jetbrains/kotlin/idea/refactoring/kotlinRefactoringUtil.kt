@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.refactoring
@@ -25,17 +25,12 @@ import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.JavaProjectRootsUtil
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.ui.popup.JBPopup
-import com.intellij.openapi.ui.popup.JBPopupAdapter
-import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.ui.popup.LightweightWindowEvent
+import com.intellij.openapi.ui.popup.*
 import com.intellij.openapi.util.Pass
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.util.text.StringUtil
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.*
 import com.intellij.psi.impl.file.PsiPackageBase
@@ -74,16 +69,17 @@ import org.jetbrains.kotlin.idea.caches.resolve.util.getJavaMemberDescriptor
 import org.jetbrains.kotlin.idea.codeInsight.DescriptorToSourceUtilsIde
 import org.jetbrains.kotlin.idea.core.*
 import org.jetbrains.kotlin.idea.core.util.showYesNoCancelDialog
-import org.jetbrains.kotlin.idea.j2k.IdeaJavaToKotlinServices
 import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.idea.refactoring.changeSignature.KotlinValVar
 import org.jetbrains.kotlin.idea.refactoring.changeSignature.toValVar
 import org.jetbrains.kotlin.idea.refactoring.memberInfo.KtPsiClassWrapper
 import org.jetbrains.kotlin.idea.refactoring.rename.canonicalRender
-import org.jetbrains.kotlin.idea.util.*
+import org.jetbrains.kotlin.idea.roots.isOutsideKotlinAwareSourceRoot
+import org.jetbrains.kotlin.idea.util.IdeDescriptorRenderers
+import org.jetbrains.kotlin.idea.util.ProjectRootsUtil
+import org.jetbrains.kotlin.idea.util.actualsForExpected
+import org.jetbrains.kotlin.idea.util.liftToExpected
 import org.jetbrains.kotlin.idea.util.string.collapseSpaces
-import org.jetbrains.kotlin.j2k.ConverterSettings
-import org.jetbrains.kotlin.j2k.JavaToKotlinConverter
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
@@ -95,10 +91,14 @@ import org.jetbrains.kotlin.resolve.calls.callUtil.getCallWithAssert
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.resolve.scopes.receivers.ImplicitReceiver
 import org.jetbrains.kotlin.resolve.source.getPsi
-import java.io.File
 import java.lang.annotation.Retention
 import java.util.*
 import javax.swing.Icon
+import kotlin.math.min
+
+import org.jetbrains.kotlin.idea.core.util.getLineCount as newGetLineCount
+import org.jetbrains.kotlin.idea.core.util.toPsiDirectory as newToPsiDirectory
+import org.jetbrains.kotlin.idea.core.util.toPsiFile as newToPsiFile
 
 const val CHECK_SUPER_METHODS_YES_NO_DIALOG = "CHECK_SUPER_METHODS_YES_NO_DIALOG"
 
@@ -106,14 +106,14 @@ const val CHECK_SUPER_METHODS_YES_NO_DIALOG = "CHECK_SUPER_METHODS_YES_NO_DIALOG
 fun getOrCreateKotlinFile(
     fileName: String,
     targetDir: PsiDirectory,
-    packageName: String? = targetDir.getPackage()?.qualifiedName
+    packageName: String? = targetDir.getFqNameWithImplicitPrefix()?.asString()
 ): KtFile? =
     (targetDir.findFile(fileName) ?: createKotlinFile(fileName, targetDir, packageName)) as? KtFile
 
 fun createKotlinFile(
     fileName: String,
     targetDir: PsiDirectory,
-    packageName: String? = targetDir.getPackage()?.qualifiedName
+    packageName: String? = targetDir.getFqNameWithImplicitPrefix()?.asString()
 ): KtFile {
     targetDir.checkCreateFile(fileName)
     val packageFqName = packageName?.let(::FqName) ?: FqName.ROOT
@@ -123,21 +123,6 @@ fun createKotlinFile(
 
     return targetDir.add(file) as KtFile
 }
-
-fun File.toVirtualFile(): VirtualFile? = LocalFileSystem.getInstance().findFileByIoFile(this)
-
-fun File.toPsiFile(project: Project): PsiFile? = toVirtualFile()?.toPsiFile(project)
-
-fun File.toPsiDirectory(project: Project): PsiDirectory? {
-    return toVirtualFile()?.let { vfile -> PsiManager.getInstance(project).findDirectory(vfile) }
-}
-
-fun VirtualFile.toPsiFile(project: Project): PsiFile? = PsiManager.getInstance(project).findFile(this)
-
-fun VirtualFile.toPsiDirectory(project: Project): PsiDirectory? = PsiManager.getInstance(project).findDirectory(this)
-
-fun VirtualFile.toPsiFileOrDirectory(project: Project): PsiFileSystemItem? =
-    if (isDirectory) toPsiDirectory(project) else toPsiFile(project)
 
 fun PsiElement.getUsageContext(): PsiElement {
     return when (this) {
@@ -153,8 +138,8 @@ fun PsiElement.getUsageContext(): PsiElement {
     }
 }
 
-fun PsiElement.isInJavaSourceRoot(): Boolean =
-    !JavaProjectRootsUtil.isOutsideJavaSourceRoot(containingFile)
+fun PsiElement.isInKotlinAwareSourceRoot(): Boolean =
+    !isOutsideKotlinAwareSourceRoot(containingFile)
 
 fun KtFile.createTempCopy(text: String? = null): KtFile {
     val tmpFile = KtPsiFactory(this).createAnalyzableFile(name, text ?: this.text ?: "", this)
@@ -271,7 +256,7 @@ fun <T, E : PsiElement> getPsiElementPopup(
         }
     }
 
-    return with(PopupChooserBuilderWrapper<E>(list)) {
+    return with(PopupChooserBuilder<E>(list)) {
         title?.let { setTitle(it) }
         renderer.installSpeedSearch(this, true)
         setItemChoosenCallback {
@@ -323,6 +308,11 @@ class SelectionAwareScopeHighlighter(val editor: Editor) {
     }
 }
 
+@Deprecated(
+    "Use org.jetbrains.kotlin.idea.core.util.getLineStartOffset() instead",
+    ReplaceWith("this.getLineStartOffset(line)", "org.jetbrains.kotlin.idea.core.util.getLineStartOffset"),
+    DeprecationLevel.ERROR
+)
 fun PsiFile.getLineStartOffset(line: Int): Int? {
     val doc = viewProvider.document ?: PsiDocumentManager.getInstance(project).getDocument(this)
     if (doc != null && line >= 0 && line < doc.lineCount) {
@@ -338,6 +328,11 @@ fun PsiFile.getLineStartOffset(line: Int): Int? {
     return null
 }
 
+@Deprecated(
+    "Use org.jetbrains.kotlin.idea.core.util.getLineEndOffset() instead",
+    ReplaceWith("this.getLineEndOffset(line)", "org.jetbrains.kotlin.idea.core.util.getLineEndOffset"),
+    DeprecationLevel.ERROR
+)
 fun PsiFile.getLineEndOffset(line: Int): Int? {
     val document = viewProvider.document ?: PsiDocumentManager.getInstance(project).getDocument(this)
     return document?.getLineEndOffset(line)
@@ -345,26 +340,10 @@ fun PsiFile.getLineEndOffset(line: Int): Int? {
 
 fun PsiElement.getLineNumber(start: Boolean = true): Int {
     val document = containingFile.viewProvider.document ?: PsiDocumentManager.getInstance(project).getDocument(containingFile)
-    return document?.getLineNumber(if (start) this.startOffset else this.endOffset) ?: 0
+    val index = if (start) this.startOffset else this.endOffset
+    if (index > document?.textLength ?: 0) return 0
+    return document?.getLineNumber(index) ?: 0
 }
-
-fun PsiElement.getLineCount(): Int {
-    val doc = containingFile?.let { file -> PsiDocumentManager.getInstance(project).getDocument(file) }
-    if (doc != null) {
-        val spaceRange = textRange ?: TextRange.EMPTY_RANGE
-
-        if (spaceRange.endOffset <= doc.textLength) {
-            val startLine = doc.getLineNumber(spaceRange.startOffset)
-            val endLine = doc.getLineNumber(spaceRange.endOffset)
-
-            return endLine - startLine
-        }
-    }
-
-    return (text ?: "").count { it == '\n' } + 1
-}
-
-fun PsiElement.isMultiLine(): Boolean = getLineCount() > 1
 
 class SeparateFileWrapper(manager: PsiManager) : LightElement(manager, KotlinLanguage.INSTANCE) {
     override fun toString() = ""
@@ -378,7 +357,7 @@ fun <T> chooseContainerElement(
     toPsi: (T) -> PsiElement,
     onSelect: (T) -> Unit
 ) {
-    return getPsiElementPopup(
+    val popup = getPsiElementPopup(
         editor,
         containers,
         object : PsiElementListCellRenderer<PsiElement>() {
@@ -443,7 +422,10 @@ fun <T> chooseContainerElement(
             onSelect(it)
             true
         }
-    ).showInBestPositionFor(editor)
+    )
+    ApplicationManager.getApplication().invokeLater {
+        popup.showInBestPositionFor(editor)
+    }
 }
 
 fun <T> chooseContainerElementIfNecessary(
@@ -532,8 +514,8 @@ fun createJavaMethod(template: PsiMethod, targetClass: PsiClass): PsiMethod {
         method.modifierList.setModifierProperty(PsiModifier.FINAL, false)
     }
 
-    copyTypeParameters(template, method) { method, typeParameterList ->
-        method.addAfter(typeParameterList, method.modifierList)
+    copyTypeParameters(template, method) { psiMethod, typeParameterList ->
+        psiMethod.addAfter(typeParameterList, psiMethod.modifierList)
     }
 
     val targetParamList = method.parameterList
@@ -599,8 +581,8 @@ fun createJavaClass(klass: KtClass, targetClass: PsiClass?, forcePlainClass: Boo
         javaClass.modifierList!!.setModifierProperty(PsiModifier.ABSTRACT, false)
     }
 
-    copyTypeParameters(template, javaClass) { klass, typeParameterList ->
-        klass.addAfter(typeParameterList, klass.nameIdentifier)
+    copyTypeParameters(template, javaClass) { clazz, typeParameterList ->
+        clazz.addAfter(typeParameterList, clazz.nameIdentifier)
     }
 
     // Turning interface to class
@@ -639,27 +621,6 @@ fun createJavaClass(klass: KtClass, targetClass: PsiClass?, forcePlainClass: Boo
     }
 
     return javaClass
-}
-
-fun PsiElement.j2kText(): String? {
-    if (language != JavaLanguage.INSTANCE) return null
-
-    val j2kConverter = JavaToKotlinConverter(
-        project,
-        ConverterSettings.defaultSettings,
-        IdeaJavaToKotlinServices
-    )
-    return j2kConverter.elementsToKotlin(listOf(this)).results.single()?.text ?: return null //TODO: insert imports
-}
-
-fun PsiExpression.j2k(): KtExpression? {
-    val text = j2kText() ?: return null
-    return KtPsiFactory(project).createExpression(text)
-}
-
-fun PsiMember.j2k(): KtNamedDeclaration? {
-    val text = j2kText() ?: return null
-    return KtPsiFactory(project).createDeclaration(text)
 }
 
 internal fun broadcastRefactoringExit(project: Project, refactoringId: String) {
@@ -774,7 +735,7 @@ fun <ListType : KtElement> replaceListPsiAndKeepDelimiters(
     val oldCount = oldParameters.size
     val newCount = newParameters.size
 
-    val commonCount = Math.min(oldCount, newCount)
+    val commonCount = min(oldCount, newCount)
     for (i in 0 until commonCount) {
         oldParameters[i] = oldParameters[i].replace(newParameters[i]) as KtElement
     }
@@ -847,7 +808,13 @@ fun addTypeArgumentsIfNeeded(expression: KtExpression, typeArgumentList: KtTypeA
     val callElement = call.callElement as? KtCallExpression ?: return
     if (call.typeArgumentList != null) return
     val callee = call.calleeExpression ?: return
-    if (context.diagnostics.forElement(callee).all { it.factory != Errors.TYPE_INFERENCE_NO_INFORMATION_FOR_PARAMETER }) return
+    if (context.diagnostics.forElement(callee).all {
+            it.factory != Errors.TYPE_INFERENCE_NO_INFORMATION_FOR_PARAMETER &&
+                    it.factory != Errors.NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER
+        }
+    ) {
+        return
+    }
 
     callElement.addAfter(typeArgumentList, callElement.calleeExpression)
     ShortenReferences.DEFAULT.process(callElement.typeArgumentList!!)
@@ -1048,4 +1015,31 @@ fun <T : KtExpression> T.replaceWithCopyWithResolveCheck(
     val newDescriptor = resolveStrategy(elementCopy, newContext) ?: return null
 
     return if (originDescriptor.canonicalRender() == newDescriptor.canonicalRender()) elementCopy.postHook() else null
+}
+
+@Deprecated(
+    "Use org.jetbrains.kotlin.idea.core.util.getLineCount() instead",
+    ReplaceWith("this.getLineCount()", "org.jetbrains.kotlin.idea.core.util.getLineCount"),
+    DeprecationLevel.ERROR
+)
+fun PsiElement.getLineCount(): Int {
+    return newGetLineCount()
+}
+
+@Deprecated(
+    "Use org.jetbrains.kotlin.idea.core.util.toPsiDirectory() instead",
+    ReplaceWith("this.toPsiDirectory()", "org.jetbrains.kotlin.idea.core.util.toPsiDirectory"),
+    DeprecationLevel.ERROR
+)
+fun VirtualFile.toPsiDirectory(project: Project): PsiDirectory? {
+    return newToPsiDirectory(project)
+}
+
+@Deprecated(
+    "Use org.jetbrains.kotlin.idea.core.util.toPsiFile() instead",
+    ReplaceWith("this.toPsiFile()", "org.jetbrains.kotlin.idea.core.util.toPsiFile"),
+    DeprecationLevel.ERROR
+)
+fun VirtualFile.toPsiFile(project: Project): PsiFile? {
+    return newToPsiFile(project)
 }

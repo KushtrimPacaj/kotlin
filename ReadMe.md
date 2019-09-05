@@ -41,7 +41,11 @@ For local development, if you're not working on bytecode generation or the stand
 
 You also can use [Gradle properties](https://docs.gradle.org/current/userguide/build_environment.html#sec:gradle_properties_and_system_properties) to setup JDK_* variables.
 
-> Note: The JDK 6 for MacOS is not available on Oracle's site. You can [download it here](https://support.apple.com/kb/DL1572). 
+> Note: The JDK 6 for MacOS is not available on Oracle's site. You can [download it here](https://support.apple.com/kb/DL1572).
+
+On Windows you might need to add long paths setting to the repo:
+
+    git config core.longpaths true 
 
 ## Building
 
@@ -95,7 +99,7 @@ Development for some particular platform is possible after 'switching' that can 
 cd kotlin-project-dir
 
 # switching to IntelliJ Idea 2018.2
-bunch switch . 182
+bunch switch 182
 ```
 
 ## <a name="working-in-idea"></a> Working with the project in IntelliJ IDEA
@@ -130,6 +134,9 @@ includeBuild('/path/to/kotlin') {
     }
 }
 ```
+
+# License
+Kotlin is distributed under the terms of the Apache License (Version 2.0). See [license folder](license/README.md) for details.
 
 # Contributing
 

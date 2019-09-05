@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.lower
@@ -10,7 +10,10 @@ import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
 import org.jetbrains.kotlin.ir.backend.js.ir.JsIrArithBuilder
 import org.jetbrains.kotlin.ir.backend.js.ir.JsIrBuilder
-import org.jetbrains.kotlin.ir.declarations.*
+import org.jetbrains.kotlin.ir.declarations.IrClass
+import org.jetbrains.kotlin.ir.declarations.IrDeclaration
+import org.jetbrains.kotlin.ir.declarations.IrDeclarationParent
+import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrExpressionWithCopy
 import org.jetbrains.kotlin.ir.expressions.IrTypeOperator
@@ -42,11 +45,12 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
 
     private val isInterfaceSymbol get() = context.intrinsics.isInterfaceSymbol
     private val isArraySymbol get() = context.intrinsics.isArraySymbol
+    private val isSuspendFunctionSymbol = context.intrinsics.isSuspendFunctionSymbol
     //    private val isCharSymbol get() = context.intrinsics.isCharSymbol
     private val isObjectSymbol get() = context.intrinsics.isObjectSymbol
 
-    private val instanceOfIntrinsicSymbol = context.intrinsics.jsInstanceOf.symbol
-    private val typeOfIntrinsicSymbol = context.intrinsics.jsTypeOf.symbol
+    private val instanceOfIntrinsicSymbol = context.intrinsics.jsInstanceOf
+    private val typeOfIntrinsicSymbol = context.intrinsics.jsTypeOf
     private val jsClassIntrinsicSymbol = context.intrinsics.jsClass
 
     private val stringMarker get() = JsIrBuilder.buildString(context.irBuiltIns.stringType, "string")
@@ -68,6 +72,7 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
 
                 return when (expression.operator) {
                     IrTypeOperator.IMPLICIT_CAST -> lowerImplicitCast(expression)
+                    IrTypeOperator.IMPLICIT_DYNAMIC_CAST -> lowerImplicitDynamicCast(expression)
                     IrTypeOperator.IMPLICIT_COERCION_TO_UNIT -> lowerCoercionToUnit(expression)
                     IrTypeOperator.IMPLICIT_INTEGER_COERCION -> lowerIntegerCoercion(expression, data)
                     IrTypeOperator.IMPLICIT_NOTNULL -> lowerImplicitNotNull(expression, data)
@@ -109,15 +114,21 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
                 val argument = cacheValue(expression.argument, newStatements, declaration)
                 val check = generateTypeCheck(argument, toType)
 
-                newStatements += JsIrBuilder.buildIfElse(toType, check, argument(), failResult)
+                newStatements += JsIrBuilder.buildIfElse(expression.type, check, argument(), failResult)
 
                 return expression.run {
-                    IrCompositeImpl(startOffset, endOffset, toType, null, newStatements)
+                    IrCompositeImpl(startOffset, endOffset, expression.type, null, newStatements)
                 }
             }
 
             private fun lowerImplicitCast(expression: IrTypeOperatorCall) = expression.run {
                 assert(operator == IrTypeOperator.IMPLICIT_CAST)
+                argument
+            }
+
+            private fun lowerImplicitDynamicCast(expression: IrTypeOperatorCall) = expression.run {
+                // TODO check argument
+                assert(operator == IrTypeOperator.IMPLICIT_DYNAMIC_CAST)
                 argument
             }
 
@@ -177,14 +188,6 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
             }
 
             private fun generateTypeCheck(argument: () -> IrExpressionWithCopy, toType: IrType): IrExpression {
-
-                // TODO: Fix unbound symbols (in inline)
-                toType.classifierOrNull?.apply {
-                    if (!isBound) {
-                        return argument()
-                    }
-                }
-
                 val toNotNullable = toType.makeNotNull()
                 val argumentInstance = argument()
                 val instanceCheck = generateTypeCheckNonNull(argumentInstance, toNotNullable)
@@ -209,6 +212,7 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
                 return when {
                     toType.isAny() -> generateIsObjectCheck(argument)
                     toType.isNothing() -> JsIrBuilder.buildComposite(context.irBuiltIns.booleanType, listOf(argument, litFalse))
+                    toType.isSuspendFunctionTypeOrSubtype() -> generateSuspendFunctionCheck(argument, toType)
                     isTypeOfCheckingType(toType) -> generateTypeOfCheck(argument, toType)
 //                    toType.isChar() -> generateCheckForChar(argument)
                     toType.isNumber() -> generateNumberCheck(argument)
@@ -236,11 +240,6 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
                 val typeParameterSymbol =
                     (toType.classifierOrNull as? IrTypeParameterSymbol) ?: error("expected type parameter, but $toType")
 
-                // TODO: Stop creating unbound symbols inline:
-                // DeepCopyIrTreeWithDescriptors.copy() -> ... -> ClassifierDescriptor.getSymbol()
-                if (!typeParameterSymbol.isBound) {
-                    return argument
-                }
                 val typeParameter = typeParameterSymbol.owner
 
                 // TODO either remove functions with reified type parameters or support this case
@@ -253,6 +252,16 @@ class TypeOperatorLowering(val context: JsIrBackendContext) : FileLoweringPass {
 
 //            private fun generateCheckForChar(argument: IrExpression) =
 //                JsIrBuilder.buildCall(isCharSymbol).apply { dispatchReceiver = argument }
+
+            private fun generateSuspendFunctionCheck(argument: IrExpression, toType: IrType): IrExpression {
+                val arity = (toType.classifierOrFail.owner as IrClass).typeParameters.size - 1 // drop return type
+
+                val irBuiltIns = context.irBuiltIns
+                return JsIrBuilder.buildCall(isSuspendFunctionSymbol, irBuiltIns.booleanType).apply {
+                    putValueArgument(0, argument)
+                    putValueArgument(1, JsIrBuilder.buildInt(irBuiltIns.intType, arity))
+                }
+            }
 
             private fun generateTypeOfCheck(argument: IrExpression, toType: IrType): IrExpression {
                 val marker = when {

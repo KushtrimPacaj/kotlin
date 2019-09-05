@@ -1,24 +1,20 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js
 
 import org.jetbrains.kotlin.backend.common.*
 import org.jetbrains.kotlin.backend.common.lower.*
+import org.jetbrains.kotlin.backend.common.lower.inline.FunctionInlining
 import org.jetbrains.kotlin.backend.common.phaser.*
 import org.jetbrains.kotlin.ir.backend.js.lower.*
 import org.jetbrains.kotlin.ir.backend.js.lower.calls.CallsLowering
-import org.jetbrains.kotlin.ir.backend.js.lower.coroutines.CoroutineIntrinsicLowering
-import org.jetbrains.kotlin.ir.backend.js.lower.coroutines.SuspendFunctionsLowering
-import org.jetbrains.kotlin.ir.backend.js.lower.inline.FunctionInlining
+import org.jetbrains.kotlin.ir.backend.js.lower.coroutines.JsSuspendFunctionsLowering
 import org.jetbrains.kotlin.ir.backend.js.lower.inline.RemoveInlineFunctionsWithReifiedTypeParametersLowering
-import org.jetbrains.kotlin.ir.backend.js.lower.inline.ReturnableBlockLowering
-import org.jetbrains.kotlin.ir.backend.js.lower.inline.replaceUnboundSymbols
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
-import org.jetbrains.kotlin.ir.util.deepCopyWithSymbols
 import org.jetbrains.kotlin.ir.util.patchDeclarationParents
 
 private fun DeclarationContainerLoweringPass.runOnFilesPostfix(files: Iterable<IrFile>) = files.forEach { runOnFilePostfix(it) }
@@ -27,21 +23,23 @@ private fun ClassLoweringPass.runOnFilesPostfix(moduleFragment: IrModuleFragment
 
 private fun validationCallback(context: JsIrBackendContext, module: IrModuleFragment) {
     val validatorConfig = IrValidatorConfig(
-        abortOnError = false,
+        abortOnError = true,
         ensureAllNodesAreDifferent = true,
         checkTypes = false,
         checkDescriptors = false
     )
-//    module.accept(IrValidator(context, validatorConfig), null)
-//    module.accept(CheckDeclarationParentsVisitor, null)
+    module.accept(IrValidator(context, validatorConfig), null)
+    module.accept(CheckDeclarationParentsVisitor, null)
 }
+
+val validationAction = makeVerifyAction(::validationCallback)
 
 private fun makeJsModulePhase(
     lowering: (JsIrBackendContext) -> FileLoweringPass,
     name: String,
     description: String,
     prerequisite: Set<AnyNamedPhase> = emptySet()
-) = makeIrModulePhase<JsIrBackendContext>(lowering, name, description, prerequisite, verify = ::validationCallback)
+) = makeIrModulePhase<JsIrBackendContext>(lowering, name, description, prerequisite, actions = setOf(validationAction, defaultDumper))
 
 private fun makeCustomJsModulePhase(
     op: (JsIrBackendContext, IrModuleFragment) -> Unit,
@@ -52,7 +50,7 @@ private fun makeCustomJsModulePhase(
     name,
     description,
     prerequisite,
-    verify = ::validationCallback,
+    actions = setOf(defaultDumper, validationAction),
     nlevels = 0,
     lower = object : SameTypeCompilerPhase<JsIrBackendContext, IrModuleFragment> {
         override fun invoke(
@@ -67,16 +65,20 @@ private fun makeCustomJsModulePhase(
     }
 )
 
-private val moveBodilessDeclarationsToSeparatePlacePhase = makeCustomJsModulePhase(
-    { context, module ->
-        moveBodilessDeclarationsToSeparatePlace(context, module)
-    },
-    name = "MoveBodilessDeclarationsToSeparatePlace",
-    description = "Move `external` and `built-in` declarations into separate place to make the following lowerings do not care about them"
+private val validateIrBeforeLowering = makeCustomJsModulePhase(
+    { context, module -> validationCallback(context, module) },
+    name = "ValidateIrBeforeLowering",
+    description = "Validate IR before lowering"
+)
+
+private val validateIrAfterLowering = makeCustomJsModulePhase(
+    { context, module -> validationCallback(context, module) },
+    name = "ValidateIrAfterLowering",
+    description = "Validate IR after lowering"
 )
 
 private val expectDeclarationsRemovingPhase = makeJsModulePhase(
-    ::ExpectDeclarationsRemoving,
+    ::ExpectDeclarationsRemoveLowering,
     name = "ExpectDeclarationsRemoving",
     description = "Remove expect declaration from module fragment"
 )
@@ -87,10 +89,28 @@ private val lateinitLoweringPhase = makeJsModulePhase(
     description = "Insert checks for lateinit field references"
 )
 
+private val stripTypeAliasDeclarationsPhase = makeJsModulePhase(
+    { StripTypeAliasDeclarationsLowering() },
+    name = "StripTypeAliasDeclarations",
+    description = "Strip typealias declarations"
+)
+
+// TODO make all lambda-related stuff work with IrFunctionExpression and drop this phase
+private val provisionalFunctionExpressionPhase = makeJsModulePhase(
+    { ProvisionalFunctionExpressionLowering() },
+    name = "FunctionExpression",
+    description = "Transform IrFunctionExpression to a local function reference"
+)
+
+private val arrayConstructorPhase = makeJsModulePhase(
+    ::ArrayConstructorLowering,
+    name = "ArrayConstructor",
+    description = "Transform `Array(size) { index -> value }` into a loop"
+)
+
 private val functionInliningPhase = makeCustomJsModulePhase(
     { context, module ->
         FunctionInlining(context).inline(module)
-        module.replaceUnboundSymbols(context)
         module.patchDeclarationParents()
     },
     name = "FunctionInliningPhase",
@@ -106,8 +126,8 @@ private val removeInlineFunctionsWithReifiedTypeParametersLoweringPhase = makeJs
 )
 
 private val throwableSuccessorsLoweringPhase = makeJsModulePhase(
-    ::ThrowableSuccessorsLowering,
-    name = "ThrowableSuccessorsLowering",
+    ::ThrowableLowering,
+    name = "ThrowableLowering",
     description = "Link kotlin.Throwable and JavaScript Error together to provide proper interop between language and platform exceptions"
 )
 
@@ -115,13 +135,6 @@ private val tailrecLoweringPhase = makeJsModulePhase(
     ::TailrecLowering,
     name = "TailrecLowering",
     description = "Replace `tailrec` callsites with equivalent loop"
-)
-
-private val unitMaterializationLoweringPhase = makeJsModulePhase(
-    ::UnitMaterializationLowering,
-    name = "UnitMaterializationLowering",
-    description = "Insert Unit object where it is supposed to be",
-    prerequisite = setOf(tailrecLoweringPhase)
 )
 
 private val enumClassConstructorLoweringPhase = makeJsModulePhase(
@@ -170,6 +183,13 @@ private val localDeclarationsLoweringPhase = makeJsModulePhase(
     prerequisite = setOf(sharedVariablesLoweringPhase, localDelegatedPropertiesLoweringPhase)
 )
 
+private val localClassExtractionPhase = makeJsModulePhase(
+    ::LocalClassPopupLowering,
+    name = "LocalClassExtractionPhase",
+    description = "Move local declarations into nearest declaration container",
+    prerequisite = setOf(localDeclarationsLoweringPhase)
+)
+
 private val innerClassesLoweringPhase = makeJsModulePhase(
     ::InnerClassesLowering,
     name = "InnerClassesLowering",
@@ -183,10 +203,9 @@ private val innerClassConstructorCallsLoweringPhase = makeJsModulePhase(
 )
 
 private val suspendFunctionsLoweringPhase = makeJsModulePhase(
-    ::SuspendFunctionsLowering,
+    ::JsSuspendFunctionsLowering,
     name = "SuspendFunctionsLowering",
-    description = "Transform suspend functions into CoroutineImpl instance and build state machine",
-    prerequisite = setOf(unitMaterializationLoweringPhase)
+    description = "Transform suspend functions into CoroutineImpl instance and build state machine"
 )
 
 private val privateMembersLoweringPhase = makeJsModulePhase(
@@ -240,16 +259,23 @@ private val varargLoweringPhase = makeJsModulePhase(
 )
 
 private val propertiesLoweringPhase = makeJsModulePhase(
-    { context -> PropertiesLowering(context, skipExternalProperties = true) },
+    { context -> PropertiesLowering(context, skipExternalProperties = true, generateAnnotationFields = true) },
     name = "PropertiesLowering",
     description = "Move fields and accessors out from its property"
+)
+
+private val primaryConstructorLoweringPhase = makeJsModulePhase(
+    ::PrimaryConstructorLowering,
+    name = "PrimaryConstructorLowering",
+    description = "Creates primary constructor if it doesn't exist",
+    prerequisite = setOf(enumClassConstructorLoweringPhase)
 )
 
 private val initializersLoweringPhase = makeCustomJsModulePhase(
     { context, module -> InitializersLowering(context, JsLoweredDeclarationOrigin.CLASS_STATIC_INITIALIZER, false).lower(module) },
     name = "InitializersLowering",
     description = "Merge init block and field initializers into [primary] constructor",
-    prerequisite = setOf(enumClassConstructorLoweringPhase)
+    prerequisite = setOf(enumClassConstructorLoweringPhase, primaryConstructorLoweringPhase)
 )
 
 private val multipleCatchesLoweringPhase = makeJsModulePhase(
@@ -305,7 +331,7 @@ private val autoboxingTransformerPhase = makeJsModulePhase(
 
 private val blockDecomposerLoweringPhase = makeCustomJsModulePhase(
     { context, module ->
-        BlockDecomposerLowering(context).lower(module)
+        JsBlockDecomposerLowering(context).lower(module)
         module.patchDeclarationParents()
     },
     name = "BlockDecomposerLowering",
@@ -337,28 +363,57 @@ private val callsLoweringPhase = makeJsModulePhase(
     description = "Handle intrinsics"
 )
 
+private val testGenerationPhase = makeJsModulePhase(
+    ::TestGenerator,
+    name = "TestGenerationLowering",
+    description = "Generate invocations to kotlin.test suite and test functions"
+)
+
+private val staticMembersLoweringPhase = makeJsModulePhase(
+    ::StaticMembersLowering,
+    name = "StaticMembersLowering",
+    description = "Move static member declarations to top-level"
+)
+
+private val objectDeclarationLoweringPhase = makeCustomJsModulePhase(
+    { context, module -> ObjectDeclarationLowering(context, context.objectToGetInstanceFunction).lower(module) },
+    name = "ObjectDeclarationLowering",
+    description = "Create lazy object instance generator functions"
+)
+
+private val objectUsageLoweringPhase = makeCustomJsModulePhase(
+    { context, module -> ObjectUsageLowering(context, context.objectToGetInstanceFunction).lower(module) },
+    name = "ObjectUsageLowering",
+    description = "Transform IrGetObjectValue into instance generator call"
+)
+
 val jsPhases = namedIrModulePhase(
     name = "IrModuleLowering",
     description = "IR module lowering",
-    lower = expectDeclarationsRemovingPhase then
+    lower = validateIrBeforeLowering then
+            testGenerationPhase then
+            expectDeclarationsRemovingPhase then
+            stripTypeAliasDeclarationsPhase then
+            arrayConstructorPhase then
             functionInliningPhase then
+            provisionalFunctionExpressionPhase then
             lateinitLoweringPhase then
             tailrecLoweringPhase then
             enumClassConstructorLoweringPhase then
             sharedVariablesLoweringPhase then
             localDelegatedPropertiesLoweringPhase then
             localDeclarationsLoweringPhase then
+            localClassExtractionPhase then
             innerClassesLoweringPhase then
             innerClassConstructorCallsLoweringPhase then
             propertiesLoweringPhase then
+            primaryConstructorLoweringPhase then
             initializersLoweringPhase then
             // Common prefix ends
-            moveBodilessDeclarationsToSeparatePlacePhase then
             enumClassLoweringPhase then
             enumUsageLoweringPhase then
-            returnableBlockLoweringPhase then
-            unitMaterializationLoweringPhase then
             suspendFunctionsLoweringPhase then
+            returnableBlockLoweringPhase then
             privateMembersLoweringPhase then
             callableReferenceLoweringPhase then
             defaultArgumentStubGeneratorPhase then
@@ -379,5 +434,8 @@ val jsPhases = namedIrModulePhase(
             blockDecomposerLoweringPhase then
             primitiveCompanionLoweringPhase then
             constLoweringPhase then
-            callsLoweringPhase
+            objectDeclarationLoweringPhase then
+            objectUsageLoweringPhase then
+            callsLoweringPhase then
+            validateIrAfterLowering
 )

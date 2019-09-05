@@ -23,15 +23,19 @@ import org.gradle.api.artifacts.ModuleDependency
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.artifacts.repositories.IvyArtifactRepository
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.TaskProvider
 import org.gradle.kotlin.dsl.*
 import java.io.File
 
-private fun Project.kotlinBuildLocalRepoDir() = File("${project.rootDir.absoluteFile}/dependencies/repo")
+private fun Project.kotlinBuildLocalDependenciesDir(): File =
+    (findProperty("kotlin.build.dependencies.dir") as String?)?.let(::File) ?: project.rootDir.absoluteFile.resolve("dependencies")
+
+private fun Project.kotlinBuildLocalRepoDir(): File = kotlinBuildLocalDependenciesDir().resolve("repo")
 
 private fun Project.ideModuleName() = when (IdeVersionConfigurator.currentIde.kind) {
     Ide.Kind.AndroidStudio -> "android-studio-ide"
     Ide.Kind.IntelliJ -> {
-        if (getBooleanProperty("intellijUltimateEnabled") == true) "ideaIU" else "ideaIC"
+        if (kotlinBuildProperties.intellijUltimateEnabled) "ideaIU" else "ideaIC"
     }
 }
 
@@ -42,17 +46,19 @@ private fun Project.ideModuleVersion() = when (IdeVersionConfigurator.currentIde
 
 fun RepositoryHandler.kotlinBuildLocalRepo(project: Project): IvyArtifactRepository = ivy {
     val baseDir = project.kotlinBuildLocalRepoDir()
-    setUrl(baseDir)
+    url = baseDir.toURI()
 
-    ivyPattern("${baseDir.canonicalPath}/[organisation]/[module]/[revision]/[module].ivy.xml")
-    ivyPattern("${baseDir.canonicalPath}/[organisation]/[module]/[revision]/ivy/[module].ivy.xml")
-    ivyPattern("${baseDir.canonicalPath}/[organisation]/${project.ideModuleName()}/[revision]/ivy/[module].ivy.xml") // bundled plugins
+    patternLayout {
+        ivy("[organisation]/[module]/[revision]/[module].ivy.xml")
+        ivy("[organisation]/[module]/[revision]/ivy/[module].ivy.xml")
+        ivy("[organisation]/${project.ideModuleName()}/[revision]/ivy/[module].ivy.xml") // bundled plugins
 
-    artifactPattern("${baseDir.canonicalPath}/[organisation]/[module]/[revision]/artifacts/lib/[artifact](-[classifier]).[ext]")
-    artifactPattern("${baseDir.canonicalPath}/[organisation]/[module]/[revision]/artifacts/[artifact](-[classifier]).[ext]")
-    artifactPattern("${baseDir.canonicalPath}/[organisation]/${project.ideModuleName()}/[revision]/artifacts/plugins/[module]/lib/[artifact](-[classifier]).[ext]") // bundled plugins
-    artifactPattern("${baseDir.canonicalPath}/[organisation]/sources/[artifact]-[revision](-[classifier]).[ext]")
-    artifactPattern("${baseDir.canonicalPath}/[organisation]/[module]/[revision]/[artifact](-[classifier]).[ext]")
+        artifact("[organisation]/[module]/[revision]/artifacts/lib/[artifact](-[classifier]).[ext]")
+        artifact("[organisation]/[module]/[revision]/artifacts/[artifact](-[classifier]).[ext]")
+        artifact("[organisation]/${project.ideModuleName()}/[revision]/artifacts/plugins/[module]/lib/[artifact](-[classifier]).[ext]") // bundled plugins
+        artifact("[organisation]/sources/[artifact]-[revision](-[classifier]).[ext]")
+        artifact("[organisation]/[module]/[revision]/[artifact](-[classifier]).[ext]")
+    }
 
     metadataSources {
         ivyDescriptor()
@@ -67,7 +73,7 @@ fun Project.jpsStandalone() = "kotlin.build:jps-standalone:${rootProject.extra["
 
 fun Project.nodeJSPlugin() = "kotlin.build:NodeJS:${rootProject.extra["versions.idea.NodeJS"]}"
 
-fun Project.androidDxJar() = "kotlin.build:android-dx:${rootProject.extra["versions.androidBuildTools"]}"
+fun Project.androidDxJar() = "org.jetbrains.kotlin:android-dx:${rootProject.extra["versions.androidBuildTools"]}"
 
 fun Project.jpsBuildTest() = "com.jetbrains.intellij.idea:jps-build-test:${rootProject.extra["versions.intellijSdk"]}"
 
@@ -149,9 +155,9 @@ fun DependencyHandlerScope.excludeInAndroidStudio(rootProject: Project, block: D
     }
 }
 
-fun Project.runIdeTask(name: String, ideaPluginDir: File, ideaSandboxDir: File, body: JavaExec.() -> Unit): JavaExec {
+fun Project.runIdeTask(name: String, ideaPluginDir: File, ideaSandboxDir: File, body: JavaExec.() -> Unit): TaskProvider<JavaExec> {
 
-    return task<JavaExec>(name) {
+    return tasks.register<JavaExec>(name) {
         val ideaSandboxConfigDir = File(ideaSandboxDir, "config")
 
         classpath = mainSourceSet.runtimeClasspath

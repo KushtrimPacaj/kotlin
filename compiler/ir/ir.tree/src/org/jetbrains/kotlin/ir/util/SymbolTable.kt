@@ -14,35 +14,26 @@
  * limitations under the License.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.jetbrains.kotlin.ir.util
 
 import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.*
 import org.jetbrains.kotlin.ir.declarations.lazy.IrLazySymbolTable
-import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrExpressionBody
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.symbols.impl.*
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.impl.IrUninitializedType
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
-import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
-import org.jetbrains.kotlin.ir.visitors.acceptVoid
 
-interface IrDeserializer {
-    fun findDeserializedDeclaration(symbol: IrSymbol): IrDeclaration?
-    // We need a separate method for properties, because properties
-    // are treated differently in the SymbolTable.
-    // See SymbolTable.propertyTable and SymbolTable.referenceProperty.
-    // There was an attempt to solve this asymmetry in the symbol table
-    // using property symbols, but it was not successful.
-    // For now we have to live with a special treatment of properties.
-    // TODO: eventually get rid of this asymmetry.
-    fun findDeserializedDeclaration(propertyDescriptor: PropertyDescriptor): IrProperty?
+interface IrProvider {
+    fun getDeclaration(symbol: IrSymbol): IrDeclaration?
+}
 
+interface IrDeserializer : IrProvider {
     fun declareForwardDeclarations()
 }
 
@@ -62,6 +53,8 @@ interface ReferenceSymbolTable {
     fun referenceTypeParameter(classifier: TypeParameterDescriptor): IrTypeParameterSymbol
     fun referenceVariable(descriptor: VariableDescriptor): IrVariableSymbol
 
+    fun referenceTypeAlias(descriptor: TypeAliasDescriptor): IrTypeAliasSymbol
+
     fun enterScope(owner: DeclarationDescriptor)
 
     fun leaveScope(owner: DeclarationDescriptor)
@@ -69,6 +62,7 @@ interface ReferenceSymbolTable {
 
 open class SymbolTable : ReferenceSymbolTable {
 
+    @Suppress("LeakingThis")
     val lazyWrapper = IrLazySymbolTable(this)
 
     private abstract class SymbolTableBase<D : DeclarationDescriptor, B : IrSymbolOwner, S : IrBindableSymbol<D, B>> {
@@ -78,10 +72,15 @@ open class SymbolTable : ReferenceSymbolTable {
         abstract fun set(d: D, s: S)
 
         inline fun declare(d: D, createSymbol: () -> S, createOwner: (S) -> B): B {
-            val existing = get(d)
+            @Suppress("UNCHECKED_CAST")
+            val d0 = d.original as D
+            assert(d0 === d) {
+                "Non-original descriptor in declaration: $d\n\tExpected: $d0"
+            }
+            val existing = get(d0)
             val symbol = if (existing == null) {
                 val new = createSymbol()
-                set(d, new)
+                set(d0, new)
                 new
             } else {
                 unboundSymbols.remove(existing)
@@ -91,13 +90,18 @@ open class SymbolTable : ReferenceSymbolTable {
         }
 
         inline fun referenced(d: D, orElse: () -> S): S {
-            val s = get(d)
+            @Suppress("UNCHECKED_CAST")
+            val d0 = d.original as D
+            assert(d0 === d) {
+                "Non-original descriptor in declaration: $d\n\tExpected: $d0"
+            }
+            val s = get(d0)
             if (s == null) {
                 val new = orElse()
                 assert(unboundSymbols.add(new)) {
                     "Symbol for ${new.descriptor} was already referenced"
                 }
-                set(d, new)
+                set(d0, new)
                 return new
             }
             return s
@@ -112,13 +116,6 @@ open class SymbolTable : ReferenceSymbolTable {
 
         override fun set(d: D, s: S) {
             descriptorToSymbol[d] = s
-        }
-
-        fun copyTo(other: FlatSymbolTable<D, B, S>) {
-            for ((d, s) in descriptorToSymbol) {
-                other.descriptorToSymbol[d] = s
-            }
-            other.unboundSymbols.addAll(unboundSymbols)
         }
     }
 
@@ -202,6 +199,7 @@ open class SymbolTable : ReferenceSymbolTable {
     private val fieldSymbolTable = FlatSymbolTable<PropertyDescriptor, IrField, IrFieldSymbol>()
     private val simpleFunctionSymbolTable = FlatSymbolTable<FunctionDescriptor, IrSimpleFunction, IrSimpleFunctionSymbol>()
     private val propertySymbolTable = FlatSymbolTable<PropertyDescriptor, IrProperty, IrPropertySymbol>()
+    private val typeAliasSymbolTable = FlatSymbolTable<TypeAliasDescriptor, IrTypeAlias, IrTypeAliasSymbol>()
 
     private val globalTypeParameterSymbolTable = FlatSymbolTable<TypeParameterDescriptor, IrTypeParameter, IrTypeParameterSymbol>()
     private val scopedTypeParameterSymbolTable = ScopedSymbolTable<TypeParameterDescriptor, IrTypeParameter, IrTypeParameterSymbol>()
@@ -296,8 +294,9 @@ open class SymbolTable : ReferenceSymbolTable {
         origin: IrDeclarationOrigin,
         descriptor: PropertyDescriptor,
         type: IrType,
+        visibility: Visibility? = null,
         fieldFactory: (IrFieldSymbol) -> IrField = {
-            IrFieldImpl(startOffset, endOffset, origin, it, type).apply {
+            IrFieldImpl(startOffset, endOffset, origin, it, type, visibility ?: it.descriptor.visibility).apply {
                 metadata = MetadataSource.Property(it.descriptor)
             }
         }
@@ -336,7 +335,7 @@ open class SymbolTable : ReferenceSymbolTable {
         endOffset: Int,
         origin: IrDeclarationOrigin,
         descriptor: PropertyDescriptor,
-        isDelegated: Boolean = descriptor.isDelegated,
+        @Suppress("DEPRECATION") isDelegated: Boolean = descriptor.isDelegated,
         propertyFactory: (IrPropertySymbol) -> IrProperty = { symbol ->
             IrPropertyImpl(startOffset, endOffset, origin, symbol, isDelegated = isDelegated).apply {
                 metadata = MetadataSource.Property(symbol.descriptor)
@@ -353,6 +352,14 @@ open class SymbolTable : ReferenceSymbolTable {
         propertySymbolTable.referenced(descriptor) { IrPropertySymbolImpl(descriptor) }
 
     val unboundProperties: Set<IrPropertySymbol> get() = propertySymbolTable.unboundSymbols
+
+    override fun referenceTypeAlias(descriptor: TypeAliasDescriptor): IrTypeAliasSymbol =
+        typeAliasSymbolTable.referenced(descriptor) { IrTypeAliasSymbolImpl(descriptor) }
+
+    fun declareTypeAlias(descriptor: TypeAliasDescriptor, factory: (IrTypeAliasSymbol) -> IrTypeAlias): IrTypeAlias =
+        typeAliasSymbolTable.declare(descriptor, { IrTypeAliasSymbolImpl(descriptor) }, factory)
+
+    val unboundTypeAliases: Set<IrTypeAliasSymbol> get() = typeAliasSymbolTable.unboundSymbols
 
     fun declareSimpleFunction(
         startOffset: Int,
@@ -415,12 +422,15 @@ open class SymbolTable : ReferenceSymbolTable {
         origin: IrDeclarationOrigin,
         descriptor: ParameterDescriptor,
         type: IrType,
-        varargElementType: IrType? = null
+        varargElementType: IrType? = null,
+        valueParameterFactory: (IrValueParameterSymbol) -> IrValueParameter = {
+            IrValueParameterImpl(startOffset, endOffset, origin, it, type, varargElementType)
+        }
     ): IrValueParameter =
         valueParameterSymbolTable.declareLocal(
             descriptor,
             { IrValueParameterSymbolImpl(descriptor) },
-            { IrValueParameterImpl(startOffset, endOffset, origin, it, type, varargElementType) }
+            valueParameterFactory
         )
 
     fun introduceValueParameter(irValueParameter: IrValueParameter) {
@@ -444,12 +454,16 @@ open class SymbolTable : ReferenceSymbolTable {
         endOffset: Int,
         origin: IrDeclarationOrigin,
         descriptor: VariableDescriptor,
-        type: IrType
+        type: IrType,
+        variableFactory: (IrVariableSymbol) -> IrVariable = {
+            IrVariableImpl(startOffset, endOffset, origin, it, type)
+        }
+
     ): IrVariable =
         variableSymbolTable.declareLocal(
             descriptor,
             { IrVariableSymbolImpl(descriptor) },
-            { IrVariableImpl(startOffset, endOffset, origin, it, type) }
+            variableFactory
         )
 
     fun declareVariable(
@@ -504,62 +518,6 @@ open class SymbolTable : ReferenceSymbolTable {
             else ->
                 throw IllegalArgumentException("Unexpected value descriptor: $value")
         }
-
-    fun loadModule(module: IrModuleFragment) {
-        module.acceptVoid(object: IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitClass(declaration: IrClass) {
-                // TODO should we check there are no conflicts?
-                classSymbolTable.descriptorToSymbol[declaration.descriptor] = declaration.symbol
-                super.visitClass(declaration)
-            }
-
-            override fun visitConstructor(declaration: IrConstructor) {
-                constructorSymbolTable.descriptorToSymbol[declaration.descriptor] = declaration.symbol
-                super.visitConstructor(declaration)
-            }
-
-            override fun visitEnumEntry(declaration: IrEnumEntry) {
-                enumEntrySymbolTable.descriptorToSymbol[declaration.descriptor] = declaration.symbol
-                super.visitEnumEntry(declaration)
-            }
-
-            override fun visitExternalPackageFragment(declaration: IrExternalPackageFragment) {
-                externalPackageFragmentTable.descriptorToSymbol[declaration.symbol.descriptor] = declaration.symbol
-                super.visitExternalPackageFragment(declaration)
-            }
-
-            override fun visitField(declaration: IrField) {
-                fieldSymbolTable.descriptorToSymbol[declaration.descriptor] = declaration.symbol
-                super.visitField(declaration)
-            }
-
-            override fun visitSimpleFunction(declaration: IrSimpleFunction) {
-                simpleFunctionSymbolTable.descriptorToSymbol[declaration.descriptor] = declaration.symbol
-                super.visitSimpleFunction(declaration)
-            }
-
-            override fun visitTypeParameter(declaration: IrTypeParameter) {
-                // What about scoped type parameters?
-                globalTypeParameterSymbolTable.descriptorToSymbol[declaration.descriptor] = declaration.symbol
-                super.visitTypeParameter(declaration)
-            }
-
-            override fun visitCall(expression: IrCall) {
-                expression.symbol.let {
-                    when (it) {
-                        is IrSimpleFunctionSymbol -> simpleFunctionSymbolTable.descriptorToSymbol[it.descriptor] = it
-                        is IrConstructorSymbol -> constructorSymbolTable.descriptorToSymbol[it.descriptor] = it
-                    }
-                }
-
-                super.visitCall(expression)
-            }
-        })
-    }
 }
 
 inline fun <T, D: DeclarationDescriptor> SymbolTable.withScope(owner: D, block: SymbolTable.(D) -> T): T {

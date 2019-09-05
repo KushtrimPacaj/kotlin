@@ -143,6 +143,7 @@ class ReflectionReferencesGenerator(statementGenerator: StatementGenerator) : St
         return IrPropertyReferenceImpl(
             startOffset, endOffset, type.toIrType(),
             context.symbolTable.referenceProperty(originalProperty),
+            propertyDescriptor,
             propertyDescriptor.typeParametersCount,
             getFieldForPropertyReference(originalProperty),
             originalGetter?.let { context.symbolTable.referenceSimpleFunction(it) },
@@ -156,6 +157,7 @@ class ReflectionReferencesGenerator(statementGenerator: StatementGenerator) : St
     private fun getFieldForPropertyReference(originalProperty: PropertyDescriptor) =
         // NB this is a hack, we really don't know if an arbitrary property has a backing field or not
         when {
+            @Suppress("DEPRECATION")
             originalProperty.isDelegated -> null
             originalProperty.getter != null -> null
             else -> context.symbolTable.referenceField(originalProperty)

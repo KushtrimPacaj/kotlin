@@ -23,6 +23,7 @@ import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.codegen.CodegenTestCase
 import org.jetbrains.kotlin.config.languageVersionSettings
+import org.jetbrains.kotlin.ir.backend.js.JsGeneratorExtensions
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.js.analyze.TopDownAnalyzerFacadeForJS
@@ -41,14 +42,14 @@ import java.io.PrintWriter
 import java.util.*
 
 abstract class AbstractIrGeneratorTestCase : CodegenTestCase() {
-    override fun doMultiFileTest(wholeFile: File, files: List<TestFile>, javaFilesDir: File?) {
-        setupEnvironment(files, javaFilesDir)
+    override fun doMultiFileTest(wholeFile: File, files: List<TestFile>) {
+        setupEnvironment(files)
 
         loadMultiFiles(files)
         doTest(wholeFile, files)
     }
 
-    private fun setupEnvironment(files: List<TestFile>, javaFilesDir: File?) {
+    private fun setupEnvironment(files: List<TestFile>) {
         val jdkKind = getJdkKind(files)
 
         val javacOptions = ArrayList<String>(0)
@@ -74,7 +75,7 @@ abstract class AbstractIrGeneratorTestCase : CodegenTestCase() {
         val configuration = createConfiguration(
             configurationKind, jdkKind,
             listOf<File>(getAnnotationsJar()),
-            arrayOf(javaFilesDir).filterNotNull(),
+            listOfNotNull(writeJavaFiles(files)),
             files
         )
 
@@ -83,7 +84,7 @@ abstract class AbstractIrGeneratorTestCase : CodegenTestCase() {
 
     protected abstract fun doTest(wholeFile: File, testFiles: List<TestFile>)
 
-    protected fun generateIrModule(ignoreErrors: Boolean = false): IrModuleFragment {
+    protected open fun generateIrModule(ignoreErrors: Boolean = false): IrModuleFragment {
         assert(myFiles != null) { "myFiles not initialized" }
         assert(myEnvironment != null) { "myEnvironment not initialized" }
         return doGenerateIrModule(Psi2IrTranslator(myEnvironment.configuration.languageVersionSettings, Psi2IrConfiguration(ignoreErrors)))
@@ -124,7 +125,7 @@ abstract class AbstractIrGeneratorTestCase : CodegenTestCase() {
                     moduleDescriptors = emptyList(),
                     friendModuleDescriptors = emptyList()
                 ),
-                psi2ir, ktFilesToAnalyze, GeneratorExtensions()
+                psi2ir, ktFilesToAnalyze, JsGeneratorExtensions()
             )
 
         fun generateIrModuleWithJvmResolve(

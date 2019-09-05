@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:Suppress("unused")
@@ -9,6 +9,7 @@ package kotlin.script.experimental.annotations
 
 import kotlin.reflect.KClass
 import kotlin.script.experimental.api.ScriptCompilationConfiguration
+import kotlin.script.experimental.api.ScriptEvaluationConfiguration
 
 /**
  * The annotation for declaring a script definition (template)
@@ -20,12 +21,17 @@ import kotlin.script.experimental.api.ScriptCompilationConfiguration
  * optimal discovery and definitions loading performance.
  *
  * @param displayName script definition display name, stored as {@link ScriptCompilationConfigurationKeys#displayName},
- *        default - "Kotlin script"
+ *        default - empty - use annotated class name
  * @param fileExtension distinct filename extension for the script type being defined, stored in the configuration
  *        as {@link ScriptCompilationConfigurationKeys#fileExtension},
  *        default - "kts"
+ * @param filePathPattern additional (to the filename extension) RegEx pattern with that the script file path is checked
+ *        as {@link ScriptCompilationConfigurationKeys#filePathPattern},
+ *        default - empty - pattern is not used
  * @param compilationConfiguration an object or a class with default constructor containing initial script compilation configuration
  *        default - {@link ScriptCompilationConfiguration#Default}
+ * @param evaluationConfiguration an object or a class with default constructor containing initial script evaluation configuration
+ *        default - {@link ScriptEvaluationConfiguration#Default}
  *
  * Simple usage example:
  * <pre>
@@ -42,8 +48,10 @@ import kotlin.script.experimental.api.ScriptCompilationConfiguration
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class KotlinScript(
-    val displayName: String = "Kotlin script",
+    val displayName: String = "",
     val fileExtension: String = "kts",
-    val compilationConfiguration: KClass<out ScriptCompilationConfiguration> = ScriptCompilationConfiguration.Default::class
+    val filePathPattern: String = "",
+    val compilationConfiguration: KClass<out ScriptCompilationConfiguration> = ScriptCompilationConfiguration.Default::class,
+    val evaluationConfiguration: KClass<out ScriptEvaluationConfiguration> = ScriptEvaluationConfiguration.Default::class
 )
 

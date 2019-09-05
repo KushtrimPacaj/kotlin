@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.run
@@ -12,6 +12,7 @@ import com.intellij.execution.RunnerAndConfigurationSettings
 import com.intellij.execution.actions.ConfigurationContext
 import com.intellij.execution.actions.ConfigurationFromContext
 import com.intellij.execution.actions.RunConfigurationProducer
+import com.intellij.execution.configurations.ModuleBasedConfiguration
 import com.intellij.execution.junit.*
 import com.intellij.execution.testframework.AbstractPatternBasedConfigurationProducer
 import com.intellij.openapi.project.DumbService
@@ -38,7 +39,7 @@ class KotlinJUnitRunConfigurationProducer : RunConfigurationProducer<JUnitConfig
         configuration: JUnitConfiguration,
         context: ConfigurationContext
     ): Boolean {
-        if (RunConfigurationProducer.getInstance(PatternConfigurationProducer::class.java).isMultipleElementsSelected(context)) {
+        if (getInstance(PatternConfigurationProducer::class.java).isMultipleElementsSelected(context)) {
             return false
         }
 
@@ -62,7 +63,7 @@ class KotlinJUnitRunConfigurationProducer : RunConfigurationProducer<JUnitConfig
         if (vmParameters != null && configuration.vmParameters != vmParameters) return false
 
         val template = RunManager.getInstance(configuration.project).getConfigurationTemplate(configurationFactory)
-        val predefinedModule = (template.configuration as ModuleBasedConfigurationAny).configurationModule.module
+        val predefinedModule = (template.configuration as ModuleBasedConfiguration<*, *>).configurationModule.module
         val configurationModule = configuration.configurationModule.module
         return configurationModule == context.location?.module?.asJvmModule() || configurationModule == predefinedModule
     }

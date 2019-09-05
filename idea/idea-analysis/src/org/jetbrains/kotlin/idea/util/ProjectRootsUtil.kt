@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.util
@@ -29,8 +29,11 @@ import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesManager
 import org.jetbrains.kotlin.idea.decompiler.builtIns.KotlinBuiltInFileType
 import org.jetbrains.kotlin.idea.decompiler.js.KotlinJavaScriptMetaFileType
 import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.kotlin.scripting.shared.definitions.findScriptDefinition
-import kotlin.script.experimental.location.ScriptExpectedLocation
+import org.jetbrains.kotlin.scripting.definitions.findScriptDefinition
+import kotlin.script.experimental.api.ScriptAcceptedLocation
+import kotlin.script.experimental.api.ScriptCompilationConfiguration
+import kotlin.script.experimental.api.acceptedLocations
+import kotlin.script.experimental.api.ide
 
 abstract class KotlinBinaryExtension(val fileType: FileType) {
     companion object {
@@ -70,22 +73,22 @@ object ProjectRootsUtil {
         fileIndex: ProjectFileIndex = ProjectFileIndex.SERVICE.getInstance(project)
     ): Boolean {
         val scriptDefinition = file.findScriptDefinition(project)
-        if (scriptDefinition != null) {
-            val scriptScope = scriptDefinition.scriptExpectedLocations
-            val includeAll = scriptScope.contains(ScriptExpectedLocation.Everywhere)
-                    || scriptScope.contains(ScriptExpectedLocation.Project)
+        val scriptScope = scriptDefinition?.compilationConfiguration?.get(ScriptCompilationConfiguration.ide.acceptedLocations)
+        if (scriptScope != null) {
+            val includeAll = scriptScope.contains(ScriptAcceptedLocation.Everywhere)
+                    || scriptScope.contains(ScriptAcceptedLocation.Project)
                     || ScratchUtil.isScratch(file)
             return isInContentWithoutScriptDefinitionCheck(
                 project,
                 file,
                 includeProjectSource && (
                         includeAll
-                                || scriptScope.contains(ScriptExpectedLocation.SourcesOnly)
-                                || scriptScope.contains(ScriptExpectedLocation.TestsOnly)
+                                || scriptScope.contains(ScriptAcceptedLocation.Sources)
+                                || scriptScope.contains(ScriptAcceptedLocation.Tests)
                         ),
-                includeLibrarySource && (includeAll || scriptScope.contains(ScriptExpectedLocation.Libraries)),
-                includeLibraryClasses && (includeAll || scriptScope.contains(ScriptExpectedLocation.Libraries)),
-                includeScriptDependencies && (includeAll || scriptScope.contains(ScriptExpectedLocation.Libraries)),
+                includeLibrarySource && (includeAll || scriptScope.contains(ScriptAcceptedLocation.Libraries)),
+                includeLibraryClasses && (includeAll || scriptScope.contains(ScriptAcceptedLocation.Libraries)),
+                includeScriptDependencies && (includeAll || scriptScope.contains(ScriptAcceptedLocation.Libraries)),
                 includeScriptsOutsideSourceRoots && includeAll,
                 fileIndex
             )
@@ -115,7 +118,10 @@ object ProjectRootsUtil {
             if (ProjectRootManager.getInstance(project).fileIndex.isInContent(file) || ScratchUtil.isScratch(file)) {
                 return true
             }
-            return file.findScriptDefinition(project)?.scriptExpectedLocations?.contains(ScriptExpectedLocation.Everywhere) == true
+            return file.findScriptDefinition(project)
+                ?.compilationConfiguration
+                ?.get(ScriptCompilationConfiguration.ide.acceptedLocations)
+                ?.contains(ScriptAcceptedLocation.Everywhere) == true
         }
 
         if (!includeLibraryClasses && !includeLibrarySource) return false
@@ -129,11 +135,11 @@ object ProjectRootsUtil {
 
         if (includeLibraryClasses && (isBinary || canContainClassFiles)) {
             if (fileIndex.isInLibraryClasses(file)) return true
-            if (scriptConfigurationManager?.getAllScriptsClasspathScope()?.contains(file) == true) return true
+            if (scriptConfigurationManager?.getAllScriptsDependenciesClassFilesScope()?.contains(file) == true) return true
         }
         if (includeLibrarySource && !isBinary) {
             if (fileIndex.isInLibrarySource(file)) return true
-            if (scriptConfigurationManager?.getAllLibrarySourcesScope()?.contains(file) == true &&
+            if (scriptConfigurationManager?.getAllScriptDependenciesSourcesScope()?.contains(file) == true &&
                 !fileIndex.isInSourceContentWithoutInjected(file)
             ) {
                 return true

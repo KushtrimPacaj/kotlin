@@ -377,22 +377,23 @@ class JavaSyntheticPropertiesScope(storageManager: StorageManager, private val l
             newVisibility: Visibility,
             original: PropertyDescriptor?,
             kind: CallableMemberDescriptor.Kind,
-            newName: Name
+            newName: Name,
+            source: SourceElement
         ): PropertyDescriptorImpl {
-            return MyPropertyDescriptor(newOwner, this, annotations, newModality, newVisibility, isVar, newName, kind, source).apply {
+            return MyPropertyDescriptor(newOwner, this, annotations, newModality, newVisibility, isVar, newName, kind, this.source).apply {
                 getMethod = this@MyPropertyDescriptor.getMethod
                 setMethod = this@MyPropertyDescriptor.setMethod
             }
         }
 
-        override fun substitute(originalSubstitutor: TypeSubstitutor): PropertyDescriptor? {
-            val descriptor = super.substitute(originalSubstitutor) as MyPropertyDescriptor? ?: return null
+        override fun substitute(substitutor: TypeSubstitutor): PropertyDescriptor? {
+            val descriptor = super.substitute(substitutor) as MyPropertyDescriptor? ?: return null
             if (descriptor == this) return descriptor
 
             val classTypeParameters = (getMethod.containingDeclaration as ClassDescriptor).typeConstructor.parameters
             val substitutionMap = HashMap<TypeConstructor, TypeProjection>()
             for ((typeParameter, classTypeParameter) in typeParameters.zip(classTypeParameters)) {
-                val typeProjection = originalSubstitutor.substitution[typeParameter.defaultType] ?: continue
+                val typeProjection = substitutor.substitution[typeParameter.defaultType] ?: continue
                 substitutionMap[classTypeParameter.typeConstructor] = typeProjection
 
             }

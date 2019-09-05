@@ -1,17 +1,16 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.util
 
 import org.jetbrains.kotlin.ir.declarations.IrTypeParametersContainer
-import org.jetbrains.kotlin.ir.expressions.IrCall
-import org.jetbrains.kotlin.ir.types.IrSimpleType
-import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.IrTypeProjection
+import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
+import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
-import org.jetbrains.kotlin.ir.types.impl.IrTypeProjectionImpl
+import org.jetbrains.kotlin.ir.types.impl.IrTypeAbbreviationImpl
+import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
 
 class DeepCopyTypeRemapper(
     private val symbolRemapper: SymbolRemapper
@@ -27,26 +26,30 @@ class DeepCopyTypeRemapper(
         // TODO
     }
 
-    // TODO This is a hack
-    override fun remapType(type: IrType): IrType {
-        if (type !is IrSimpleType) return type
+    override fun remapType(type: IrType): IrType =
+        if (type !is IrSimpleType)
+            type
+        else
+            IrSimpleTypeImpl(
+                null,
+                symbolRemapper.getReferencedClassifier(type.classifier),
+                type.hasQuestionMark,
+                type.arguments.map { remapTypeArgument(it) },
+                type.annotations.map { it.transform(deepCopy, null) as IrConstructorCall },
+                type.abbreviation?.remapTypeAbbreviation()
+            )
 
-        val arguments = type.arguments.map {
-            if (it is IrTypeProjection) {
-                IrTypeProjectionImpl(this.remapType(it.type), it.variance)
-            } else {
-                it
-            }
-        }
+    private fun remapTypeArgument(typeArgument: IrTypeArgument): IrTypeArgument =
+        if (typeArgument is IrTypeProjection)
+            makeTypeProjection(this.remapType(typeArgument.type), typeArgument.variance)
+        else
+            typeArgument
 
-        val annotations = type.annotations.map { it.transform(deepCopy, null) as IrCall }
-
-        return IrSimpleTypeImpl(
-            null,
-            symbolRemapper.getReferencedClassifier(type.classifier),
-            type.hasQuestionMark,
-            arguments,
-            annotations)
-    }
-
+    private fun IrTypeAbbreviation.remapTypeAbbreviation() =
+        IrTypeAbbreviationImpl(
+            symbolRemapper.getReferencedTypeAlias(typeAlias),
+            hasQuestionMark,
+            arguments.map { remapTypeArgument(it) },
+            annotations
+        )
 }

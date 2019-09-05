@@ -22,8 +22,12 @@ import com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.copyBean
 import org.jetbrains.kotlin.cli.common.arguments.parseCommandLineArguments
-import org.jetbrains.kotlin.platform.IdePlatform
 import org.jetbrains.kotlin.platform.IdePlatformKind
+import org.jetbrains.kotlin.platform.TargetPlatform
+import org.jetbrains.kotlin.platform.TargetPlatformVersion
+import org.jetbrains.kotlin.platform.compat.toIdePlatform
+import org.jetbrains.kotlin.platform.isCommon
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import org.jetbrains.kotlin.utils.DescriptionAware
 
 @Deprecated("Use IdePlatformKind instead.", level = DeprecationLevel.ERROR)
@@ -104,9 +108,9 @@ sealed class VersionView : DescriptionAware {
         }
 
         fun deserialize(value: String?, isAutoAdvance: Boolean): VersionView {
-            if (isAutoAdvance) return VersionView.LatestStable
+            if (isAutoAdvance) return LatestStable
             val languageVersion = LanguageVersion.fromVersionString(value)
-            return if (languageVersion != null) VersionView.Specific(languageVersion) else VersionView.LatestStable
+            return if (languageVersion != null) Specific(languageVersion) else LatestStable
         }
     }
 }
@@ -132,6 +136,21 @@ enum class KotlinModuleKind {
 
     val isNewMPP: Boolean
         get() = this != DEFAULT
+}
+
+enum class KotlinMultiplatformVersion(val version: Int) {
+    M1(1), // the first implementation of MPP. Aka 1.2.0 MPP
+    M2(2), // the "New" MPP. Aka 1.3.0 MPP
+    M3(3); // the "Hierarchical" MPP.
+
+    val isMPPModule: Boolean
+        get() = version >= 1
+
+    val isNewMPP: Boolean
+        get() = version >= 2
+
+    val isHMPP: Boolean
+        get() = version >= 3
 }
 
 class KotlinFacetSettings {
@@ -187,11 +206,29 @@ class KotlinFacetSettings {
             compilerArguments!!.apiVersion = value?.versionString
         }
 
-    val platform: IdePlatform<*, *>?
+    var targetPlatform: TargetPlatform? = null
         get() {
-            val compilerArguments = this.compilerArguments ?: return null
-            return IdePlatformKind.platformByCompilerArguments(compilerArguments)
+            // This work-around is required in order to fix importing of the proper JVM target version and works only
+            // for fully actualized JVM target platform
+            //TODO(auskov): this hack should be removed after fixing equals in SimplePlatform
+            val args = compilerArguments
+            val singleSimplePlatform = field?.componentPlatforms?.singleOrNull()
+            if (singleSimplePlatform == JvmPlatforms.defaultJvmPlatform.singleOrNull() && args != null) {
+                return IdePlatformKind.platformByCompilerArguments(args)
+            }
+            return field
         }
+
+
+    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(
+        message = "This accessor is deprecated and will be removed soon, use API from 'org.jetbrains.kotlin.platform.*' packages instead",
+        replaceWith = ReplaceWith("targetPlatform"),
+        level = DeprecationLevel.ERROR
+    )
+    fun getPlatform(): org.jetbrains.kotlin.platform.IdePlatform<*, *>? {
+        return targetPlatform?.toIdePlatform()
+    }
 
     var coroutineSupport: LanguageFeature.State?
         get() {
@@ -208,7 +245,8 @@ class KotlinFacetSettings {
             }
         }
 
-    var implementedModuleNames: List<String> = emptyList()
+    var implementedModuleNames: List<String> = emptyList() // used for first implementation of MPP, aka 'old' MPP
+    var dependsOnModuleNames: List<String> = emptyList() // used for New MPP and later implementations
 
     var productionOutputPath: String? = null
     var testOutputPath: String? = null
@@ -218,6 +256,19 @@ class KotlinFacetSettings {
     var isTestModule: Boolean = false
 
     var externalProjectId: String = ""
+
+    @Deprecated(message = "Use mppVersion.isHmppEnabled")
+    var isHmppEnabled: Boolean = false
+
+    val mppVersion: KotlinMultiplatformVersion?
+        get() = when {
+            isHmppEnabled -> KotlinMultiplatformVersion.M3
+            kind.isNewMPP -> KotlinMultiplatformVersion.M2
+            targetPlatform.isCommon() || implementedModuleNames.isNotEmpty() || kind.isNewMPP -> KotlinMultiplatformVersion.M1
+            else -> null
+        }
+
+    var pureKotlinSourceFolders: List<String> = emptyList()
 }
 
 interface KotlinFacetSettingsProvider {

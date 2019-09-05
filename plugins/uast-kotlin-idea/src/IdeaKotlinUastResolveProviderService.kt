@@ -32,21 +32,22 @@ import org.jetbrains.kotlin.idea.core.resolveCandidates
 import org.jetbrains.kotlin.idea.project.TargetPlatformDetector
 import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.idea.util.module
-import org.jetbrains.kotlin.load.java.JvmAbi
+import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.calls.callUtil.getCall
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
+import org.jetbrains.kotlin.platform.jvm.isJvm
+import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.uast.kotlin.KotlinUastResolveProviderService
 
 class IdeaKotlinUastResolveProviderService : KotlinUastResolveProviderService {
-    override fun getBindingContext(element: KtElement) = element.analyze(BodyResolveMode.PARTIAL)
+    override fun getBindingContext(element: KtElement) = element.analyze(BodyResolveMode.PARTIAL_WITH_CFA)
 
     override fun getTypeMapper(element: KtElement): KotlinTypeMapper? {
         return KotlinTypeMapper(
             getBindingContext(element), ClassBuilderMode.LIGHT_CLASSES,
-            JvmAbi.DEFAULT_MODULE_NAME, element.languageVersionSettings
+            JvmProtoBufUtil.DEFAULT_MODULE_NAME, element.languageVersionSettings
         )
     }
 
@@ -55,11 +56,11 @@ class IdeaKotlinUastResolveProviderService : KotlinUastResolveProviderService {
 
         val containingFile = psiElement.containingFile
         if (containingFile is KtFile) {
-            return TargetPlatformDetector.getPlatform(containingFile) is JvmPlatform
+            return TargetPlatformDetector.getPlatform(containingFile).isJvm()
         }
 
         val module = psiElement.module
-        return module == null || TargetPlatformDetector.getPlatform(module) is JvmPlatform
+        return module == null || TargetPlatformDetector.getPlatform(module).isJvm()
     }
 
     override fun getLanguageVersionSettings(element: KtElement): LanguageVersionSettings {
@@ -78,7 +79,7 @@ class IdeaKotlinUastResolveProviderService : KotlinUastResolveProviderService {
             .getCachedValue(project, {
                 Result.create(
                     ModuleManager.getInstance(project).modules.all { module ->
-                        TargetPlatformDetector.getPlatform(module) is JvmPlatform
+                        TargetPlatformDetector.getPlatform(module).isJvm()
                     },
                     ProjectRootModificationTracker.getInstance(project)
                 )

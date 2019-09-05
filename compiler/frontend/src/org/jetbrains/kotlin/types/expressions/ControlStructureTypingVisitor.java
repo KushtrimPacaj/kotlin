@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.types.expressions;
@@ -611,7 +611,7 @@ public class ControlStructureTypingVisitor extends ExpressionTypingVisitor {
             dataFlowInfoForArguments = createDataFlowInfoForArgumentsOfTryCall(callForTry, dataFlowInfoBeforeTry, dataFlowInfoBeforeTry);
         }
         ResolvedCall<FunctionDescriptor> resolvedCall = components.controlStructureTypingUtils
-                .resolveTryAsCall(callForTry, tryExpression, catchClausesBlocksAndParameters, tryInputContext, dataFlowInfoForArguments);
+                .resolveTryAsCall(callForTry, catchClausesBlocksAndParameters, tryInputContext, dataFlowInfoForArguments);
         KotlinType resultType = resolvedCall.getResultingDescriptor().getReturnType();
 
         BindingContext bindingContext = tryInputContext.trace.getBindingContext();

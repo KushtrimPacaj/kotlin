@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.completion.test.handlers;
@@ -127,6 +127,11 @@ public class SmartCompletionHandlerTestGenerated extends AbstractSmartCompletion
     @TestMetadata("ClassInObject.kt")
     public void testClassInObject() throws Exception {
         runTest("idea/idea-completion/testData/handlers/smart/ClassInObject.kt");
+    }
+
+    @TestMetadata("ClassNameFromKotlinWithPackageConflict.kt")
+    public void testClassNameFromKotlinWithPackageConflict() throws Exception {
+        runTest("idea/idea-completion/testData/handlers/smart/ClassNameFromKotlinWithPackageConflict.kt");
     }
 
     @TestMetadata("ClassObjectFieldKeywordName.kt")

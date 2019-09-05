@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen;
@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.codegen.intrinsics.HashCode;
 import org.jetbrains.kotlin.codegen.intrinsics.IntrinsicMethods;
 import org.jetbrains.kotlin.codegen.state.GenerationState;
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper;
+import org.jetbrains.kotlin.config.ApiVersion;
 import org.jetbrains.kotlin.config.JvmTarget;
 import org.jetbrains.kotlin.config.LanguageFeature;
 import org.jetbrains.kotlin.config.LanguageVersionSettings;
@@ -65,7 +66,8 @@ import static org.jetbrains.kotlin.codegen.CodegenUtilKt.isToArrayFromCollection
 import static org.jetbrains.kotlin.codegen.JvmCodegenUtil.isConstOrHasJvmFieldAnnotation;
 import static org.jetbrains.kotlin.codegen.JvmCodegenUtil.isJvmInterface;
 import static org.jetbrains.kotlin.resolve.DescriptorUtils.*;
-import static org.jetbrains.kotlin.resolve.inline.InlineOnlyKt.isEffectivelyInlineOnly;
+import static org.jetbrains.kotlin.resolve.inline.InlineOnlyKt.isInlineOnlyPrivateInBytecode;
+import static org.jetbrains.kotlin.resolve.inline.InlineOnlyKt.isInlineWithReified;
 import static org.jetbrains.kotlin.resolve.jvm.AsmTypes.*;
 import static org.jetbrains.kotlin.resolve.jvm.annotations.JvmAnnotationUtilKt.hasJvmDefaultAnnotation;
 import static org.jetbrains.kotlin.resolve.jvm.annotations.JvmAnnotationUtilKt.hasJvmSyntheticAnnotation;
@@ -98,13 +100,19 @@ public class AsmUtil {
             .put(JavaVisibilities.PACKAGE_VISIBILITY, NO_FLAG_PACKAGE_PRIVATE)
             .build();
 
+    public static final String CAPTURED_PREFIX = "$";
+
     public static final String THIS = "this";
 
     public static final String THIS_IN_DEFAULT_IMPLS = "$this";
 
     public static final String LABELED_THIS_FIELD = THIS + "_";
 
-    public static final String LABELED_THIS_PARAMETER = "$" + THIS + "$";
+    public static final String CAPTURED_LABELED_THIS_FIELD = CAPTURED_PREFIX + LABELED_THIS_FIELD;
+
+    public static final String INLINE_DECLARATION_SITE_THIS = "this_";
+
+    public static final String LABELED_THIS_PARAMETER = CAPTURED_PREFIX + THIS + "$";
 
     public static final String CAPTURED_THIS_FIELD = "this$0";
 
@@ -142,7 +150,7 @@ public class AsmUtil {
 
     @NotNull
     public static String getCapturedFieldName(@NotNull String originalName) {
-        return "$" + originalName;
+        return CAPTURED_PREFIX + originalName;
     }
 
     @NotNull
@@ -228,7 +236,7 @@ public class AsmUtil {
     }
 
     @Nullable
-    private static Type boxPrimitiveType(@NotNull Type type) {
+    public static Type boxPrimitiveType(@NotNull Type type) {
         JvmPrimitiveType jvmPrimitiveType = primitiveTypeByAsmSort.get(type.getSort());
         return jvmPrimitiveType != null ? asmTypeByFqNameWithoutInnerClasses(jvmPrimitiveType.getWrapperFqName()) : null;
     }
@@ -386,7 +394,8 @@ public class AsmUtil {
         flags |= getVarargsFlag(functionDescriptor);
         flags |= getDeprecatedAccessFlag(functionDescriptor);
         if (deprecationResolver.isDeprecatedHidden(functionDescriptor) ||
-            (functionDescriptor.isSuspend()) && functionDescriptor.getVisibility().equals(Visibilities.PRIVATE)) {
+            isInlineWithReified(functionDescriptor) ||
+            functionDescriptor.isSuspend() && functionDescriptor.getVisibility().equals(Visibilities.PRIVATE)) {
             flags |= ACC_SYNTHETIC;
         }
         return flags;
@@ -524,7 +533,7 @@ public class AsmUtil {
             return ACC_PRIVATE;
         }
 
-        if (isEffectivelyInlineOnly(memberDescriptor)) {
+        if (isInlineOnlyPrivateInBytecode(memberDescriptor)) {
             return ACC_PRIVATE;
         }
 
@@ -778,7 +787,7 @@ public class AsmUtil {
         return typeMapper.mapToCallableMethod(toStringDescriptor, false, OwnerKind.ERASED_INLINE_CLASS);
     }
 
-    static void genHashCode(MethodVisitor mv, InstructionAdapter iv, Type type, JvmTarget jvmTarget) {
+    public static void genHashCode(MethodVisitor mv, InstructionAdapter iv, Type type, JvmTarget jvmTarget) {
         if (type.getSort() == Type.ARRAY) {
             Type elementType = correctElementType(type);
             if (elementType.getSort() == Type.OBJECT || elementType.getSort() == Type.ARRAY) {
@@ -848,17 +857,28 @@ public class AsmUtil {
         return StackValue.operation(Type.BOOLEAN_TYPE, v -> {
             left.put(AsmTypes.OBJECT_TYPE, left.kotlinType, v);
             right.put(AsmTypes.OBJECT_TYPE, right.kotlinType, v);
-            genAreEqualCall(v);
-
-            if (opToken == KtTokens.EXCLEQ || opToken == KtTokens.EXCLEQEQEQ) {
-                genInvertBoolean(v);
-            }
-            return Unit.INSTANCE;
+            return genAreEqualCall(v, opToken);
         });
+    }
+
+    @NotNull
+    public static StackValue genEqualsBoxedOnStack(@NotNull IElementType opToken) {
+        return StackValue.operation(Type.BOOLEAN_TYPE, v -> genAreEqualCall(v, opToken));
     }
 
     public static void genAreEqualCall(InstructionAdapter v) {
         v.invokestatic(IntrinsicMethods.INTRINSICS_CLASS_NAME, "areEqual", "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
+    }
+
+    @NotNull
+    private static Unit genAreEqualCall(InstructionAdapter v, @NotNull IElementType opToken) {
+        genAreEqualCall(v);
+
+        if (opToken == KtTokens.EXCLEQ || opToken == KtTokens.EXCLEQEQEQ) {
+            genInvertBoolean(v);
+        }
+
+        return Unit.INSTANCE;
     }
 
     public static void genIEEE754EqualForNullableTypesCall(InstructionAdapter v, Type left, Type right) {
@@ -934,7 +954,7 @@ public class AsmUtil {
                 ReceiverParameterDescriptor receiverParameter = descriptor.getExtensionReceiverParameter();
                 if (receiverParameter != null) {
                     String name = getNameForReceiverParameter(descriptor, state.getBindingContext(), state.getLanguageVersionSettings());
-                    genParamAssertion(v, state.getTypeMapper(), frameMap, receiverParameter, name, descriptor);
+                    genParamAssertion(v, state, frameMap, receiverParameter, name, descriptor);
                 }
             }
             return;
@@ -943,17 +963,17 @@ public class AsmUtil {
         ReceiverParameterDescriptor receiverParameter = descriptor.getExtensionReceiverParameter();
         if (receiverParameter != null) {
             String name = getNameForReceiverParameter(descriptor, state.getBindingContext(), state.getLanguageVersionSettings());
-            genParamAssertion(v, state.getTypeMapper(), frameMap, receiverParameter, name, descriptor);
+            genParamAssertion(v, state, frameMap, receiverParameter, name, descriptor);
         }
 
         for (ValueParameterDescriptor parameter : descriptor.getValueParameters()) {
-            genParamAssertion(v, state.getTypeMapper(), frameMap, parameter, parameter.getName().asString(), descriptor);
+            genParamAssertion(v, state, frameMap, parameter, parameter.getName().asString(), descriptor);
         }
     }
 
     private static void genParamAssertion(
             @NotNull InstructionAdapter v,
-            @NotNull KotlinTypeMapper typeMapper,
+            @NotNull GenerationState state,
             @NotNull FrameMap frameMap,
             @NotNull ParameterDescriptor parameter,
             @NotNull String name,
@@ -962,7 +982,7 @@ public class AsmUtil {
         KotlinType type = parameter.getType();
         if (isNullableType(type) || InlineClassesUtilsKt.isNullableUnderlyingType(type)) return;
 
-        Type asmType = typeMapper.mapType(type);
+        Type asmType = state.getTypeMapper().mapType(type);
         if (asmType.getSort() == Type.OBJECT || asmType.getSort() == Type.ARRAY) {
             StackValue value;
             if (JvmCodegenUtil.isDeclarationOfBigArityFunctionInvoke(containingDeclaration) ||
@@ -978,9 +998,10 @@ public class AsmUtil {
             }
             value.put(asmType, v);
             v.visitLdcInsn(name);
-            v.invokestatic(
-                    IntrinsicMethods.INTRINSICS_CLASS_NAME, "checkParameterIsNotNull", "(Ljava/lang/Object;Ljava/lang/String;)V", false
-            );
+            String methodName = state.getLanguageVersionSettings().getApiVersion().compareTo(ApiVersion.KOTLIN_1_4) >= 0
+                                ? "checkNotNullParameter"
+                                : "checkParameterIsNotNull";
+            v.invokestatic(IntrinsicMethods.INTRINSICS_CLASS_NAME, methodName, "(Ljava/lang/Object;Ljava/lang/String;)V", false);
         }
     }
 
@@ -994,7 +1015,6 @@ public class AsmUtil {
         if (runtimeAssertionInfo == null || !runtimeAssertionInfo.getNeedNotNullAssertion()) return stackValue;
 
         return new StackValue(stackValue.type, stackValue.kotlinType) {
-
             @Override
             public void putSelector(@NotNull Type type, @Nullable KotlinType kotlinType, @NotNull InstructionAdapter v) {
                 Type innerType = stackValue.type;
@@ -1003,8 +1023,10 @@ public class AsmUtil {
                 if (innerType.getSort() == Type.OBJECT || innerType.getSort() == Type.ARRAY) {
                     v.dup();
                     v.visitLdcInsn(runtimeAssertionInfo.getMessage());
-                    v.invokestatic(IntrinsicMethods.INTRINSICS_CLASS_NAME, "checkExpressionValueIsNotNull",
-                                   "(Ljava/lang/Object;Ljava/lang/String;)V", false);
+                    String methodName = state.getLanguageVersionSettings().getApiVersion().compareTo(ApiVersion.KOTLIN_1_4) >= 0
+                                        ? "checkNotNullExpressionValue"
+                                        : "checkExpressionValueIsNotNull";
+                    v.invokestatic(IntrinsicMethods.INTRINSICS_CLASS_NAME, methodName, "(Ljava/lang/Object;Ljava/lang/String;)V", false);
                 }
                 StackValue.coerce(innerType, innerKotlinType, type, kotlinType, v);
             }

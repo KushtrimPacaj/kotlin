@@ -1,38 +1,39 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
-import org.jetbrains.kotlin.descriptors.Visibilities
+import org.jetbrains.kotlin.ir.backend.js.CompilerResult
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
+import org.jetbrains.kotlin.ir.backend.js.export.ExportModelGenerator
+import org.jetbrains.kotlin.ir.backend.js.export.ExportModelToJsStatements
+import org.jetbrains.kotlin.ir.backend.js.lower.StaticMembersLowering
+import org.jetbrains.kotlin.ir.backend.js.export.toTypeScript
 import org.jetbrains.kotlin.ir.backend.js.utils.*
-import org.jetbrains.kotlin.ir.declarations.IrClass
-import org.jetbrains.kotlin.ir.declarations.IrDeclarationWithVisibility
+import org.jetbrains.kotlin.ir.declarations.IrDeclarationWithName
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
-import org.jetbrains.kotlin.ir.declarations.IrSymbolOwner
-import org.jetbrains.kotlin.ir.util.isEffectivelyExternal
-import org.jetbrains.kotlin.ir.util.isObject
-import org.jetbrains.kotlin.ir.util.parentAsClass
+import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.declarations.path
+import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.js.backend.ast.*
 import org.jetbrains.kotlin.js.config.JSConfigurationKeys
 import org.jetbrains.kotlin.utils.DFS
 
-class IrModuleToJsTransformer(private val backendContext: JsIrBackendContext) : BaseIrElementToJsNodeTransformer<JsNode, Nothing?> {
+class IrModuleToJsTransformer(
+    private val backendContext: JsIrBackendContext,
+    private val mainFunction: IrSimpleFunction?,
+    private val mainArguments: List<String>?
+) {
     val moduleName = backendContext.configuration[CommonConfigurationKeys.MODULE_NAME]!!
     private val moduleKind = backendContext.configuration[JSConfigurationKeys.MODULE_KIND]!!
 
     private fun generateModuleBody(module: IrModuleFragment, context: JsGenerationContext): List<JsStatement> {
-        val statements = mutableListOf<JsStatement>()
-
-        // TODO: fix it up with new name generator
-        val anyName = context.getNameForSymbol(backendContext.irBuiltIns.anyClass)
-        val throwableName = context.getNameForSymbol(backendContext.irBuiltIns.throwableClass)
-
-        statements += JsVars(JsVars.JsVar(anyName, Namer.JS_OBJECT))
-        statements += JsVars(JsVars.JsVar(throwableName, Namer.JS_ERROR))
+        val statements = mutableListOf(
+            JsStringLiteral("use strict").makeStmt()
+        )
 
         val preDeclarationBlock = JsBlock()
         val postDeclarationBlock = JsBlock()
@@ -40,7 +41,8 @@ class IrModuleToJsTransformer(private val backendContext: JsIrBackendContext) : 
         statements += preDeclarationBlock
 
         module.files.forEach {
-            statements.add(it.accept(IrFileToJsTransformer(), context))
+            statements.add(JsDocComment(mapOf("file" to it.path)).makeStmt())
+            statements.addAll(it.accept(IrFileToJsTransformer(), context).statements)
         }
 
         // sort member forwarding code
@@ -49,48 +51,107 @@ class IrModuleToJsTransformer(private val backendContext: JsIrBackendContext) : 
         statements += postDeclarationBlock
         statements += context.staticContext.initializerBlock
 
+        if (backendContext.hasTests) {
+            statements += JsInvocation(context.getNameForStaticFunction(backendContext.testContainer).makeRef()).makeStmt()
+        }
+
         return statements
     }
 
-    private fun generateExportStatements(
-        module: IrModuleFragment,
-        context: JsGenerationContext,
-        internalModuleName: JsName
-    ): List<JsStatement> {
-        return module.files
-            .flatMap { it.declarations }
-            .asSequence()
-            .filterIsInstance<IrDeclarationWithVisibility>()
-            .filter { it.visibility == Visibilities.PUBLIC }
-            .filter { !it.isEffectivelyExternal() }
-            .filterIsInstance<IrSymbolOwner>()
-            .map { declaration ->
-                val name = context.getNameForSymbol(declaration.symbol)
+    fun generateModule(module: IrModuleFragment): CompilerResult {
+        val additionalPackages = with(backendContext) {
+            externalPackageFragment.values + listOf(
+                bodilessBuiltInsPackageFragment,
+                intrinsics.externalPackageFragment
+            ) + packageLevelJsModules
+        }
 
-                JsExpressionStatement(
-                    if (declaration is IrClass && declaration.isObject) {
-                        defineProperty(internalModuleName.makeRef(), name.ident, getter = JsNameRef("${name.ident}_getInstance"))
-                    } else {
-                        jsAssignment(JsNameRef(name, internalModuleName.makeRef()), name.makeRef())
-                    }
-                )
-            }
-            .toList()
-    }
+        val exportedModule = ExportModelGenerator(backendContext).generateExport(module)
+        val dts = exportedModule.toTypeScript()
 
-    private fun generateModule(module: IrModuleFragment): JsProgram {
+        module.files.forEach { StaticMembersLowering(backendContext).lower(it) }
+
+        val namer = NameTables(module.files + additionalPackages)
+
         val program = JsProgram()
-        val rootContext = JsGenerationContext(JsRootScope(program), backendContext)
+
+        val nameGenerator = IrNamerImpl(
+            newNameTables = namer
+        )
+        val staticContext = JsStaticContext(
+            backendContext = backendContext,
+            irNamer = nameGenerator
+        )
+        val rootContext = JsGenerationContext(
+            currentFunction = null,
+            staticContext = staticContext
+        )
 
         val rootFunction = JsFunction(program.rootScope, JsBlock(), "root function")
-        val internalModuleName = rootFunction.scope.declareName("_")
+        val internalModuleName = JsName("_")
 
-        rootFunction.parameters += JsParameter(internalModuleName)
+        val (importStatements, importedJsModules) =
+            generateImportStatements(
+                getNameForExternalDeclaration = { rootContext.getNameForStaticDeclaration(it) },
+                declareFreshGlobal = { JsName(sanitizeName(it)) } // TODO: Declare fresh name
+            )
 
+        val moduleBody = generateModuleBody(module, rootContext)
+        val exportStatements = ExportModelToJsStatements(internalModuleName, namer)
+            .generateModuleExport(exportedModule)
+
+        with(rootFunction) {
+            parameters += JsParameter(internalModuleName)
+            parameters += importedJsModules.map { JsParameter(it.internalName) }
+            with(body) {
+                statements += importStatements
+                statements += moduleBody
+                statements += exportStatements
+                statements += generateCallToMain(rootContext)
+                statements += JsReturn(internalModuleName.makeRef())
+            }
+        }
+
+        program.globalBlock.statements += ModuleWrapperTranslation.wrap(
+            moduleName,
+            rootFunction,
+            importedJsModules,
+            program,
+            kind = moduleKind
+        )
+
+        return CompilerResult(program.toString(), dts)
+    }
+
+    private fun generateMainArguments(mainFunction: IrSimpleFunction, rootContext: JsGenerationContext): List<JsExpression> {
+        val mainArguments = this.mainArguments!!
+        val mainArgumentsArray =
+            if (mainFunction.valueParameters.isNotEmpty()) JsArrayLiteral(mainArguments.map { JsStringLiteral(it) }) else null
+
+        val continuation = if (mainFunction.isSuspend) {
+            val emptyContinuationField = backendContext.coroutineEmptyContinuation.owner
+            rootContext.getNameForField(emptyContinuationField).makeRef()
+        } else null
+
+        return listOfNotNull(mainArgumentsArray, continuation)
+    }
+
+    private fun generateCallToMain(rootContext: JsGenerationContext): List<JsStatement> {
+        if (mainArguments == null) return emptyList() // in case `NO_MAIN` and `main(..)` exists
+        return mainFunction?.let {
+            val jsName = rootContext.getNameForStaticFunction(it)
+            listOf(JsInvocation(jsName.makeRef(), generateMainArguments(it, rootContext)).makeStmt())
+        } ?: emptyList()
+    }
+
+    private fun generateImportStatements(
+        getNameForExternalDeclaration: (IrDeclarationWithName) -> JsName,
+        declareFreshGlobal: (String) -> JsName
+    ): Pair<MutableList<JsStatement>, List<JsImportedModule>> {
         val declarationLevelJsModules =
             backendContext.declarationLevelJsModules.map { externalDeclaration ->
                 val jsModule = externalDeclaration.getJsModule()!!
-                val name = rootContext.getNameForDeclaration(externalDeclaration)
+                val name = getNameForExternalDeclaration(externalDeclaration)
                 JsImportedModule(jsModule, name, name.makeRef())
             }
 
@@ -106,7 +167,7 @@ class IrModuleToJsTransformer(private val backendContext: JsIrBackendContext) : 
             val qualifiedReference: JsNameRef
 
             if (jsModule != null) {
-                val internalName = rootFunction.scope.declareFreshName(sanitizeName("\$module\$$jsModule"))
+                val internalName = declareFreshGlobal("\$module\$$jsModule")
                 packageLevelJsModules += JsImportedModule(jsModule, internalName, null)
 
                 qualifiedReference =
@@ -118,74 +179,29 @@ class IrModuleToJsTransformer(private val backendContext: JsIrBackendContext) : 
                 qualifiedReference = JsNameRef(jsQualifier!!)
             }
 
-            file.declarations.forEach { declaration ->
-                val declName = rootContext.getNameForDeclaration(declaration)
-                importStatements.add(
-                    JsExpressionStatement(
-                        jsAssignment(
-                            declName.makeRef(),
-                            JsNameRef(declName, qualifiedReference)
-                        )
+            file.declarations
+                .asSequence()
+                .filterIsInstance<IrDeclarationWithName>()
+                .forEach { declaration ->
+                    val declName = getNameForExternalDeclaration(declaration)
+                    importStatements.add(
+                        JsVars(JsVars.JsVar(declName, JsNameRef(declName, qualifiedReference)))
                     )
-                )
-            }
+                }
         }
 
-        for (externalClass in backendContext.externalNestedClasses) {
-
-            // External companions are not "nested". Instead they use parent class name.
-            if (externalClass.isCompanion)
-                continue
-
-            val declName = rootContext.getNameForDeclaration(externalClass)
-            val parentName = rootContext.getNameForDeclaration(externalClass.parentAsClass)
-            importStatements.add(
-                JsExpressionStatement(
-                    jsAssignment(
-                        declName.makeRef(),
-                        JsNameRef(externalClass.getJsNameOrKotlinName().identifier, parentName.makeRef())
-                    )
-                )
-            )
-        }
-
-        val importedJsModules = declarationLevelJsModules + packageLevelJsModules
-        rootFunction.parameters += importedJsModules.map { JsParameter(it.internalName) }
-
-        rootFunction.body.statements += importStatements
-
-        val moduleBody = generateModuleBody(module, rootContext)
-
-        val exportStatements = generateExportStatements(module, rootContext, internalModuleName)
-
-        rootFunction.body.statements += moduleBody
-
-        rootFunction.body.statements += exportStatements
-
-        rootFunction.body.statements += JsReturn(internalModuleName.makeRef())
-
-        program.globalBlock.statements += ModuleWrapperTranslation.wrap(
-            moduleName,
-            rootFunction,
-            importedJsModules,
-            program,
-            kind = moduleKind
-        )
-
-        return program
+        val importedJsModules = (declarationLevelJsModules + packageLevelJsModules).distinctBy { it.key }
+        return Pair(importStatements, importedJsModules)
     }
 
-    override fun visitModuleFragment(declaration: IrModuleFragment, data: Nothing?): JsNode =
-        generateModule(declaration)
-
     private fun processClassModels(
-        classModelMap: Map<JsName, JsClassModel>,
+        classModelMap: Map<IrClassSymbol, JsIrClassModel>,
         preDeclarationBlock: JsBlock,
         postDeclarationBlock: JsBlock
     ) {
-        val declarationHandler = object : DFS.AbstractNodeHandler<JsName, Unit>() {
+        val declarationHandler = object : DFS.AbstractNodeHandler<IrClassSymbol, Unit>() {
             override fun result() {}
-            override fun afterChildren(current: JsName) {
+            override fun afterChildren(current: IrClassSymbol) {
                 classModelMap[current]?.let {
                     preDeclarationBlock.statements += it.preDeclarationBlock.statements
                     postDeclarationBlock.statements += it.postDeclarationBlock.statements
@@ -193,13 +209,10 @@ class IrModuleToJsTransformer(private val backendContext: JsIrBackendContext) : 
             }
         }
 
-        DFS.dfs(classModelMap.keys, {
-            val neighbors = mutableListOf<JsName>()
-            classModelMap[it]?.run {
-                if (superName != null) neighbors += superName!!
-                neighbors += interfaces
-            }
-            neighbors
-        }, declarationHandler)
+        DFS.dfs(
+            classModelMap.keys,
+            { klass -> classModelMap[klass]?.superClasses ?: emptyList() },
+            declarationHandler
+        )
     }
 }

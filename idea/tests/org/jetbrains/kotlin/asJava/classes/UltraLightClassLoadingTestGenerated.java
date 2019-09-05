@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.asJava.classes;
@@ -64,6 +64,11 @@ public class UltraLightClassLoadingTestGenerated extends AbstractUltraLightClass
         runTest("compiler/testData/asJava/ultraLightClasses/delegatingToInterfaces.kt");
     }
 
+    @TestMetadata("dollarsInNameLocal.kt")
+    public void testDollarsInNameLocal() throws Exception {
+        runTest("compiler/testData/asJava/ultraLightClasses/dollarsInNameLocal.kt");
+    }
+
     @TestMetadata("enums.kt")
     public void testEnums() throws Exception {
         runTest("compiler/testData/asJava/ultraLightClasses/enums.kt");
@@ -104,6 +109,11 @@ public class UltraLightClassLoadingTestGenerated extends AbstractUltraLightClass
         runTest("compiler/testData/asJava/ultraLightClasses/inlineOnly.kt");
     }
 
+    @TestMetadata("inlineReified.kt")
+    public void testInlineReified() throws Exception {
+        runTest("compiler/testData/asJava/ultraLightClasses/inlineReified.kt");
+    }
+
     @TestMetadata("jvmField.kt")
     public void testJvmField() throws Exception {
         runTest("compiler/testData/asJava/ultraLightClasses/jvmField.kt");
@@ -132,6 +142,11 @@ public class UltraLightClassLoadingTestGenerated extends AbstractUltraLightClass
     @TestMetadata("lateinitProperty.kt")
     public void testLateinitProperty() throws Exception {
         runTest("compiler/testData/asJava/ultraLightClasses/lateinitProperty.kt");
+    }
+
+    @TestMetadata("localClassDerived.kt")
+    public void testLocalClassDerived() throws Exception {
+        runTest("compiler/testData/asJava/ultraLightClasses/localClassDerived.kt");
     }
 
     @TestMetadata("objects.kt")

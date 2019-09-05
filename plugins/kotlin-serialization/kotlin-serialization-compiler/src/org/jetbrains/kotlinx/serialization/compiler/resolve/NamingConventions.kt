@@ -22,6 +22,7 @@ object SerializationAnnotations {
     internal val serialInfoFqName = FqName("kotlinx.serialization.SerialInfo")
 
     internal val contextualFqName = FqName("kotlinx.serialization.ContextualSerialization")
+    internal val polymorphicFqName = FqName("kotlinx.serialization.Polymorphic")
     internal val additionalSerializersFqName = FqName("kotlinx.serialization.UseSerializers")
 }
 
@@ -46,6 +47,8 @@ object SerialEntityNames {
     const val STRUCTURE_ENCODER_CLASS = "CompositeEncoder"
     const val DECODER_CLASS = "Decoder"
     const val STRUCTURE_DECODER_CLASS = "CompositeDecoder"
+
+    const val ANNOTATION_MARKER_CLASS = "SerializableWith"
 
     const val SERIAL_SAVER_CLASS = "SerializationStrategy"
     const val SERIAL_LOADER_CLASS = "DeserializationStrategy"

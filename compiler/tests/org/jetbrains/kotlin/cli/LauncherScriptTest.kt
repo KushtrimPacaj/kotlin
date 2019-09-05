@@ -36,7 +36,7 @@ class LauncherScriptTest : TestCaseWithTmpdir() {
     ) {
         val executableFileName = if (SystemInfo.isWindows) "$executableName.bat" else executableName
         val launcherFile = File(PathUtil.kotlinPathsForDistDirectory.homePath, "bin/$executableFileName")
-        assertTrue("Launcher script not found, run 'ant dist': ${launcherFile.absolutePath}", launcherFile.exists())
+        assertTrue("Launcher script not found, run dist task: ${launcherFile.absolutePath}", launcherFile.exists())
 
         val cmd = GeneralCommandLine(launcherFile.absolutePath, *args)
         workDirectory?.let(cmd::withWorkDirectory)
@@ -79,11 +79,37 @@ class LauncherScriptTest : TestCaseWithTmpdir() {
         )
     }
 
+    fun testKotlincJvmScriptWithClassPathFromSysProp() {
+        runProcess(
+            "kotlinc-jvm",
+            "-script",
+            "$testDataDirectory/classPathPropTest.kts",
+            expectedStdout = "kotlin-compiler.jar\n"
+        )
+    }
+
+    fun testKotlinJvmContextClassLoader() {
+        val kotlinTestJar = File(PathUtil.kotlinPathsForDistDirectory.homePath, "lib/kotlin-test.jar")
+        assertTrue("kotlin-main-kts.jar not found, run dist task: ${kotlinTestJar.absolutePath}", kotlinTestJar.exists())
+        runProcess(
+            "kotlinc",
+            "-cp", kotlinTestJar.path,
+            "$testDataDirectory/contextClassLoaderTester.kt",
+            "-d", tmpdir.path
+        )
+
+        runProcess(
+            "kotlin",
+            "-cp", listOf(tmpdir.path, kotlinTestJar.path).joinToString(File.pathSeparator),
+            "ContextClassLoaderTester",
+            expectedStdout = "${kotlinTestJar.name}\n"
+        )
+    }
+
     fun testKotlincJsSimple() {
         runProcess(
                 "kotlinc-js",
                 "$testDataDirectory/emptyMain.kt",
-                "-no-stdlib",
                 "-output", File(tmpdir, "out.js").path
         )
     }

@@ -73,9 +73,9 @@ import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.createSmartPointer
 import org.jetbrains.kotlin.psi.psiUtil.visibilityModifierType
 import org.jetbrains.kotlin.resolve.AnnotationChecker
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 import org.jetbrains.kotlin.resolve.annotations.JVM_STATIC_ANNOTATION_FQ_NAME
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
 import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.Variance
@@ -208,11 +208,11 @@ class KotlinElementActionsFactory : JvmElementActionsFactory() {
         return TypeInfo.ByExplicitCandidateTypes(candidateTypes.toList())
     }
 
-    override fun createChangeModifierActions(target: JvmModifiersOwner, request: MemberRequest.Modifier): List<IntentionAction> {
+    override fun createChangeModifierActions(target: JvmModifiersOwner, request: ChangeModifierRequest): List<IntentionAction> {
         val kModifierOwner = target.toKtElement<KtModifierListOwner>() ?: return emptyList()
 
         val modifier = request.modifier
-        val shouldPresent = request.shouldPresent
+        val shouldPresent = request.shouldBePresent()
         //TODO: make similar to `createAddMethodActions`
         val (kToken, shouldPresentMapped) = when {
             modifier == JvmModifier.FINAL -> KtTokens.OPEN_KEYWORD to !shouldPresent
@@ -230,6 +230,9 @@ class KotlinElementActionsFactory : JvmElementActionsFactory() {
             RemoveModifierFix(kModifierOwner, kToken, false)
         return listOfNotNull(action)
     }
+
+    override fun createChangeModifierActions(target: JvmModifiersOwner, request: MemberRequest.Modifier): List<IntentionAction> =
+        createChangeModifierActions(target, modifierRequest(request.modifier, request.shouldPresent))
 
     override fun createAddConstructorActions(targetClass: JvmClass, request: CreateConstructorRequest): List<IntentionAction> {
         val targetKtClass = targetClass.toKtClassOrFile() as? KtClass ?: return emptyList()
@@ -362,7 +365,7 @@ class KotlinElementActionsFactory : JvmElementActionsFactory() {
         if (!modifierBuilder.isValid) return emptyList()
 
         val resolutionFacade = KotlinCacheService.getInstance(targetContainer.project)
-            .getResolutionFacadeByFile(targetContainer.containingFile, JvmPlatform) ?: return emptyList()
+            .getResolutionFacadeByFile(targetContainer.containingFile, JvmPlatforms.unspecifiedJvmPlatform) ?: return emptyList()
         val returnTypeInfo = request.returnType.toKotlinTypeInfo(resolutionFacade)
         val parameters = request.parameters as List<Pair<SuggestedNameInfo, List<ExpectedType>>>
         val parameterInfos = parameters.map { (suggestedNames, expectedTypes) ->

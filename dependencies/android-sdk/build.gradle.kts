@@ -1,23 +1,20 @@
-
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import java.io.File
 import org.gradle.internal.os.OperatingSystem
-
-// TODO: consider adding dx sources (the only jar used on the compile time so far)
-// e.g. from "https://android.googlesource.com/platform/dalvik/+archive/android-5.0.0_r2/dx.tar.gz"
+import java.net.URI
 
 repositories {
     ivy {
-        artifactPattern("https://dl-ssl.google.com/android/repository/[artifact]-[revision].[ext]")
-        artifactPattern("https://dl-ssl.google.com/android/repository/[artifact]_[revision](-[classifier]).[ext]")
-        artifactPattern("https://dl.google.com/android/repository/[artifact]_[revision](-[classifier]).[ext]")
+        url = URI("https://dl.google.com/android/repository")
+        patternLayout {
+            artifact("[artifact]-[revision].[ext]")
+            artifact("[artifact]_[revision](-[classifier]).[ext]")
+            artifact("[artifact]_[revision](-[classifier]).[ext]")
+        }
     }
 }
 
 val androidSdk by configurations.creating
 val androidJar by configurations.creating
 val androidPlatform by configurations.creating
-val dxSources by configurations.creating
 val buildTools by configurations.creating
 
 val libsDestDir = File(buildDir, "libs")
@@ -72,12 +69,14 @@ fun unzipSdkTask(
             }
         }
     }
-    prepareSdk.dependsOn(unzipTask)
+    prepareSdk.configure {
+        dependsOn(unzipTask)
+    }
 
     additionalConfig?.also {
         dependencies.add(it.name, dependency)
     }
-    
+
     return unzipTask
 }
 
@@ -93,7 +92,7 @@ val clean by task<Delete> {
     delete(buildDir)
 }
 
-val extractAndroidJar by tasks.creating {
+val extractAndroidJar by tasks.registering {
     dependsOn(androidPlatform)
     inputs.files(androidPlatform)
     val targetFile = File(libsDestDir, "android.jar")

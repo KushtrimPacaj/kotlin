@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:kotlin.jvm.JvmMultifileClass
@@ -828,6 +828,8 @@ public inline fun <K> CharSequence.groupingBy(crossinline keySelector: (Char) ->
 /**
  * Returns a list containing the results of applying the given [transform] function
  * to each character in the original char sequence.
+ * 
+ * @sample samples.text.Strings.map
  */
 public inline fun <R> CharSequence.map(transform: (Char) -> R): List<R> {
     return mapTo(ArrayList<R>(length), transform)
@@ -905,7 +907,8 @@ public inline fun <R, C : MutableCollection<in R>> CharSequence.mapTo(destinatio
 }
 
 /**
- * Returns a lazy [Iterable] of [IndexedValue] for each character of the original char sequence.
+ * Returns a lazy [Iterable] that wraps each character of the original char sequence
+ * into an [IndexedValue] containing the index of that character and the character itself.
  */
 public fun CharSequence.withIndex(): Iterable<IndexedValue<Char>> {
     return IndexingIterable { iterator() }
@@ -1045,6 +1048,8 @@ public fun CharSequence.max(): Char? {
 public inline fun <R : Comparable<R>> CharSequence.maxBy(selector: (Char) -> R): Char? {
     if (isEmpty()) return null
     var maxElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return maxElem
     var maxValue = selector(maxElem)
     for (i in 1..lastIndex) {
         val e = this[i]
@@ -1091,6 +1096,8 @@ public fun CharSequence.min(): Char? {
 public inline fun <R : Comparable<R>> CharSequence.minBy(selector: (Char) -> R): Char? {
     if (isEmpty()) return null
     var minElem = this[0]
+    val lastIndex = this.lastIndex
+    if (lastIndex == 0) return minElem
     var minValue = selector(minElem)
     for (i in 1..lastIndex) {
         val e = this[i]

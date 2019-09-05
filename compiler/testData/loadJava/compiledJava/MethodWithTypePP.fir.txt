@@ -1,4 +1,6 @@
-public final class MethodWithTypePP : R|java/lang/Object| {
-    public final operator fun f(): R|kotlin/Unit|
+public final class MethodWithTypePP : R|kotlin/Any| {
+    public final operator fun <P, Q : R|P|> f(): R|kotlin/Unit|
+
+    public constructor(): R|test/MethodWithTypePP|
 
 }

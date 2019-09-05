@@ -1,14 +1,20 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.types
 
-import org.jetbrains.kotlin.ir.symbols.*
+import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
+import org.jetbrains.kotlin.ir.symbols.FqNameEqualityChecker
+import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrClassifierSymbol
+import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.util.render
+import org.jetbrains.kotlin.resolve.calls.NewCommonSuperTypeCalculator
+import org.jetbrains.kotlin.types.AbstractTypeChecker
+import org.jetbrains.kotlin.types.AbstractTypeCheckerContext
 import org.jetbrains.kotlin.utils.DFS
-
 
 fun IrClassifierSymbol.superTypes() = when (this) {
     is IrClassSymbol -> owner.superTypes
@@ -24,41 +30,6 @@ fun IrClassifierSymbol.isSubtypeOfClass(superClass: IrClassSymbol): Boolean {
 fun IrType.isSubtypeOfClass(superClass: IrClassSymbol): Boolean {
     if (this !is IrSimpleType) return false
     return classifier.isSubtypeOfClass(superClass)
-}
-
-fun IrType.isEqualTo(that: IrType): Boolean {
-    if (this is IrDynamicType && that is IrDynamicType) return true
-    if (this is IrErrorType || that is IrErrorType) return false
-    if (this === that) return true
-    if (this is IrSimpleType && that is IrSimpleType) return FqNameEqualityChecker.areEqual(this.classifier, that.classifier) &&
-            this.arguments.zip(that.arguments).all { (ths, tht) ->
-                when (ths) {
-                    is IrStarProjection -> tht is IrStarProjection
-                    is IrTypeProjection -> tht is IrTypeProjection
-                            && ths.variance == tht.variance
-                            && ths.type.isEqualTo(tht.type)
-                    else -> error("Unsupported Type Argument")
-                }
-            }
-    return false
-}
-
-fun IrTypeArgument.toHashCode(): Int = when (this) {
-    is IrTypeProjection -> 31 * type.toHashCode() + variance.hashCode()
-    is IrStarProjection -> hashCode()
-    else -> 0
-}
-
-fun IrType.toHashCode(): Int {
-    if (this is IrDynamicType) return -1
-    if (this is IrErrorType) return 0
-
-    require(this is IrSimpleType)
-
-    var result = classifier.hashCode()
-
-    result = 31 * result + arguments.fold(0) { a, t -> 31 * a + t.toHashCode() }
-    return 31 * result + if (hasQuestionMark) 1 else 0
 }
 
 fun Collection<IrClassifierSymbol>.commonSuperclass(): IrClassifierSymbol {
@@ -92,3 +63,30 @@ fun Collection<IrClassifierSymbol>.commonSuperclass(): IrClassifierSymbol {
             ) { it.owner.render() }}"
         )
 }
+
+fun IrType.isSubtypeOf(superType: IrType, irBuiltIns: IrBuiltIns): Boolean {
+    return AbstractTypeChecker.isSubtypeOf(IrTypeCheckerContext(irBuiltIns) as AbstractTypeCheckerContext, this, superType)
+}
+
+fun Collection<IrType>.commonSupertype(irBuiltIns: IrBuiltIns): IrType {
+    return NewCommonSuperTypeCalculator.run {
+        IrTypeCheckerContext(irBuiltIns).commonSuperType(map { it }) as IrType
+    }
+}
+
+fun IrType.isNullable(): Boolean = DFS.ifAny(
+    listOf(this),
+    {
+        when (val classifier = it.classifierOrNull) {
+            is IrTypeParameterSymbol -> classifier.owner.superTypes
+            is IrClassSymbol -> emptyList()
+            null -> emptyList()
+            else -> error("Unsupported classifier: $classifier")
+        }
+    }, {
+        when (it) {
+            is IrSimpleType -> it.hasQuestionMark
+            else -> it is IrDynamicType
+        }
+    }
+)

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedSimpleFunctionDescriptor
 import org.jetbrains.kotlin.backend.common.ir.copyTo
 import org.jetbrains.kotlin.backend.common.ir.copyTypeParametersFrom
+import org.jetbrains.kotlin.backend.common.ir.passTypeArgumentsFrom
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.irBlock
 import org.jetbrains.kotlin.backend.common.lower.replaceThisByStaticReference
@@ -23,11 +24,13 @@ import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
-import org.jetbrains.kotlin.ir.expressions.*
+import org.jetbrains.kotlin.ir.expressions.IrBody
+import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrTypeOperator
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
-import org.jetbrains.kotlin.ir.types.classifierOrFail
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
@@ -48,10 +51,8 @@ internal val jvmStaticAnnotationPhase = makeIrFilePhase(
 private class JvmStaticAnnotationLowering(val context: JvmBackendContext) : IrElementTransformerVoid(), FileLoweringPass {
     override fun lower(irFile: IrFile) {
         CompanionObjectJvmStaticLowering(context).runOnFilePostfix(irFile)
-
-        val functionsMadeStatic =
-            SingletonObjectJvmStaticLowering(context).apply { runOnFilePostfix(irFile) }.functionsMadeStatic
-        irFile.transformChildrenVoid(MakeCallsStatic(context, functionsMadeStatic))
+        SingletonObjectJvmStaticLowering(context).runOnFilePostfix(irFile)
+        irFile.transformChildrenVoid(MakeCallsStatic(context))
     }
 }
 
@@ -63,7 +64,7 @@ private class CompanionObjectJvmStaticLowering(val context: JvmBackendContext) :
 
         companion?.declarations?.filter(::isJvmStaticFunction)?.forEach {
             val jvmStaticFunction = it as IrSimpleFunction
-            val newName = Name.identifier(context.state.typeMapper.mapFunctionName(jvmStaticFunction.symbol.descriptor, null))
+            val newName = Name.identifier(context.methodSignatureMapper.mapFunctionName(jvmStaticFunction, null))
             if (!jvmStaticFunction.visibility.isPublicAPI) {
                 // TODO: Synthetic accessor creation logic should be supported in SyntheticAccessorLowering in the future.
                 val accessorName = Name.identifier("access\$$newName")
@@ -129,12 +130,16 @@ private class CompanionObjectJvmStaticLowering(val context: JvmBackendContext) :
         val companionInstanceFieldSymbol = companionInstanceField.symbol
         val call = IrCallImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, target.returnType, target.symbol)
 
-        call.dispatchReceiver = IrGetFieldImpl(
-            UNDEFINED_OFFSET,
-            UNDEFINED_OFFSET,
-            companionInstanceFieldSymbol,
-            companion.defaultType
-        )
+        call.passTypeArgumentsFrom(proxy)
+
+        target.dispatchReceiverParameter?.let { _ ->
+            call.dispatchReceiver = IrGetFieldImpl(
+                UNDEFINED_OFFSET,
+                UNDEFINED_OFFSET,
+                companionInstanceFieldSymbol,
+                companion.defaultType
+            )
+        }
         proxy.extensionReceiverParameter?.let { extensionReceiver ->
             call.extensionReceiver = IrGetValueImpl(
                 UNDEFINED_OFFSET,
@@ -160,8 +165,6 @@ private class CompanionObjectJvmStaticLowering(val context: JvmBackendContext) :
 private class SingletonObjectJvmStaticLowering(
     val context: JvmBackendContext
 ) : ClassLoweringPass {
-    val functionsMadeStatic: MutableSet<IrFunctionSymbol> = mutableSetOf()
-
     override fun lower(irClass: IrClass) {
         if (!irClass.isObject || irClass.isCompanion) return
 
@@ -171,7 +174,6 @@ private class SingletonObjectJvmStaticLowering(
             jvmStaticFunction.dispatchReceiverParameter?.let { oldDispatchReceiverParameter ->
                 jvmStaticFunction.dispatchReceiverParameter = null
                 modifyBody(jvmStaticFunction, irClass, oldDispatchReceiverParameter)
-                functionsMadeStatic.add(jvmStaticFunction.symbol)
             }
         }
     }
@@ -181,12 +183,16 @@ private class SingletonObjectJvmStaticLowering(
     }
 }
 
+private fun IrFunction.isJvmStaticInSingleton(): Boolean {
+    val parentClass = parent as? IrClass ?: return false
+    return isJvmStaticFunction(this) && parentClass.isObject && !parentClass.isCompanion
+}
+
 private class MakeCallsStatic(
-    val context: JvmBackendContext,
-    val functionsMadeStatic: Set<IrFunctionSymbol>
+    val context: JvmBackendContext
 ) : IrElementTransformerVoid() {
     override fun visitCall(expression: IrCall): IrExpression {
-        if (functionsMadeStatic.contains(expression.symbol)) {
+        if (expression.symbol.owner.isJvmStaticInSingleton() && expression.dispatchReceiver != null) {
             return context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset).irBlock(expression) {
                 // OldReceiver has to be evaluated for its side effects.
                 val oldReceiver = super.visitExpression(expression.dispatchReceiver!!)
@@ -195,7 +201,7 @@ private class MakeCallsStatic(
                     oldReceiver.startOffset, oldReceiver.endOffset,
                     context.irBuiltIns.unitType,
                     IrTypeOperator.IMPLICIT_COERCION_TO_UNIT,
-                    context.irBuiltIns.unitType, context.irBuiltIns.unitType.classifierOrFail,
+                    context.irBuiltIns.unitType,
                     oldReceiver
                 )
 
@@ -211,4 +217,4 @@ private class MakeCallsStatic(
 private fun isJvmStaticFunction(declaration: IrDeclaration): Boolean =
     declaration is IrSimpleFunction &&
             (declaration.hasAnnotation(JVM_STATIC_ANNOTATION_FQ_NAME) ||
-                    declaration.correspondingProperty?.hasAnnotation(JVM_STATIC_ANNOTATION_FQ_NAME) == true)
+                    declaration.correspondingPropertySymbol?.owner?.hasAnnotation(JVM_STATIC_ANNOTATION_FQ_NAME) == true)

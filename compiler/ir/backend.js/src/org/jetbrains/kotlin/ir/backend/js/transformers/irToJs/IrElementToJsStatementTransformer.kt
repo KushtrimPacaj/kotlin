@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.backend.common.ir.isElseBranch
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
 import org.jetbrains.kotlin.ir.backend.js.lower.coroutines.COROUTINE_SWITCH
 import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
+import org.jetbrains.kotlin.ir.backend.js.utils.emptyScope
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.expressions.*
@@ -43,11 +44,11 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
     }
 
     override fun visitBreak(jump: IrBreak, context: JsGenerationContext): JsStatement {
-        return JsBreak(context.getNameForLoop(jump.loop)?.makeRef())
+        return JsBreak(context.getNameForLoop(jump.loop)?.let { JsNameRef(it) })
     }
 
     override fun visitContinue(jump: IrContinue, context: JsGenerationContext): JsStatement {
-        return JsContinue(context.getNameForLoop(jump.loop)?.makeRef())
+        return JsContinue(context.getNameForLoop(jump.loop)?.let { JsNameRef(it) })
     }
 
     override fun visitReturn(expression: IrReturn, context: JsGenerationContext): JsStatement {
@@ -59,7 +60,7 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
     }
 
     override fun visitVariable(declaration: IrVariable, context: JsGenerationContext): JsStatement {
-        val varName = context.getNameForSymbol(declaration.symbol)
+        val varName = context.getNameForValueDeclaration(declaration)
         return jsVar(varName, declaration.initializer, context)
     }
 
@@ -68,6 +69,19 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
             return JsEmpty
         }
         return expression.accept(IrElementToJsExpressionTransformer(), context).makeStmt()
+    }
+
+    override fun visitCall(expression: IrCall, data: JsGenerationContext): JsStatement {
+        if (data.checkIfJsCode(expression.symbol)) {
+            val statements = translateJsCodeIntoStatementList(expression.getValueArgument(0) ?: error("JsCode is expected"))
+            return when (statements.size) {
+                0 -> JsEmpty
+                1 -> statements.single()
+                // TODO: use transparent block (e.g. JsCompositeBlock)
+                else -> JsBlock(statements)
+            }
+        }
+        return translateCall(expression, data, IrElementToJsExpressionTransformer()).makeStmt()
     }
 
     override fun visitInstanceInitializerCall(expression: IrInstanceInitializerCall, context: JsGenerationContext): JsStatement {
@@ -81,9 +95,9 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
         val jsTryBlock = aTry.tryResult.accept(this, context).asBlock()
 
         val jsCatch = aTry.catches.singleOrNull()?.let {
-            val name = context.getNameForSymbol(it.catchParameter.symbol)
+            val name = context.getNameForValueDeclaration(it.catchParameter)
             val jsCatchBlock = it.result.accept(this, context)
-            JsCatch(context.currentScope, name.ident, jsCatchBlock)
+            JsCatch(emptyScope, name.ident, jsCatchBlock)
         }
 
         val jsFinallyBlock = aTry.finallyExpression?.accept(this, context)?.asBlock()

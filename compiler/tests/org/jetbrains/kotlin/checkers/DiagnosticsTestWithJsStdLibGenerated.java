@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.checkers;
@@ -57,6 +57,29 @@ public class DiagnosticsTestWithJsStdLibGenerated extends AbstractDiagnosticsTes
     @TestMetadata("wrongMultipleInheritance.kt")
     public void testWrongMultipleInheritance() throws Exception {
         runTest("compiler/testData/diagnostics/testsWithJsStdLib/wrongMultipleInheritance.kt");
+    }
+
+    @TestMetadata("compiler/testData/diagnostics/testsWithJsStdLib/classLiteral")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class ClassLiteral extends AbstractDiagnosticsTestWithJsStdLib {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+        }
+
+        public void testAllFilesPresentInClassLiteral() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/testsWithJsStdLib/classLiteral"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+        }
+
+        @TestMetadata("arrays_after.kt")
+        public void testArrays_after() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithJsStdLib/classLiteral/arrays_after.kt");
+        }
+
+        @TestMetadata("arrays_before.kt")
+        public void testArrays_before() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithJsStdLib/classLiteral/arrays_before.kt");
+        }
     }
 
     @TestMetadata("compiler/testData/diagnostics/testsWithJsStdLib/dynamicTypes")

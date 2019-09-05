@@ -16,6 +16,12 @@ dependencies {
     testCompile(project(":compiler:cli"))
     testCompile(projectTests(":compiler:tests-common"))
     testCompile(commonDep("junit:junit"))
+
+    testRuntimeOnly(intellijCoreDep()) { includeJars("intellij-core") }
+
+    Platform[192].orHigher {
+        testRuntimeOnly(intellijDep()) { includeJars("platform-concurrency") }
+    }
 }
 
 sourceSets {
@@ -25,20 +31,12 @@ sourceSets {
 
 publish()
 
-val jar = runtimeJar {}
+runtimeJar()
 sourcesJar()
 javadocJar()
-testsJar {}
+testsJar()
 
-dist {
-    rename("kotlin-", "")
-}
-
-ideaPlugin {
-    from(jar)
-}
-
-projectTest {
-    dependsOn(":kotlin-stdlib:jvm-minimal-for-test:dist")
+projectTest(parallel = true) {
+    dependsOn(":dist")
     workingDir = rootDir
 }

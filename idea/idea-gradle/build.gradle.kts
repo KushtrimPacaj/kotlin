@@ -8,11 +8,11 @@ dependencies {
 
     compileOnly(project(":idea"))
     compileOnly(project(":idea:idea-jvm"))
+    compileOnly(project(":idea:idea-native")) { isTransitive = false }
     compile(project(":idea:kotlin-gradle-tooling"))
 
     compile(project(":compiler:frontend"))
     compile(project(":compiler:frontend.java"))
-    compile(project(":compiler:frontend.script"))
 
     compile(project(":js:js.frontend"))
 
@@ -21,6 +21,12 @@ dependencies {
     compileOnly(intellijPluginDep("Groovy"))
     compileOnly(intellijPluginDep("junit"))
     compileOnly(intellijPluginDep("testng"))
+
+    Platform[192].orHigher {
+        compileOnly(intellijPluginDep("java"))
+        testCompileOnly(intellijPluginDep("java"))
+        testRuntimeOnly(intellijPluginDep("java"))
+    }
 
     testCompile(projectTests(":idea"))
     testCompile(projectTests(":idea:idea-test-framework"))
@@ -57,6 +63,11 @@ dependencies {
     }
     testRuntime(intellijPluginDep("android"))
     testRuntime(intellijPluginDep("smali"))
+
+    if (Ide.AS36.orHigher()) {
+        testRuntime(intellijPluginDep("android-layoutlib"))
+        testRuntime(intellijPluginDep("android-wizardTemplate-plugin"))
+    }
 }
 
 sourceSets {
@@ -69,9 +80,21 @@ sourceSets {
 
 testsJar()
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
     useAndroidSdk()
+
+    doFirst {
+        val mainResourceDirPath = File(project.buildDir, "resources/main").absolutePath
+        sourceSets["test"].runtimeClasspath = sourceSets["test"].runtimeClasspath.filter { file ->
+            if (!file.absolutePath.contains(mainResourceDirPath)) {
+                true
+            } else {
+                println("Remove `${file.path}` from the test runtime classpath")
+                false
+            }
+        }
+    }
 }
 
 configureFormInstrumentation()

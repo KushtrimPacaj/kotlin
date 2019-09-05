@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.codeInsight.gradle
@@ -9,12 +9,13 @@ import com.intellij.openapi.extensions.Extensions
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.roots.ExternalLibraryDescriptor
+import com.intellij.testFramework.runInEdtAndWait
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.idea.configuration.*
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.kotlin.test.testFramework.runInEdtAndWait
 import org.jetbrains.kotlin.test.testFramework.runWriteAction
+import org.jetbrains.plugins.gradle.execution.test.runner.GradleTestRunConfigurationProducer
 import org.jetbrains.plugins.gradle.tooling.annotation.TargetVersions
 import org.junit.Assert
 import org.junit.Test
@@ -328,6 +329,14 @@ class GradleConfiguratorTest : GradleImportingTestCase() {
     }
 
     @Test
+    fun testTestTasksAreImported() {
+        importProjectFromTestData()
+
+        val testTasks = GradleTestRunConfigurationProducer.getTasksToRun(myTestFixture.module)
+        assertTrue("There should be at least one test task", testTasks.isNotEmpty())
+    }
+
+    @Test
     fun testAddNonKotlinLibraryGSK() {
         val files = importProjectFromTestData()
 
@@ -562,22 +571,6 @@ class GradleConfiguratorTest : GradleImportingTestCase() {
 
     @Test
     fun testDisableFeatureSupport() {
-        val files = importProjectFromTestData()
-
-        runInEdtAndWait {
-            myTestFixture.project.executeWriteCommand("") {
-                KotlinWithGradleConfigurator.changeFeatureConfiguration(
-                    myTestFixture.module, LanguageFeature.InlineClasses, LanguageFeature.State.DISABLED, false
-                )
-            }
-
-            checkFiles(files)
-        }
-    }
-
-    @TargetVersions("4.7+")
-    @Test
-    fun testDisableFeatureSupportMultiplatform() {
         val files = importProjectFromTestData()
 
         runInEdtAndWait {

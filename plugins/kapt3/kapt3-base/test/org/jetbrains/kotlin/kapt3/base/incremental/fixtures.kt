@@ -1,11 +1,12 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.base.test.org.jetbrains.kotlin.kapt3.base.incremental
 
 import com.sun.source.util.TaskListener
+import com.sun.source.util.Trees
 import com.sun.tools.javac.api.JavacTaskImpl
 import org.jetbrains.kotlin.kapt3.base.incremental.DeclaredProcType
 import org.jetbrains.kotlin.kapt3.base.incremental.IncrementalProcessor
@@ -27,7 +28,8 @@ fun runAnnotationProcessing(
     srcFiles: List<File>,
     processor: List<IncrementalProcessor>,
     generatedSources: File,
-    listener: (Elements) -> TaskListener? = { null }
+    classpath: List<File> = emptyList(),
+    listener: (Elements, Trees) -> TaskListener? = { _, _ -> null }
 ) {
     val compiler = ToolProvider.getSystemJavaCompiler()
     compiler.getStandardFileManager(null, null, null).use { fileManager ->
@@ -37,12 +39,12 @@ fun runAnnotationProcessing(
                 null,
                 fileManager,
                 null,
-                listOf("-proc:only", "-s", generatedSources.absolutePath, "-d", generatedSources.absolutePath),
+                listOf("-proc:only", "-s", generatedSources.absolutePath, "-d", generatedSources.absolutePath, "-cp", classpath.joinToString(separator = File.pathSeparator)),
                 null,
                 javaSrcs
             ) as JavacTaskImpl
 
-        val taskListener = listener(compilationTask.elements)
+        val taskListener = listener(compilationTask.elements, Trees.instance(compilationTask))
         taskListener?.let { compilationTask.addTaskListener(it) }
 
         compilationTask.setProcessors(processor)
@@ -141,6 +143,20 @@ class SimpleGeneratingIfTypeDoesNotExist: SimpleProcessor() {
                     )
                 }
             }
+        }
+
+        return false
+    }
+}
+
+open class ReportTwoOriginElements : SimpleProcessor() {
+    override fun process(annotations: MutableSet<out TypeElement>, roundEnv: RoundEnvironment): Boolean {
+        if (annotations.isEmpty()) return false
+
+        roundEnv.getElementsAnnotatedWith(annotations.single()).forEach {
+            it as TypeElement
+            // Report 2 elements from the same file as originating
+            filer.createSourceFile("${it.qualifiedName}Generated", it, it).openWriter().use { it.write("") }
         }
 
         return false

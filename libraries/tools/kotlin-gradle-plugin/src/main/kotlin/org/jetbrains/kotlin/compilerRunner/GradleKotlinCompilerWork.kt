@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.compilerRunner
@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.gradle.tasks.clearLocalState
 import org.jetbrains.kotlin.gradle.tasks.throwGradleExceptionIfError
 import org.jetbrains.kotlin.gradle.utils.stackTraceAsString
 import org.jetbrains.kotlin.incremental.ChangedFiles
+import org.jetbrains.kotlin.incremental.IncrementalModuleInfo
 import org.slf4j.LoggerFactory
 import java.io.*
 import java.net.URLClassLoader
@@ -76,7 +77,7 @@ internal class GradleKotlinCompilerWork @Inject constructor(
     companion object {
         init {
             if (System.getProperty("org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.trace.loading") == "true") {
-                System.out.println("Loaded GradleKotlinCompilerWork")
+                println("Loaded GradleKotlinCompilerWork")
             }
         }
     }
@@ -148,8 +149,7 @@ internal class GradleKotlinCompilerWork @Inject constructor(
     }
 
     private fun compileWithDaemon(messageCollector: MessageCollector): ExitCode? {
-        val isDebugEnabled = log.isDebugEnabled || System.getProperty("kotlin.daemon.debug.log")?.toBoolean() ?: false
-        val enableAssertions = System.getProperty("kotlin.daemon.ea")?.toBoolean() ?: false
+        val isDebugEnabled = log.isDebugEnabled || System.getProperty("kotlin.daemon.debug.log")?.toBoolean() ?: true
         val daemonMessageCollector =
             if (isDebugEnabled) messageCollector else MessageCollector.NONE
 
@@ -160,8 +160,7 @@ internal class GradleKotlinCompilerWork @Inject constructor(
                     sessionFlagFile,
                     compilerFullClasspath,
                     daemonMessageCollector,
-                    isDebugEnabled = isDebugEnabled,
-                    enableAssertions = enableAssertions
+                    isDebugEnabled = isDebugEnabled
                 )
             } catch (e: Throwable) {
                 log.error("Caught an exception trying to connect to Kotlin Daemon:")
@@ -178,6 +177,12 @@ internal class GradleKotlinCompilerWork @Inject constructor(
         }
 
         val (daemon, sessionId) = connection
+
+        if (log.isDebugEnabled) {
+            daemon.getDaemonJVMOptions().takeIf { it.isGood }?.let { jvmOpts ->
+                log.debug("Kotlin compile daemon JVM options: ${jvmOpts.get().mappers.flatMap { it.toArgs("-") }}")
+            }
+        }
         val targetPlatform = when (compilerClassName) {
             KotlinCompilerClass.JVM -> CompileService.TargetPlatform.JVM
             KotlinCompilerClass.JS -> CompileService.TargetPlatform.JS
@@ -268,7 +273,6 @@ internal class GradleKotlinCompilerWork @Inject constructor(
             outputFiles = outputFiles,
             multiModuleICSettings = icEnv.multiModuleICSettings,
             modulesInfo = incrementalModuleInfo!!,
-            classpathFqNamesHistory = icEnv.classpathFqNamesHistory,
             kotlinScriptExtensions = kotlinScriptExtensions
         )
 

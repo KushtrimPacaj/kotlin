@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.generators.builtins.unsigned
@@ -349,7 +349,7 @@ class UnsignedTypeGenerator(val type: UnsignedType, out: PrintWriter) : BuiltIns
                 /**
                  * Converts this [$otherName] value to [$className].
                  *
-                 * The fractional part, if any, is rounded down.
+                 * The fractional part, if any, is rounded down towards zero.
                  * Returns zero if this `$otherName` value is negative or `NaN`, [$className.MAX_VALUE] if it's bigger than `$className.MAX_VALUE`.
                  */
                 """.trimIndent()
@@ -371,7 +371,6 @@ class UnsignedTypeGenerator(val type: UnsignedType, out: PrintWriter) : BuiltIns
             UnsignedType.UBYTE, UnsignedType.USHORT -> out.println("toInt().toString()")
             UnsignedType.UINT -> out.println("toLong().toString()")
             UnsignedType.ULONG -> out.println("ulongToString(data)")
-            else -> error(type)
         }
 
         out.println()
@@ -477,6 +476,13 @@ class UnsignedArrayGenerator(val type: UnsignedType, out: PrintWriter) : BuiltIn
 
         // TODO: Make inline constructor, like in ByteArray
         out.println("""
+/**
+ * Creates a new array of the specified [size], where each element is calculated by calling the specified
+ * [init] function.
+ *
+ * The function [init] is called for each array element sequentially starting from the first one.
+ * It should return the value for an array element given its index.
+ */
 @SinceKotlin("1.3")
 @ExperimentalUnsignedTypes
 @kotlin.internal.InlineOnly

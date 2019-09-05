@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.descriptors.impl;
@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.resolve.scopes.MemberScope;
 import org.jetbrains.kotlin.storage.StorageManager;
 import org.jetbrains.kotlin.types.*;
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner;
 
 import java.util.*;
 
@@ -162,7 +163,7 @@ public class MutableClassDescriptor extends ClassDescriptorBase {
 
     @Override
     @NotNull
-    public MemberScope getUnsubstitutedMemberScope() {
+    public MemberScope getUnsubstitutedMemberScope(@NotNull KotlinTypeRefiner kotlinTypeRefiner) {
         return MemberScope.Empty.INSTANCE; // used for getDefaultType
     }
 

@@ -1,16 +1,17 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.util
 
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.descriptors.NotFoundClasses
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
-import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.types.classifierOrFail
@@ -19,7 +20,6 @@ import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.constants.*
 import org.jetbrains.kotlin.resolve.source.PsiSourceElement
-import org.jetbrains.kotlin.resolve.source.PsiSourceFile
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
@@ -38,7 +38,19 @@ class ConstantValueGenerator(
         endOffset: Int,
         constantValue: ConstantValue<*>,
         varargElementType: KotlinType? = null
-    ): IrExpression {
+    ): IrExpression =
+        // Assertion is safe here because annotation calls are not allowed in constant initializers
+        generateConstantOrAnnotationValueAsExpression(startOffset, endOffset, constantValue, varargElementType)!!
+
+    /**
+     * @return null if the constant value is an unresolved annotation
+     */
+    private fun generateConstantOrAnnotationValueAsExpression(
+        startOffset: Int,
+        endOffset: Int,
+        constantValue: ConstantValue<*>,
+        varargElementType: KotlinType? = null
+    ): IrExpression? {
         val constantKtType = constantValue.getType(moduleDescriptor)
         val constantType = constantKtType.toIrType()
 
@@ -73,7 +85,7 @@ class ConstantValueGenerator(
             is EnumValue -> {
                 val enumEntryDescriptor =
                     constantKtType.memberScope.getContributedClassifier(constantValue.enumEntryName, NoLookupLocation.FROM_BACKEND)
-                            ?: throw AssertionError("No such enum entry ${constantValue.enumEntryName} in $constantType")
+                        ?: throw AssertionError("No such enum entry ${constantValue.enumEntryName} in $constantType")
                 if (enumEntryDescriptor !is ClassDescriptor) {
                     throw AssertionError("Enum entry $enumEntryDescriptor should be a ClassDescriptor")
                 }
@@ -89,7 +101,7 @@ class ConstantValueGenerator(
             is KClassValue -> {
                 val classifierKtType = constantValue.getArgumentType(moduleDescriptor)
                 val classifierDescriptor = classifierKtType.constructor.declarationDescriptor
-                        ?: throw AssertionError("Unexpected KClassValue: $classifierKtType")
+                    ?: throw AssertionError("Unexpected KClassValue: $classifierKtType")
 
                 IrClassReferenceImpl(
                     startOffset, endOffset,
@@ -103,29 +115,29 @@ class ConstantValueGenerator(
         }
     }
 
-    fun generateAnnotationConstructorCall(annotationDescriptor: AnnotationDescriptor): IrCall {
+    fun generateAnnotationConstructorCall(annotationDescriptor: AnnotationDescriptor): IrConstructorCall? {
         val annotationType = annotationDescriptor.type
-        val annotationClassDescriptor = annotationType.constructor.declarationDescriptor as? ClassDescriptor
-                ?: throw AssertionError("No declaration descriptor for annotation $annotationDescriptor")
+        val annotationClassDescriptor = annotationType.constructor.declarationDescriptor
+        if (annotationClassDescriptor !is ClassDescriptor) return null
+        if (annotationClassDescriptor is NotFoundClasses.MockClassDescriptor) return null
 
         assert(DescriptorUtils.isAnnotationClass(annotationClassDescriptor)) {
             "Annotation class expected: $annotationClassDescriptor"
         }
 
         val primaryConstructorDescriptor = annotationClassDescriptor.unsubstitutedPrimaryConstructor
-                ?: annotationClassDescriptor.constructors.singleOrNull()
-                ?: throw AssertionError("No constructor for annotation class $annotationClassDescriptor")
+            ?: annotationClassDescriptor.constructors.singleOrNull()
+            ?: throw AssertionError("No constructor for annotation class $annotationClassDescriptor")
         val primaryConstructorSymbol = symbolTable.referenceConstructor(primaryConstructorDescriptor)
 
         val psi = annotationDescriptor.source.safeAs<PsiSourceElement>()?.psi
         val startOffset = psi?.takeUnless { it.containingFile.fileType.isBinary }?.startOffset ?: UNDEFINED_OFFSET
         val endOffset = psi?.takeUnless { it.containingFile.fileType.isBinary }?.endOffset ?: UNDEFINED_OFFSET
 
-        val irCall = IrCallImpl(
+        val irCall = IrConstructorCallImpl.fromSymbolDescriptor(
             startOffset, endOffset,
             annotationType.toIrType(),
-            primaryConstructorSymbol, primaryConstructorDescriptor,
-            typeArgumentsCount = 0
+            primaryConstructorSymbol
         )
 
         for (valueParameter in primaryConstructorDescriptor.valueParameters) {

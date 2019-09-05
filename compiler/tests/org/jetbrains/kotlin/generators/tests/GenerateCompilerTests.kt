@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.generators.tests
@@ -17,9 +17,7 @@ import org.jetbrains.kotlin.codegen.*
 import org.jetbrains.kotlin.codegen.defaultConstructor.AbstractDefaultArgumentsReflectionTest
 import org.jetbrains.kotlin.codegen.flags.AbstractWriteFlagsTest
 import org.jetbrains.kotlin.codegen.ir.*
-import org.jetbrains.kotlin.fir.AbstractFirDiagnosticsSmokeTest
-import org.jetbrains.kotlin.fir.AbstractFirResolveTestCase
-import org.jetbrains.kotlin.fir.AbstractFirResolveTestCaseWithStdlib
+import org.jetbrains.kotlin.fir.*
 import org.jetbrains.kotlin.fir.builder.AbstractRawFirBuilderTestCase
 import org.jetbrains.kotlin.fir.java.AbstractFirTypeEnhancementTest
 import org.jetbrains.kotlin.fir.java.AbstractOwnFirTypeEnhancementTest
@@ -32,6 +30,8 @@ import org.jetbrains.kotlin.ir.AbstractIrJsTextTestCase
 import org.jetbrains.kotlin.ir.AbstractIrSourceRangesTestCase
 import org.jetbrains.kotlin.ir.AbstractIrTextTestCase
 import org.jetbrains.kotlin.jvm.compiler.*
+import org.jetbrains.kotlin.jvm.compiler.ir.AbstractIrCompileJavaAgainstKotlinTest
+import org.jetbrains.kotlin.jvm.compiler.ir.AbstractIrLoadJavaTest
 import org.jetbrains.kotlin.jvm.compiler.javac.AbstractLoadJavaUsingJavacTest
 import org.jetbrains.kotlin.lexer.kdoc.AbstractKDocLexerTest
 import org.jetbrains.kotlin.lexer.kotlin.AbstractKotlinLexerTest
@@ -50,6 +50,8 @@ import org.jetbrains.kotlin.resolve.constraintSystem.AbstractConstraintSystemTes
 import org.jetbrains.kotlin.serialization.AbstractLocalClassProtoTest
 import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.types.AbstractTypeBindingTest
+import org.jetbrains.kotlin.visualizer.psi.AbstractPsiVisualizer
+import org.jetbrains.kotlin.visualizer.fir.AbstractFirVisualizer
 
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
@@ -165,11 +167,11 @@ fun main(args: Array<String>) {
         }
 
         testClass<AbstractBlackBoxInlineCodegenTest> {
-            model("codegen/boxInline")
+            model("codegen/boxInline", targetBackend = TargetBackend.JVM)
         }
 
         testClass<AbstractCompileKotlinAgainstInlineKotlinTest> {
-            model("codegen/boxInline")
+            model("codegen/boxInline", targetBackend = TargetBackend.JVM)
         }
 
         testClass<AbstractBlackBoxAgainstJavaCodegenTest> {
@@ -219,7 +221,7 @@ fun main(args: Array<String>) {
         }
 
         testClass<AbstractWriteFlagsTest> {
-            model("writeFlags")
+            model("writeFlags", targetBackend = TargetBackend.JVM)
         }
 
         testClass<AbstractDefaultArgumentsReflectionTest> {
@@ -261,8 +263,8 @@ fun main(args: Array<String>) {
         }
 
         testClass<AbstractCompileJavaAgainstKotlinTest> {
-            model("compileJavaAgainstKotlin", testClassName = "WithoutJavac", testMethod = "doTestWithoutJavac")
-            model("compileJavaAgainstKotlin", testClassName = "WithJavac", testMethod = "doTestWithJavac")
+            model("compileJavaAgainstKotlin", testClassName = "WithoutJavac", testMethod = "doTestWithoutJavac", targetBackend = TargetBackend.JVM)
+            model("compileJavaAgainstKotlin", testClassName = "WithJavac", testMethod = "doTestWithJavac", targetBackend = TargetBackend.JVM)
         }
 
         testClass<AbstractCompileKotlinAgainstJavaTest> {
@@ -363,12 +365,57 @@ fun main(args: Array<String>) {
             model("codegen/boxAgainstJava", targetBackend = TargetBackend.JVM_IR)
         }
 
+        testClass<AbstractIrCompileJavaAgainstKotlinTest> {
+            model("compileJavaAgainstKotlin", testClassName = "WithoutJavac", testMethod = "doTestWithoutJavac", targetBackend = TargetBackend.JVM_IR)
+            //model("compileJavaAgainstKotlin", testClassName = "WithJavac", testMethod = "doTestWithJavac", targetBackend = TargetBackend.JVM_IR)
+        }
+
         testClass<AbstractIrCompileKotlinAgainstKotlinTest> {
             model("compileKotlinAgainstKotlin", targetBackend = TargetBackend.JVM_IR)
         }
 
         testClass<AbstractIrCheckLocalVariablesTableTest> {
             model("checkLocalVariablesTable", targetBackend = TargetBackend.JVM_IR)
+        }
+
+        testClass<AbstractIrWriteFlagsTest> {
+            model("writeFlags", targetBackend = TargetBackend.JVM_IR)
+        }
+
+        testClass<AbstractIrWriteSignatureTest> {
+            model("writeSignature", targetBackend = TargetBackend.JVM_IR)
+        }
+
+        testClass<AbstractIrLoadJavaTest> {
+            model("loadJava/compiledJava", extension = "java", testMethod = "doTestCompiledJava", targetBackend = TargetBackend.JVM_IR)
+            model(
+                "loadJava/compiledJavaAndKotlin",
+                extension = "txt",
+                testMethod = "doTestCompiledJavaAndKotlin",
+                targetBackend = TargetBackend.JVM_IR
+            )
+            model(
+                "loadJava/compiledJavaIncludeObjectMethods",
+                extension = "java",
+                testMethod = "doTestCompiledJavaIncludeObjectMethods",
+                targetBackend = TargetBackend.JVM_IR
+            )
+            model("loadJava/compiledKotlin", testMethod = "doTestCompiledKotlin", targetBackend = TargetBackend.JVM_IR)
+            model("loadJava/compiledKotlinWithStdlib", testMethod = "doTestCompiledKotlinWithStdlib", targetBackend = TargetBackend.JVM_IR)
+            model(
+                "loadJava/javaAgainstKotlin",
+                extension = "txt",
+                testMethod = "doTestJavaAgainstKotlin",
+                targetBackend = TargetBackend.JVM_IR
+            )
+            model(
+                "loadJava/kotlinAgainstCompiledJavaWithKotlin",
+                extension = "kt",
+                testMethod = "doTestKotlinAgainstCompiledJavaWithKotlin",
+                recursive = false,
+                targetBackend = TargetBackend.JVM_IR
+            )
+            model("loadJava/sourceJava", extension = "java", testMethod = "doTestSourceJava", targetBackend = TargetBackend.JVM_IR)
         }
 
         testClass<AbstractIrLineNumberTest> {
@@ -392,11 +439,22 @@ fun main(args: Array<String>) {
 
     testGroup("compiler/fir/resolve/tests", "compiler/fir/resolve/testData") {
         testClass<AbstractFirResolveTestCase> {
-            model("resolve", pattern = KT_WITHOUT_DOTS_IN_NAME, excludeDirs = listOf("stdlib"))
+            model("resolve", pattern = KT_WITHOUT_DOTS_IN_NAME, excludeDirs = listOf("stdlib", "cfg", "smartcasts"))
         }
 
         testClass<AbstractFirResolveTestCaseWithStdlib> {
             model("resolve/stdlib", pattern = KT_WITHOUT_DOTS_IN_NAME)
+        }
+
+        testClass<AbstractFirCfgBuildingTest> {
+            model("resolve/cfg", pattern = KT_WITHOUT_DOTS_IN_NAME)
+            model("resolve/smartcasts", pattern = KT_WITHOUT_DOTS_IN_NAME)
+        }
+    }
+
+    testGroup("compiler/fir/resolve/tests", "compiler/testData") {
+        testClass<AbstractFirLoadCompiledKotlin> {
+            model("loadJava/compiledKotlin", extension = "kt")
         }
     }
 
@@ -412,11 +470,36 @@ fun main(args: Array<String>) {
         }
     }
 
-
     testGroup("compiler/fir/resolve/tests", "compiler/testData") {
 
         testClass<AbstractFirDiagnosticsSmokeTest> {
             model("diagnostics/tests")
+        }
+    }
+
+    testGroup("compiler/fir/fir2ir/tests", "compiler/testData") {
+        testClass<AbstractFir2IrTextTest> {
+            model("ir/irText")
+        }
+    }
+
+    testGroup("compiler/visualizer/tests", "compiler/fir/psi2fir/testData") {
+        testClass<AbstractPsiVisualizer>("PsiVisualizerForRawFirDataGenerated") {
+            model("rawBuilder", testMethod = "doFirBuilderDataTest")
+        }
+
+        testClass<AbstractFirVisualizer>("FirVisualizerForRawFirDataGenerated") {
+            model("rawBuilder", testMethod = "doFirBuilderDataTest")
+        }
+    }
+
+    testGroup("compiler/visualizer/tests", "compiler/visualizer/testData") {
+        testClass<AbstractPsiVisualizer>("PsiVisualizerForUncommonCasesGenerated") {
+            model("uncommonCases/testFiles", testMethod = "doUncommonCasesTest")
+        }
+
+        testClass<AbstractFirVisualizer>("FirVisualizerForUncommonCasesGenerated") {
+            model("uncommonCases/testFiles", testMethod = "doUncommonCasesTest")
         }
     }
 }

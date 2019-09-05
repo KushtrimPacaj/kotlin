@@ -14,13 +14,12 @@ dependencies {
     compileOnly(project(":compiler:cli"))
     compile(project(":kotlin-scripting-common"))
     compile(project(":kotlin-scripting-jvm"))
-    compile(project(":kotlin-scripting-impl"))
+    compile(project(":kotlin-scripting-compiler-impl"))
     compile(kotlinStdlib())
     compileOnly(project(":kotlin-reflect-api"))
     compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
 
     testCompile(project(":compiler:frontend"))
-    testCompile(project(":compiler:frontend.script"))
     testCompile(project(":compiler:plugin-api"))
     testCompile(project(":compiler:util"))
     testCompile(project(":compiler:cli"))
@@ -28,6 +27,9 @@ dependencies {
     testCompile(project(":compiler:frontend.java"))
     testCompile(projectTests(":compiler:tests-common"))
     testCompile(commonDep("junit:junit"))
+
+    testRuntimeOnly(intellijCoreDep()) { includeJars("intellij-core") }
+    testRuntimeOnly(intellijDep()) { includeJars("jps-model") }
 }
 
 sourceSets {
@@ -37,20 +39,21 @@ sourceSets {
 
 tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinCompile<*>> {
     kotlinOptions {
-        languageVersion = "1.2"
-        apiVersion = "1.2"
+        languageVersion = "1.3"
+        apiVersion = "1.3"
         freeCompilerArgs += "-Xskip-metadata-version-check"
     }
 }
 
 publish()
 
-val jar = runtimeJar {}
+runtimeJar()
 sourcesJar()
 javadocJar()
 
-dist()
+testsJar()
 
 projectTest {
+    dependsOn(":dist")
     workingDir = rootDir
 }

@@ -16,22 +16,17 @@
 
 package org.jetbrains.kotlin.backend.jvm.codegen
 
-import org.jetbrains.kotlin.codegen.Callable
-import org.jetbrains.kotlin.codegen.CallableMethod
 import org.jetbrains.kotlin.codegen.StackValue
 import org.jetbrains.kotlin.codegen.ValueKind
-import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
+import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.expressions.IrMemberAccessExpression
+import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
 import org.jetbrains.org.objectweb.asm.Type
 
 interface IrCallGenerator {
-
-    fun genCall(callableMethod: Callable, callDefault: Boolean, codegen: ExpressionCodegen, expression: IrMemberAccessExpression) {
-        if (!callDefault) {
-            callableMethod.genInvokeInstruction(codegen.mv)
-        } else {
-            (callableMethod as CallableMethod).genInvokeDefaultInstruction(codegen.mv)
+    fun genCall(callableMethod: IrCallableMethod, codegen: ExpressionCodegen, expression: IrFunctionAccessExpression) {
+        with(callableMethod) {
+            codegen.mv.visitMethodInsn(invokeOpcode, owner.internalName, asmMethod.name, asmMethod.descriptor, isInterfaceMethod)
         }
     }
 
@@ -40,14 +35,13 @@ interface IrCallGenerator {
     }
 
     fun genValueAndPut(
-        valueParameterDescriptor: ValueParameterDescriptor?,
+        irValueParameter: IrValueParameter,
         argumentExpression: IrExpression,
         parameterType: Type,
-        parameterIndex: Int,
         codegen: ExpressionCodegen,
         blockInfo: BlockInfo
     ) {
-        codegen.gen(argumentExpression, parameterType, blockInfo)
+        codegen.gen(argumentExpression, parameterType, irValueParameter.type, blockInfo)
     }
 
     fun putValueIfNeeded(parameterType: Type, value: StackValue, kind: ValueKind, parameterIndex: Int, codegen: ExpressionCodegen) {

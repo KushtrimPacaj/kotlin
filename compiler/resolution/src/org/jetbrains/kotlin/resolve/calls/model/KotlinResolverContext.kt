@@ -25,13 +25,13 @@ import org.jetbrains.kotlin.resolve.calls.components.*
 import org.jetbrains.kotlin.resolve.calls.inference.addSubsystemFromArgument
 import org.jetbrains.kotlin.resolve.calls.inference.components.ConstraintInjector
 import org.jetbrains.kotlin.resolve.calls.inference.model.ConstraintStorage
-import org.jetbrains.kotlin.resolve.calls.inference.model.NewConstraintSystemImpl
 import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
 import org.jetbrains.kotlin.resolve.calls.tower.*
 import org.jetbrains.kotlin.resolve.descriptorUtil.hasDynamicExtensionAnnotation
 import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValueWithSmartCastInfo
 import org.jetbrains.kotlin.types.ErrorUtils
 import org.jetbrains.kotlin.types.TypeSubstitutor
+import org.jetbrains.kotlin.types.checker.NewKotlinTypeChecker
 import org.jetbrains.kotlin.types.isDynamic
 
 
@@ -43,14 +43,16 @@ class KotlinCallComponents(
     val reflectionTypes: ReflectionTypes,
     val builtIns: KotlinBuiltIns,
     val languageVersionSettings: LanguageVersionSettings,
-    val samConversionTransformer: SamConversionTransformer
+    val samConversionTransformer: SamConversionTransformer,
+    val kotlinTypeChecker: NewKotlinTypeChecker
 )
 
 class SimpleCandidateFactory(
     val callComponents: KotlinCallComponents,
     val scopeTower: ImplicitScopeTower,
     val kotlinCall: KotlinCall,
-    val resolutionCallbacks: KotlinResolutionCallbacks
+    val resolutionCallbacks: KotlinResolutionCallbacks,
+    val callableReferenceResolver: CallableReferenceResolver
 ) : CandidateFactory<KotlinResolutionCandidate> {
     val inferenceSession: InferenceSession = resolutionCallbacks.inferenceSession
 
@@ -76,7 +78,9 @@ class SimpleCandidateFactory(
         fromResolution: ReceiverValueWithSmartCastInfo?
     ): SimpleKotlinCallArgument? =
         explicitReceiver as? SimpleKotlinCallArgument ?: // qualifier receiver cannot be safe
-        fromResolution?.let { ReceiverExpressionKotlinCallArgument(it, isSafeCall = false) } // todo smartcast implicit this
+        fromResolution?.let {
+            ReceiverExpressionKotlinCallArgument(it, isSafeCall = false, isForImplicitInvoke = kotlinCall.isForImplicitInvoke)
+        } // todo smartcast implicit this
 
     private fun KotlinCall.getExplicitDispatchReceiver(explicitReceiverKind: ExplicitReceiverKind) = when (explicitReceiverKind) {
         ExplicitReceiverKind.DISPATCH_RECEIVER -> explicitReceiver
@@ -94,7 +98,9 @@ class SimpleCandidateFactory(
 
         val explicitReceiverKind =
             if (givenCandidate.dispatchReceiver == null) ExplicitReceiverKind.NO_EXPLICIT_RECEIVER else ExplicitReceiverKind.DISPATCH_RECEIVER
-        val dispatchArgumentReceiver = givenCandidate.dispatchReceiver?.let { ReceiverExpressionKotlinCallArgument(it, isSafeCall) }
+        val dispatchArgumentReceiver = givenCandidate.dispatchReceiver?.let {
+            ReceiverExpressionKotlinCallArgument(it, isSafeCall)
+        }
         return createCandidate(
             givenCandidate.descriptor, explicitReceiverKind, dispatchArgumentReceiver, null,
             listOf(), givenCandidate.knownTypeParametersResultingSubstitutor
@@ -135,6 +141,7 @@ class SimpleCandidateFactory(
         if (ErrorUtils.isError(descriptor)) {
             return KotlinResolutionCandidate(
                 callComponents,
+                callableReferenceResolver,
                 scopeTower,
                 baseSystem,
                 resolvedKtCall,
@@ -143,7 +150,9 @@ class SimpleCandidateFactory(
             )
         }
 
-        val candidate = KotlinResolutionCandidate(callComponents, scopeTower, baseSystem, resolvedKtCall, knownSubstitutor)
+        val candidate = KotlinResolutionCandidate(
+            callComponents, callableReferenceResolver, scopeTower, baseSystem, resolvedKtCall, knownSubstitutor
+        )
 
         initialDiagnostics.forEach(candidate::addDiagnostic)
 
@@ -210,6 +219,7 @@ enum class KotlinCallKind(vararg resolutionPart: ResolutionPart) {
         CheckReceivers,
         CheckArgumentsInParenthesis,
         CheckExternalArgument,
+        EagerResolveOfCallableReferences,
         PostponedVariablesInitializerResolutionPart
     ),
     INVOKE(*FUNCTION.resolutionSequence.toTypedArray()),

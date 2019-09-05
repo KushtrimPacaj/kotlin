@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.cli
@@ -90,10 +90,16 @@ enum class KaptCliOption(
         "Use only in apt mode. Output directory for cache necessary to support incremental annotation processing."
     ),
 
-    CLASSPATH_FQ_NAMES_HISTORY(
-        "classpathFqNamesHistory",
-        "<path>",
-        "Use only in apt mode. Directory containing history of classpath fq name changes."
+    CLASSPATH_CHANGES(
+        "classpathChange",
+        "<jvmInternalName,[jvmInternalName,...]>",
+        "Use only in apt mode. Classpath jvm internal names that changed."
+    ),
+
+    PROCESS_INCREMENTALLY(
+        "processIncrementally",
+        "boolean",
+        "Use only in apt mode. Enables incremental apt processing"
     ),
 
     ANNOTATION_PROCESSOR_CLASSPATH_OPTION(

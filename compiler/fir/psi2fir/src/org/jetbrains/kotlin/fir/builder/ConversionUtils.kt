@@ -1,32 +1,40 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir.builder
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.tree.IElementType
-import org.jetbrains.kotlin.KtNodeTypes
-import org.jetbrains.kotlin.fir.FirReference
+import org.jetbrains.kotlin.descriptors.Visibilities
+import org.jetbrains.kotlin.fir.FirFunctionTarget
 import org.jetbrains.kotlin.fir.FirSession
+import org.jetbrains.kotlin.fir.FirWhenSubject
+import org.jetbrains.kotlin.fir.declarations.impl.FirModifiableAccessorsOwner
+import org.jetbrains.kotlin.fir.declarations.impl.FirPropertyAccessorImpl
+import org.jetbrains.kotlin.fir.declarations.impl.FirValueParameterImpl
 import org.jetbrains.kotlin.fir.declarations.impl.FirVariableImpl
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.expressions.impl.*
-import org.jetbrains.kotlin.fir.references.FirErrorNamedReference
+import org.jetbrains.kotlin.fir.references.FirDelegateFieldReferenceImpl
 import org.jetbrains.kotlin.fir.references.FirExplicitThisReference
+import org.jetbrains.kotlin.fir.references.FirResolvedCallableReferenceImpl
 import org.jetbrains.kotlin.fir.references.FirSimpleNamedReference
+import org.jetbrains.kotlin.fir.symbols.impl.FirPropertyAccessorSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirVariableSymbol
+import org.jetbrains.kotlin.fir.types.ConeStarProjection
 import org.jetbrains.kotlin.fir.types.FirTypeRef
+import org.jetbrains.kotlin.fir.types.impl.FirImplicitKPropertyTypeRef
 import org.jetbrains.kotlin.fir.types.impl.FirImplicitTypeRefImpl
 import org.jetbrains.kotlin.ir.expressions.IrConstKind
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.resolve.constants.evaluate.*
 import org.jetbrains.kotlin.types.expressions.OperatorConventions
+import org.jetbrains.kotlin.util.OperatorNameConventions
 
-internal fun String.parseCharacter(): Char? {
+fun String.parseCharacter(): Char? {
     // Strip the quotes
     if (length < 2 || this[0] != '\'' || this[length - 1] != '\'') {
         return null
@@ -49,7 +57,7 @@ internal fun String.parseCharacter(): Char? {
     }
 }
 
-internal fun escapedStringToCharacter(text: String): Char? {
+fun escapedStringToCharacter(text: String): Char? {
     assert(text.isNotEmpty() && text[0] == '\\') {
         "Only escaped sequences must be passed to this routine: $text"
     }
@@ -93,62 +101,15 @@ internal fun translateEscape(c: Char): Char? =
         else -> null
     }
 
-internal fun generateConstantExpressionByLiteral(session: FirSession, expression: KtConstantExpression): FirExpression {
-    val type = expression.node.elementType
-    val text: String = expression.text
-    val convertedText: Any? = when (type) {
-        KtNodeTypes.INTEGER_CONSTANT, KtNodeTypes.FLOAT_CONSTANT -> parseNumericLiteral(text, type)
-        KtNodeTypes.BOOLEAN_CONSTANT -> parseBoolean(text)
-        else -> null
-    }
-    return when (type) {
-        KtNodeTypes.INTEGER_CONSTANT ->
-            if (convertedText is Long &&
-                (hasLongSuffix(text) || hasUnsignedLongSuffix(text) || hasUnsignedSuffix(text) ||
-                        convertedText > Int.MAX_VALUE || convertedText < Int.MIN_VALUE)
-            ) {
-                FirConstExpressionImpl(
-                    session, expression, IrConstKind.Long, convertedText, "Incorrect long: $text"
-                )
-            } else if (convertedText is Number) {
-                // TODO: support byte / short
-                FirConstExpressionImpl(session, expression, IrConstKind.Int, convertedText.toInt(), "Incorrect int: $text")
-            } else {
-                FirErrorExpressionImpl(session, expression, reason = "Incorrect constant expression: $text")
-            }
-        KtNodeTypes.FLOAT_CONSTANT ->
-            if (convertedText is Float) {
-                FirConstExpressionImpl(
-                    session, expression, IrConstKind.Float, convertedText, "Incorrect float: $text"
-                )
-            } else {
-                FirConstExpressionImpl(
-                    session, expression, IrConstKind.Double, convertedText as Double, "Incorrect double: $text"
-                )
-            }
-        KtNodeTypes.CHARACTER_CONSTANT ->
-            FirConstExpressionImpl(
-                session, expression, IrConstKind.Char, text.parseCharacter(), "Incorrect character: $text"
-            )
-        KtNodeTypes.BOOLEAN_CONSTANT ->
-            FirConstExpressionImpl(session, expression, IrConstKind.Boolean, convertedText as Boolean)
-        KtNodeTypes.NULL ->
-            FirConstExpressionImpl(session, expression, IrConstKind.Null, null)
-        else ->
-            throw AssertionError("Unknown literal type: $type, $text")
-    }
-
-}
-
-internal fun IElementType.toBinaryName(): Name? {
+fun IElementType.toBinaryName(): Name? {
     return OperatorConventions.BINARY_OPERATION_NAMES[this]
 }
 
-internal fun IElementType.toUnaryName(): Name? {
+fun IElementType.toUnaryName(): Name? {
     return OperatorConventions.UNARY_OPERATION_NAMES[this]
 }
 
-internal fun IElementType.toFirOperation(): FirOperation =
+fun IElementType.toFirOperation(): FirOperation =
     when (this) {
         KtTokens.LT -> FirOperation.LT
         KtTokens.GT -> FirOperation.GT
@@ -158,11 +119,6 @@ internal fun IElementType.toFirOperation(): FirOperation =
         KtTokens.EXCLEQ -> FirOperation.NOT_EQ
         KtTokens.EQEQEQ -> FirOperation.IDENTITY
         KtTokens.EXCLEQEQEQ -> FirOperation.NOT_IDENTITY
-        KtTokens.ANDAND -> FirOperation.AND
-        KtTokens.OROR -> FirOperation.OR
-        KtTokens.IN_KEYWORD -> FirOperation.IN
-        KtTokens.NOT_IN -> FirOperation.NOT_IN
-        KtTokens.RANGE -> FirOperation.RANGE
 
         KtTokens.EQ -> FirOperation.ASSIGN
         KtTokens.PLUSEQ -> FirOperation.PLUS_ASSIGN
@@ -177,100 +133,134 @@ internal fun IElementType.toFirOperation(): FirOperation =
         else -> throw AssertionError(this.toString())
     }
 
-internal fun FirExpression.generateNotNullOrOther(
-    session: FirSession, other: FirExpression, caseId: String, basePsi: KtElement
+fun FirExpression.generateNotNullOrOther(
+    session: FirSession, other: FirExpression, caseId: String, basePsi: KtElement?
 ): FirWhenExpression {
     val subjectName = Name.special("<$caseId>")
-    val subjectVariable = generateTemporaryVariable(session, psi, subjectName, this)
-    val subjectExpression = FirWhenSubjectExpression(session, psi)
+    val subjectVariable = generateTemporaryVariable(session, basePsi, subjectName, this)
+    val subject = FirWhenSubject()
+    val subjectExpression = FirWhenSubjectExpressionImpl(basePsi, subject)
     return FirWhenExpressionImpl(
-        session, basePsi, this, subjectVariable
+        basePsi, this, subjectVariable
     ).apply {
+        subject.bind(this)
         branches += FirWhenBranchImpl(
-            session, psi,
-            FirOperatorCallImpl(session, psi, FirOperation.NOT_EQ).apply {
+            basePsi,
+            FirOperatorCallImpl(basePsi, FirOperation.EQ).apply {
                 arguments += subjectExpression
-                arguments += FirConstExpressionImpl(session, psi, IrConstKind.Null, null)
+                arguments += FirConstExpressionImpl(basePsi, IrConstKind.Null, null)
             },
+            FirSingleExpressionBlock(other)
+        )
+        branches += FirWhenBranchImpl(
+            other.psi, FirElseIfTrueCondition(basePsi),
             FirSingleExpressionBlock(
-                session,
-                generateAccessExpression(session, psi, subjectName)
+                generateResolvedAccessExpression(basePsi, subjectVariable)
             )
         )
-        branches += FirWhenBranchImpl(
-            session, other.psi, FirElseIfTrueCondition(session, psi),
-            FirSingleExpressionBlock(session, other)
-        )
     }
 }
 
-internal fun generateIncrementOrDecrementBlock(
-    session: FirSession,
-    baseExpression: KtUnaryExpression,
-    argument: KtExpression?,
-    callName: Name,
-    prefix: Boolean,
-    convert: KtExpression.() -> FirExpression
+fun FirExpression.generateLazyLogicalOperation(
+    other: FirExpression, isAnd: Boolean, basePsi: KtElement?
+): FirBinaryLogicExpression {
+    val kind = if (isAnd)
+        FirBinaryLogicExpression.OperationKind.AND
+    else
+        FirBinaryLogicExpression.OperationKind.OR
+    return FirBinaryLogicExpressionImpl(basePsi, this, other, kind)
+}
+
+internal fun KtWhenCondition.toFirWhenCondition(
+    subject: FirWhenSubject,
+    convert: KtExpression?.(String) -> FirExpression,
+    toFirOrErrorTypeRef: KtTypeReference?.() -> FirTypeRef
 ): FirExpression {
-    if (argument == null) {
-        return FirErrorExpressionImpl(session, argument, "Inc/dec without operand")
-    }
-    return FirBlockImpl(session, baseExpression).apply {
-        val tempName = Name.special("<unary>")
-        statements += generateTemporaryVariable(session, baseExpression, tempName, argument.convert())
-        val resultName = Name.special("<unary-result>")
-        val resultInitializer = FirFunctionCallImpl(session, baseExpression).apply {
-            this.calleeReference = FirSimpleNamedReference(session, baseExpression.operationReference, callName)
-            this.arguments += generateAccessExpression(session, baseExpression, tempName)
-        }
-        val resultVar = generateTemporaryVariable(session, baseExpression, resultName, resultInitializer)
-        val assignment = argument.generateAssignment(
-            session, baseExpression,
-            if (prefix && argument !is KtSimpleNameExpression)
-                generateAccessExpression(session, baseExpression, resultName)
-            else
-                resultInitializer,
-            FirOperation.ASSIGN, convert
-        )
-
-        fun appendAssignment() {
-            if (assignment is FirBlock) {
-                statements += assignment.statements
-            } else {
-                statements += assignment
+    val firSubjectExpression = FirWhenSubjectExpressionImpl(this, subject)
+    return when (this) {
+        is KtWhenConditionWithExpression -> {
+            FirOperatorCallImpl(
+                expression,
+                FirOperation.EQ
+            ).apply {
+                arguments += firSubjectExpression
+                arguments += expression.convert("No expression in condition with expression")
             }
         }
-
-        if (prefix) {
-            if (argument !is KtSimpleNameExpression) {
-                statements += resultVar
-                appendAssignment()
-                statements += generateAccessExpression(session, baseExpression, resultName)
-            } else {
-                appendAssignment()
-                statements += generateAccessExpression(session, baseExpression, argument.getReferencedNameAsName())
+        is KtWhenConditionInRange -> {
+            val firRange = rangeExpression.convert("No range in condition with range")
+            firRange.generateContainsOperation(firSubjectExpression, isNegated, rangeExpression, operationReference)
+        }
+        is KtWhenConditionIsPattern -> {
+            FirTypeOperatorCallImpl(
+                typeReference, if (isNegated) FirOperation.NOT_IS else FirOperation.IS,
+                typeReference.toFirOrErrorTypeRef()
+            ).apply {
+                arguments += firSubjectExpression
             }
-        } else {
-            appendAssignment()
-            statements += generateAccessExpression(session, baseExpression, tempName)
+        }
+        else -> {
+            FirErrorExpressionImpl(this, "Unsupported when condition: ${this.javaClass}")
         }
     }
 }
 
-internal fun generateAccessExpression(session: FirSession, psi: PsiElement?, name: Name): FirQualifiedAccessExpression =
-    FirQualifiedAccessExpressionImpl(session, psi).apply {
-        calleeReference = FirSimpleNamedReference(session, psi, name)
+internal fun Array<KtWhenCondition>.toFirWhenCondition(
+    basePsi: KtElement,
+    subject: FirWhenSubject,
+    convert: KtExpression?.(String) -> FirExpression,
+    toFirOrErrorTypeRef: KtTypeReference?.() -> FirTypeRef
+): FirExpression {
+    var firCondition: FirExpression? = null
+    for (condition in this) {
+        val firConditionElement = condition.toFirWhenCondition(subject, convert, toFirOrErrorTypeRef)
+        firCondition = when (firCondition) {
+            null -> firConditionElement
+            else -> firCondition.generateLazyLogicalOperation(
+                firConditionElement, false, basePsi
+            )
+        }
+    }
+    return firCondition!!
+}
+
+fun FirExpression.generateContainsOperation(
+    argument: FirExpression,
+    inverted: Boolean,
+    base: KtExpression?,
+    operationReference: KtOperationReferenceExpression?
+): FirFunctionCall {
+    val containsCall = FirFunctionCallImpl(base).apply {
+        calleeReference = FirSimpleNamedReference(operationReference, OperatorNameConventions.CONTAINS)
+        explicitReceiver = this@generateContainsOperation
+        arguments += argument
+    }
+    if (!inverted) return containsCall
+    return FirFunctionCallImpl(base).apply {
+        calleeReference = FirSimpleNamedReference(operationReference, OperatorNameConventions.NOT)
+        explicitReceiver = containsCall
+    }
+}
+
+fun generateAccessExpression(psi: PsiElement?, name: Name): FirQualifiedAccessExpression =
+    FirQualifiedAccessExpressionImpl(psi).apply {
+        calleeReference = FirSimpleNamedReference(psi, name)
+    }
+
+fun generateResolvedAccessExpression(psi: PsiElement?, variable: FirVariable<*>): FirQualifiedAccessExpression =
+    FirQualifiedAccessExpressionImpl(psi).apply {
+        calleeReference = FirResolvedCallableReferenceImpl(psi, variable.name, variable.symbol)
     }
 
 internal fun generateDestructuringBlock(
     session: FirSession,
     multiDeclaration: KtDestructuringDeclaration,
-    container: FirVariable,
+    container: FirVariable<*>,
     tmpVariable: Boolean,
     extractAnnotationsTo: KtAnnotated.(FirAbstractAnnotatedElement) -> Unit,
     toFirOrImplicitTypeRef: KtTypeReference?.() -> FirTypeRef
 ): FirExpression {
-    return FirBlockImpl(session, multiDeclaration).apply {
+    return FirBlockImpl(multiDeclaration).apply {
         if (tmpVariable) {
             statements += container
         }
@@ -279,9 +269,7 @@ internal fun generateDestructuringBlock(
             statements += FirVariableImpl(
                 session, entry, entry.nameAsSafeName,
                 entry.typeReference.toFirOrImplicitTypeRef(), isVar,
-                FirComponentCallImpl(session, entry, index + 1).apply {
-                    arguments += generateAccessExpression(session, entry, container.name)
-                },
+                FirComponentCallImpl(entry, index + 1, generateResolvedAccessExpression(entry, container)),
                 FirVariableSymbol(entry.nameAsSafeName) // TODO?
             ).apply {
                 entry.extractAnnotationsTo(this)
@@ -291,95 +279,84 @@ internal fun generateDestructuringBlock(
     }
 }
 
-internal fun generateTemporaryVariable(
+fun generateTemporaryVariable(
     session: FirSession, psi: PsiElement?, name: Name, initializer: FirExpression
-): FirVariable =
-    FirVariableImpl(session, psi, name, FirImplicitTypeRefImpl(session, psi), false, initializer, FirVariableSymbol(name)).apply {
+): FirVariable<*> =
+    FirVariableImpl(session, psi, name, FirImplicitTypeRefImpl(psi), false, initializer, FirVariableSymbol(name)).apply {
         symbol.bind(this)
     }
 
-internal fun generateTemporaryVariable(
+fun generateTemporaryVariable(
     session: FirSession, psi: PsiElement?, specialName: String, initializer: FirExpression
-): FirVariable = generateTemporaryVariable(session, psi, Name.special("<$specialName>"), initializer)
+): FirVariable<*> = generateTemporaryVariable(session, psi, Name.special("<$specialName>"), initializer)
 
-private fun FirModifiableQualifiedAccess.initializeLValue(
-    session: FirSession,
-    left: KtExpression?,
-    convertQualified: KtQualifiedExpression.() -> FirQualifiedAccess?
-): FirReference {
-    return when (left) {
-        is KtSimpleNameExpression -> {
-            FirSimpleNamedReference(session, left, left.getReferencedNameAsName())
-        }
-        is KtThisExpression -> {
-            FirExplicitThisReference(session, left, left.getLabelName())
-        }
-        is KtQualifiedExpression -> {
-            val firMemberAccess = left.convertQualified()
-            if (firMemberAccess != null) {
-                explicitReceiver = firMemberAccess.explicitReceiver
-                safe = firMemberAccess.safe
-                firMemberAccess.calleeReference
-            } else {
-                FirErrorNamedReference(session, left, "Unsupported qualified LValue: ${left.text}")
-            }
-        }
-        is KtParenthesizedExpression -> {
-            initializeLValue(session, left.expression, convertQualified)
-        }
-        else -> {
-            FirErrorNamedReference(session, left, "Unsupported LValue: ${left?.javaClass}")
-        }
+fun FirModifiableAccessorsOwner.generateAccessorsByDelegate(session: FirSession, member: Boolean, stubMode: Boolean) {
+    val variable = this as FirVariable<*>
+    val delegateFieldSymbol = delegateFieldSymbol ?: return
+    val delegate = delegate as? FirWrappedDelegateExpressionImpl ?: return
+    fun delegateAccess() = FirQualifiedAccessExpressionImpl(null).apply {
+        calleeReference = FirDelegateFieldReferenceImpl(null, delegateFieldSymbol)
     }
+
+    fun thisRef() =
+        if (member) FirQualifiedAccessExpressionImpl(null).apply {
+            calleeReference = FirExplicitThisReference(null, null)
+        }
+        else FirConstExpressionImpl(null, IrConstKind.Null, null)
+
+    fun propertyRef() = FirCallableReferenceAccessImpl(null).apply {
+        calleeReference = FirResolvedCallableReferenceImpl(null, variable.name, variable.symbol)
+        typeRef = FirImplicitKPropertyTypeRef(null, ConeStarProjection)
+    }
+
+    delegate.delegateProvider = if (stubMode) FirExpressionStub(null) else FirFunctionCallImpl(null).apply {
+        explicitReceiver = delegate.expression
+        calleeReference = FirSimpleNamedReference(null, PROVIDE_DELEGATE)
+        arguments += thisRef()
+        arguments += propertyRef()
+    }
+    if (stubMode) return
+    getter = (getter as? FirPropertyAccessorImpl)
+        ?: FirPropertyAccessorImpl(session, null, true, Visibilities.UNKNOWN, FirImplicitTypeRefImpl(null), FirPropertyAccessorSymbol()).apply Accessor@{
+            body = FirSingleExpressionBlock(
+                FirReturnExpressionImpl(
+                    null,
+                    FirFunctionCallImpl(null).apply {
+                        explicitReceiver = delegateAccess()
+                        calleeReference = FirSimpleNamedReference(null, GET_VALUE)
+                        arguments += thisRef()
+                        arguments += propertyRef()
+                    }
+                ).apply {
+                    target = FirFunctionTarget(null)
+                    target.bind(this@Accessor)
+                }
+            )
+        }
+    setter = (setter as? FirPropertyAccessorImpl)
+        ?: FirPropertyAccessorImpl(session, null, false, Visibilities.UNKNOWN, session.builtinTypes.unitType, FirPropertyAccessorSymbol()).apply {
+            val parameter = FirValueParameterImpl(
+                session, null, DELEGATED_SETTER_PARAM,
+                FirImplicitTypeRefImpl(null),
+                defaultValue = null, isCrossinline = false,
+                isNoinline = false, isVararg = false
+            )
+            valueParameters += parameter
+            body = FirSingleExpressionBlock(
+                FirFunctionCallImpl(null).apply {
+                    explicitReceiver = delegateAccess()
+                    calleeReference = FirSimpleNamedReference(null, SET_VALUE)
+                    arguments += thisRef()
+                    arguments += propertyRef()
+                    arguments += FirQualifiedAccessExpressionImpl(null).apply {
+                        calleeReference = FirResolvedCallableReferenceImpl(psi, DELEGATED_SETTER_PARAM, parameter.symbol)
+                    }
+                }
+            )
+        }
 }
 
-internal fun KtExpression?.generateAssignment(
-    session: FirSession,
-    psi: PsiElement?,
-    value: FirExpression,
-    operation: FirOperation,
-    convert: KtExpression.() -> FirExpression
-): FirStatement {
-    if (this is KtParenthesizedExpression) {
-        return expression.generateAssignment(session, psi, value, operation, convert)
-    }
-    if (this is KtArrayAccessExpression) {
-        val arrayExpression = this.arrayExpression
-        val arraySet = FirArraySetCallImpl(session, psi, value, operation).apply {
-            for (indexExpression in indexExpressions) {
-                indexes += indexExpression.convert()
-            }
-        }
-        if (arrayExpression is KtSimpleNameExpression) {
-            return arraySet.apply {
-                lValue = initializeLValue(session, arrayExpression) { convert() as? FirQualifiedAccess }
-            }
-        }
-        return FirBlockImpl(session, arrayExpression).apply {
-            val name = Name.special("<array-set>")
-            statements += generateTemporaryVariable(
-                session, this@generateAssignment, name,
-                arrayExpression?.convert() ?: FirErrorExpressionImpl(session, arrayExpression, "No array expression")
-            )
-            statements += arraySet.apply { lValue = FirSimpleNamedReference(session, arrayExpression, name) }
-        }
-    }
-    if (operation != FirOperation.ASSIGN &&
-        this !is KtSimpleNameExpression && this !is KtThisExpression &&
-        (this !is KtQualifiedExpression || selectorExpression !is KtSimpleNameExpression)
-    ) {
-        return FirBlockImpl(session, this).apply {
-            val name = Name.special("<complex-set>")
-            statements += generateTemporaryVariable(
-                session, this@generateAssignment, name,
-                this@generateAssignment?.convert() ?: FirErrorExpressionImpl(session, this@generateAssignment, "No LValue in assignment")
-            )
-            statements += FirVariableAssignmentImpl(session, psi, value, operation).apply {
-                lValue = FirSimpleNamedReference(session, this@generateAssignment, name)
-            }
-        }
-    }
-    return FirVariableAssignmentImpl(session, psi, value, operation).apply {
-        lValue = initializeLValue(session, this@generateAssignment) { convert() as? FirQualifiedAccess }
-    }
-}
+private val GET_VALUE = Name.identifier("getValue")
+private val SET_VALUE = Name.identifier("setValue")
+private val PROVIDE_DELEGATE = Name.identifier("provideDelegate")
+private val DELEGATED_SETTER_PARAM = Name.special("<set-?>")

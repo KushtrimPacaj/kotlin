@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.builtins.jvm
@@ -138,9 +138,9 @@ object JavaToKotlinClassMap : PlatformToKotlinClassMap {
      * kotlin.Nothing -> java.lang.Void
      * kotlin.IntArray -> null
      * kotlin.Function3 -> kotlin.jvm.functions.Function3
-     * kotlin.SuspendFunction3 -> kotlin.jvm.functions.Function4
+     * kotlin.coroutines.SuspendFunction3 -> kotlin.jvm.functions.Function4
      * kotlin.Function42 -> kotlin.jvm.functions.FunctionN
-     * kotlin.SuspendFunction42 -> kotlin.jvm.functions.FunctionN
+     * kotlin.coroutines.SuspendFunction42 -> kotlin.jvm.functions.FunctionN
      * kotlin.reflect.KFunction3 -> kotlin.reflect.KFunction
      * kotlin.reflect.KSuspendFunction3 -> kotlin.reflect.KFunction
      * kotlin.reflect.KFunction42 -> kotlin.reflect.KFunction
@@ -202,7 +202,7 @@ object JavaToKotlinClassMap : PlatformToKotlinClassMap {
 
         val kotlinMutableAnalogFqName = readOnlyToMutable[kotlinAnalog.fqNameUnsafe] ?: return setOf(kotlinAnalog)
 
-        return Arrays.asList(kotlinAnalog, builtIns.getBuiltInClassByFqName(kotlinMutableAnalogFqName))
+        return listOf(kotlinAnalog, builtIns.getBuiltInClassByFqName(kotlinMutableAnalogFqName))
     }
 
     override fun mapPlatformClass(classDescriptor: ClassDescriptor): Collection<ClassDescriptor> {

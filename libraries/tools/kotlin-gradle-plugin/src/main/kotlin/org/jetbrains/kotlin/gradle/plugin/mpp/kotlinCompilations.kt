@@ -1,6 +1,6 @@
  /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle.plugin.mpp
@@ -9,15 +9,14 @@ import groovy.lang.Closure
 import org.gradle.api.Project
 import org.gradle.api.attributes.AttributeContainer
 import org.gradle.api.file.FileCollection
+import org.gradle.api.plugins.BasePluginConvention
 import org.gradle.util.ConfigureUtil
-import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
-import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
-import org.jetbrains.kotlin.gradle.dsl.kotlinExtension
-import org.jetbrains.kotlin.gradle.dsl.multiplatformExtensionOrNull
+import org.jetbrains.kotlin.gradle.dsl.*
 import org.jetbrains.kotlin.gradle.plugin.*
 import org.jetbrains.kotlin.gradle.plugin.sources.defaultSourceSetLanguageSettingsChecker
 import org.jetbrains.kotlin.gradle.plugin.sources.getSourceSetHierarchy
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
+import org.jetbrains.kotlin.gradle.tasks.locateTask
 import org.jetbrains.kotlin.gradle.utils.addExtendsFromRelation
 import org.jetbrains.kotlin.gradle.utils.lowerCamelCaseName
 import java.util.*
@@ -48,6 +47,9 @@ abstract class AbstractKotlinCompilation<T : KotlinCommonOptions>(
     override val compileKotlinTask: KotlinCompile<T>
         get() = (target.project.tasks.getByName(compileKotlinTaskName) as KotlinCompile<T>)
 
+    val compileKotlinTaskHolder: TaskHolder<KotlinCompile<T>>
+        get() = target.project.locateTask(compileKotlinTaskName)!!
+
     // Don't declare this property in the constructor to avoid NPE
     // when an overriding property of a subclass is accessed instead.
     override val target: KotlinTarget = target
@@ -73,13 +75,13 @@ abstract class AbstractKotlinCompilation<T : KotlinCommonOptions>(
             Callable { target.project.buildDir.resolve("processedResources/${target.targetName}/$name") })
     }
 
-    open fun addSourcesToCompileTask(sourceSet: KotlinSourceSet, addAsCommonSources: Boolean) {
+    open fun addSourcesToCompileTask(sourceSet: KotlinSourceSet, addAsCommonSources: Lazy<Boolean>) {
         fun AbstractKotlinCompile<*>.configureAction() {
             source(sourceSet.kotlin)
             sourceFilesExtensions(sourceSet.customSourceFilesExtensions)
-            if (addAsCommonSources) {
-                commonSourceSet += sourceSet.kotlin
-            }
+            commonSourceSet += project.files(Callable {
+                if (addAsCommonSources.value) sourceSet.kotlin else emptyList<Any>()
+            })
         }
 
         // Note! Invocation of withType-all results in preliminary task instantiation.
@@ -99,38 +101,46 @@ abstract class AbstractKotlinCompilation<T : KotlinCommonOptions>(
             }
     }
 
-    override fun source(sourceSet: KotlinSourceSet) {
-        if (kotlinSourceSets.add(sourceSet)) {
+    internal fun addExactSourceSetsEagerly(sourceSets: Set<KotlinSourceSet>) {
+        with(target.project) {
             //TODO possibly issue with forced instantiation
-            target.project.whenEvaluated {
-                sourceSet.getSourceSetHierarchy().forEach { sourceSet ->
-                    val isCommonSource =
-                        CompilationSourceSetUtil.sourceSetsInMultipleCompilations(project)?.contains(sourceSet.name) ?: false
-
-                    addSourcesToCompileTask(sourceSet, addAsCommonSources = isCommonSource)
-
-                    // Use `forced = false` since `api`, `implementation`, and `compileOnly` may be missing in some cases like
-                    // old Java & Android projects:
-                    addExtendsFromRelation(apiConfigurationName, sourceSet.apiConfigurationName, forced = false)
-                    addExtendsFromRelation(implementationConfigurationName, sourceSet.implementationConfigurationName, forced = false)
-                    addExtendsFromRelation(compileOnlyConfigurationName, sourceSet.compileOnlyConfigurationName, forced = false)
-
-                    if (this@AbstractKotlinCompilation is KotlinCompilationToRunnableFiles<*>) {
-                        addExtendsFromRelation(runtimeOnlyConfigurationName, sourceSet.runtimeOnlyConfigurationName, forced = false)
+            sourceSets.forEach { sourceSet ->
+                addSourcesToCompileTask(
+                    sourceSet,
+                    addAsCommonSources = lazy {
+                        CompilationSourceSetUtil.sourceSetsInMultipleCompilations(project).contains(sourceSet.name)
                     }
+                )
 
-                    if (sourceSet.name != defaultSourceSetName) {
-                        kotlinExtension.sourceSets.findByName(defaultSourceSetName)?.let { defaultSourceSet ->
-                            // Temporary solution for checking consistency across source sets participating in a compilation that may
-                            // not be interconnected with the dependsOn relation: check the settings as if the default source set of
-                            // the compilation depends on the one added to the compilation:
-                            defaultSourceSetLanguageSettingsChecker.runAllChecks(
-                                defaultSourceSet,
-                                sourceSet
-                            )
-                        }
+                // Use `forced = false` since `api`, `implementation`, and `compileOnly` may be missing in some cases like
+                // old Java & Android projects:
+                addExtendsFromRelation(apiConfigurationName, sourceSet.apiConfigurationName, forced = false)
+                addExtendsFromRelation(implementationConfigurationName, sourceSet.implementationConfigurationName, forced = false)
+                addExtendsFromRelation(compileOnlyConfigurationName, sourceSet.compileOnlyConfigurationName, forced = false)
+
+                if (this@AbstractKotlinCompilation is KotlinCompilationToRunnableFiles<*>) {
+                    addExtendsFromRelation(runtimeOnlyConfigurationName, sourceSet.runtimeOnlyConfigurationName, forced = false)
+                }
+
+                if (sourceSet.name != defaultSourceSetName) {
+                    kotlinExtension.sourceSets.findByName(defaultSourceSetName)?.let { defaultSourceSet ->
+                        // Temporary solution for checking consistency across source sets participating in a compilation that may
+                        // not be interconnected with the dependsOn relation: check the settings as if the default source set of
+                        // the compilation depends on the one added to the compilation:
+                        defaultSourceSetLanguageSettingsChecker.runAllChecks(
+                            defaultSourceSet,
+                            sourceSet
+                        )
                     }
                 }
+            }
+        }
+    }
+
+    final override fun source(sourceSet: KotlinSourceSet) {
+        if (kotlinSourceSets.add(sourceSet)) {
+            target.project.whenEvaluated {
+                addExactSourceSetsEagerly(sourceSet.getSourceSetHierarchy())
             }
         }
     }
@@ -174,6 +184,15 @@ abstract class AbstractKotlinCompilation<T : KotlinCommonOptions>(
         dependencies f@{ ConfigureUtil.configure(configureClosure, this@f) }
 
     override fun toString(): String = "compilation '$compilationName' ($target)"
+
+    internal val moduleName: String
+        get() {
+            val project = target.project
+            val baseName = project.convention.findPlugin(BasePluginConvention::class.java)?.archivesBaseName
+                ?: project.name
+            val suffix = if (compilationName == KotlinCompilation.MAIN_COMPILATION_NAME) "" else "_$compilationName"
+            return filterModuleName("$baseName$suffix")
+        }
 }
 
 abstract class AbstractKotlinCompilationToRunnableFiles<T : KotlinCommonOptions>(
@@ -198,28 +217,64 @@ internal fun KotlinCompilation<*>.disambiguateName(simpleName: String): String {
     )
 }
 
-private object CompilationSourceSetUtil {
-    // Cache the results per project
-    private val projectSourceSetsInMultipleCompilationsCache = WeakHashMap<Project, Set<String>>()
+internal object CompilationSourceSetUtil {
+    // Store only names in the cache to avoid memory leak through indirect references to the project
+    private data class TargetCompilationName(val targetName: String, val compilationName: String) {
+        fun toCompilation(project: Project): KotlinCompilation<*>? {
+            val kotlinExtension = project.kotlinExtension
+            val target = when (kotlinExtension) {
+                is KotlinMultiplatformExtension -> kotlinExtension.targets.findByName(targetName)
+                is KotlinSingleTargetExtension -> kotlinExtension.target.takeIf { it.name == targetName }
+                else -> null
+            }
+            return target?.compilations?.getByName(compilationName)
+        }
 
-    fun sourceSetsInMultipleCompilations(project: Project) =
-        projectSourceSetsInMultipleCompilationsCache.computeIfAbsent(project) { _ ->
+        companion object {
+            fun from(compilation: KotlinCompilation<*>) = TargetCompilationName(compilation.target.name, compilation.name)
+        }
+    }
+
+    private val compilationsBySourceSetCache = WeakHashMap<Project, Map<String, Set<TargetCompilationName>>>()
+
+    /** Evaluates once per project. Don't access until all source set dependsOn relationships are built and all source sets are added
+     * to the relevant compilations. */
+    fun compilationsBySourceSets(project: Project): Map<KotlinSourceSet, Set<KotlinCompilation<*>>> {
+        val compilationNamesBySourceSetName = compilationsBySourceSetCache.computeIfAbsent(project) { _ ->
             check(project.state.executed) { "Should only be computed after the project is evaluated" }
 
-            val compilations = project.multiplatformExtensionOrNull?.targets?.flatMap { it.compilations }
-                ?: return@computeIfAbsent null
-
-            val sources = compilations
-                .flatMap { compilation -> compilation.allKotlinSourceSets.map { sourceSet -> compilation to sourceSet } }
-                .groupingBy { (_, sourceSet) -> sourceSet }
-                .eachCount()
-
-            HashSet<String>().apply {
-                for (entry in sources) {
-                    if (entry.value > 1) {
-                        add(entry.key.name)
-                    }
-                }
+            val kotlinExtension = project.kotlinExtension
+            val targets = when (kotlinExtension) {
+                is KotlinMultiplatformExtension -> kotlinExtension.targets
+                is KotlinSingleTargetExtension -> listOf(kotlinExtension.target)
+                else -> emptyList()
             }
+
+            val compilations = targets.flatMap { it.compilations }
+
+            compilations
+                .flatMap { compilation -> compilation.allKotlinSourceSets.map { sourceSet -> compilation to sourceSet } }
+                .groupBy(
+                    { (_, sourceSet) -> sourceSet.name },
+                    valueTransform = { (compilation, _) -> TargetCompilationName.from(compilation) }
+                )
+                .mapValues { (_, compilations) -> compilations.toSet() }
+        }
+
+        return compilationNamesBySourceSetName.entries.associate { (sourceSetName, compilationNames) ->
+            project.kotlinExtension.sourceSets.getByName(sourceSetName).to(
+                compilationNames.map { checkNotNull(it.toCompilation(project)) }.toSet()
+            )
+        }
+    }
+
+    fun sourceSetsInMultipleCompilations(project: Project) =
+        compilationsBySourceSets(project).mapNotNullTo(mutableSetOf()) { (sourceSet, compilations) ->
+            sourceSet.name.takeIf { compilations.size > 1 }
         }
 }
+
+private val invalidModuleNameCharactersRegex = """[\\/\r\n\t]""".toRegex()
+
+private fun filterModuleName(moduleName: String): String =
+    moduleName.replace(invalidModuleNameCharactersRegex, "_")

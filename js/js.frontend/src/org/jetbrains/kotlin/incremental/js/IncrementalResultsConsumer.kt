@@ -39,6 +39,19 @@ interface IncrementalResultsConsumer {
      * Used in daemon RPC.
      */
     fun processInlineFunctions(functions: Collection<JsInlineFunctionHash>)
+
+    fun processPackageMetadata(packageName: String, metadata: ByteArray)
+
+    fun processIrFile(
+        sourceFile: File,
+        fileData: ByteArray,
+        symbols: ByteArray,
+        types: ByteArray,
+        strings: ByteArray,
+        declarations: ByteArray,
+        bodies: ByteArray,
+        fqn: ByteArray
+    )
 }
 
 class JsInlineFunctionHash(val sourceFilePath: String, val fqName: String, val inlineFunctionMd5Hash: Long): Serializable
@@ -96,6 +109,32 @@ class IncrementalResultsConsumerImpl : IncrementalResultsConsumer {
     override fun processInlineFunction(sourceFile: File, fqName: String, inlineFunction: Any, line: Int, column: Int) {
         val mapForSource = _deferInlineFuncs.getOrPut(sourceFile) { hashMapOf() }
         mapForSource[fqName] = FunctionWithSourceInfo(inlineFunction, line, column)
+    }
+
+    private val _packageMetadata = hashMapOf<String, ByteArray>()
+    val packageMetadata: Map<String, ByteArray>
+        get() = _packageMetadata
+
+    override fun processPackageMetadata(packageName: String, metadata: ByteArray) {
+        _packageMetadata[packageName] = metadata
+    }
+
+//    class IrFileData(fileData: ByteArray, symbols: ByteArray, types: ByteArray, strings: ByteArray, bodies: ByteArray, declarations: ByteArray)
+    private val _irFileData = hashMapOf<File, IrTranslationResultValue>()
+    val irFileData: Map<File, IrTranslationResultValue>
+        get() = _irFileData
+
+    override fun processIrFile(
+        sourceFile: File,
+        fileData: ByteArray,
+        symbols: ByteArray,
+        types: ByteArray,
+        strings: ByteArray,
+        declarations: ByteArray,
+        bodies: ByteArray,
+        fqn: ByteArray
+    ) {
+        _irFileData[sourceFile] = IrTranslationResultValue(fileData, symbols, types, strings, declarations, bodies, fqn)
     }
 }
 

@@ -1,9 +1,4 @@
 <idea-plugin>
-    <extensionPoints>
-        <extensionPoint qualifiedName="org.jetbrains.kotlin.platformGradleDetector"
-                        interface="org.jetbrains.kotlin.idea.inspections.gradle.KotlinPlatformGradleDetector"/>
-    </extensionPoints>
-
     <application-components>
         <component>
             <implementation-class>org.jetbrains.kotlin.idea.JvmPluginStartupComponent</implementation-class>
@@ -16,9 +11,6 @@
         </component>
         <component>
             <implementation-class>org.jetbrains.kotlin.idea.configuration.ui.KotlinConfigurationCheckerComponent</implementation-class>
-        </component>
-        <component>
-            <implementation-class>org.jetbrains.kotlin.idea.scratch.ui.ScratchFileHook</implementation-class>
         </component>
         <component>
             <implementation-class>org.jetbrains.kotlin.idea.scratch.ScratchFileModuleInfoProvider</implementation-class>
@@ -65,13 +57,20 @@
         <group id="Kotlin.XDebugger.Actions">
             <action id="Kotlin.XDebugger.ToggleKotlinVariableView"
                     class="org.jetbrains.kotlin.idea.debugger.ToggleKotlinVariablesView"
-                    icon="/org/jetbrains/kotlin/idea/icons/kotlin.png"/>
+                    icon="/org/jetbrains/kotlin/idea/icons/kotlin.png"
+                    text="Show Kotlin variables only"
+            />
         </group>
 
         <group id="Kotlin.XDebugger.Watches.Tree.Toolbar">
             <reference ref="Kotlin.XDebugger.ToggleKotlinVariableView"/>
             <add-to-group group-id="XDebugger.Watches.Tree.Toolbar" relative-to-action="XDebugger.SwitchWatchesInVariables" anchor="after"/>
         </group>
+
+        <action id="InspectBreakpointApplicability" class="org.jetbrains.kotlin.idea.debugger.breakpoints.InspectBreakpointApplicabilityAction"
+                text="Inspect Breakpoint Applicability" internal="true">
+            <add-to-group group-id="KotlinInternalGroup"/>
+        </action>
     </actions>
 
     <extensions defaultExtensionNs="com.intellij">
@@ -104,9 +103,11 @@
         <xdebugger.settings implementation="org.jetbrains.kotlin.idea.debugger.KotlinDebuggerSettings"/>
         <xdebugger.breakpointType implementation="org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinFieldBreakpointType"/>
         <xdebugger.breakpointType implementation="org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinLineBreakpointType" order="first"/>
+        <xdebugger.breakpointType implementation="org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinFunctionBreakpointType"/>
         <debugger.syntheticProvider implementation="org.jetbrains.kotlin.idea.debugger.filter.KotlinSyntheticTypeComponentProvider"/>
         <debugger.javaBreakpointHandlerFactory implementation="org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinFieldBreakpointHandlerFactory"/>
         <debugger.javaBreakpointHandlerFactory implementation="org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinLineBreakpointHandlerFactory"/>
+        <debugger.javaBreakpointHandlerFactory implementation="org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinFunctionBreakpointHandlerFactory"/>
         <debugger.jvmSteppingCommandProvider implementation="org.jetbrains.kotlin.idea.debugger.stepping.KotlinSteppingCommandProvider"/>
         <debugger.simplePropertyGetterProvider implementation="org.jetbrains.kotlin.idea.debugger.stepping.KotlinSimpleGetterProvider"/>
 
@@ -126,7 +127,11 @@
         <multipleRunLocationsProvider implementation="org.jetbrains.kotlin.idea.run.multiplatform.KotlinMultiplatformRunLocationsProvider"/>
 
         <editorNotificationProvider implementation="org.jetbrains.kotlin.idea.configuration.KotlinSetupEnvironmentNotificationProvider"/>
+        <postStartupActivity implementation="org.jetbrains.kotlin.idea.configuration.JvmStartupActivity"/>
+
         <editorNotificationProvider implementation="org.jetbrains.kotlin.idea.debugger.KotlinAlternativeSourceNotificationProvider"/>
+
+        <editorNotificationProvider implementation="org.jetbrains.kotlin.idea.inspections.JavaOutsideModuleDetector"/>
 
         <consoleFilterProvider implementation="org.jetbrains.kotlin.idea.run.KotlinConsoleFilterProvider"/>
 
@@ -135,12 +140,14 @@
         <externalSystemTaskNotificationListener implementation="org.jetbrains.kotlin.idea.configuration.KotlinExternalSystemSyncListener"/>
 
         <lang.surroundDescriptor language="kotlin"
-                                 implementationClass="org.jetbrains.kotlin.idea.debugger.surroundWith.KotlinDebuggerExpressionSurroundDescriptor"/>
+                                 implementationClass="org.jetbrains.kotlin.idea.debugger.evaluate.surroundWith.KotlinDebuggerExpressionSurroundDescriptor"/>
 
         <editorNotificationProvider implementation="org.jetbrains.kotlin.idea.versions.UnsupportedAbiVersionNotificationPanelProvider"/>
 
         <scratch.creationHelper language="kotlin"
                                 implementationClass="org.jetbrains.kotlin.idea.scratch.KtScratchFileCreationHelper"/>
+        <runLineMarkerContributor language="kotlin"
+                                  implementationClass="org.jetbrains.kotlin.idea.scratch.actions.ScratchRunLineMarkerContributor"/>
 
         <localInspection
             groupName="Plugin DevKit"
@@ -157,14 +164,28 @@
             serviceInterface="org.jetbrains.kotlin.platform.DefaultIdeTargetPlatformKindProvider"
             serviceImplementation="org.jetbrains.kotlin.platform.impl.IdeaDefaultIdeTargetPlatformKindProvider"/>
 
+        <applicationService
+            serviceInterface="org.jetbrains.kotlin.idea.j2k.J2KPostProcessingRegistrar"
+            serviceImplementation="org.jetbrains.kotlin.idea.j2k.J2KPostProcessingRegistrarImpl"/>
+
       <registryKey key="kotlin.use.ultra.light.classes"
                    description="Whether to use an experimental implementation of Kotlin-as-Java classes"
-                   defaultValue="false"
+                   defaultValue="true"
                    restartRequired="false"/>
 
       <registryKey key="kotlin.uast.multiresolve.enabled"
                    description="Whether to use multi resolve for UAST in Kotlin provided by `Call.resolveCandidates`, otherwise PsiPolyVariantReference-based multiResolve will be performed"
                    defaultValue="true"
+                   restartRequired="false"/>
+
+      <registryKey key="kotlin.uast.force.uinjectionhost"
+                   description="Whether to convert `KtStringTemplateExpression` to `KotlinStringTemplateUPolyadicExpression` in all cases"
+                   defaultValue="false"
+                   restartRequired="false"/>
+
+      <registryKey key="kotlin.jps.instrument.bytecode"
+                   description="Enable bytecode instrumentation for Kotlin classes"
+                   defaultValue="false"
                    restartRequired="false"/>
     </extensions>
 
@@ -174,7 +195,7 @@
 
     <extensions defaultExtensionNs="org.jetbrains.kotlin">
         <diagnosticSuppressor implementation="org.jetbrains.kotlin.idea.debugger.DiagnosticSuppressorForDebugger"/>
-                                                                    <storageComponentContainerContributor implementation="org.jetbrains.kotlin.samWithReceiver.ide.IdeSamWithReceiverComponentContributor"/>
+        <storageComponentContainerContributor implementation="org.jetbrains.kotlin.samWithReceiver.ide.IdeSamWithReceiverComponentContributor"/>
 
         <declarationAttributeAltererExtension implementation="org.jetbrains.kotlin.allopen.ide.IdeAllOpenDeclarationAttributeAltererExtension"/>
 
@@ -193,14 +214,9 @@
         <gradleFrameworkSupport implementation="org.jetbrains.kotlin.gradle.kdsl.frameworkSupport.GradleKotlinDSLKotlinJSFrameworkSupportProvider" />
         <gradleFrameworkSupport implementation="org.jetbrains.kotlin.gradle.kdsl.frameworkSupport.GradleGroovyFrameworkSupportProvider" />
 
-        <idePlatformKind implementation="org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind"/>
-        <idePlatformKind implementation="org.jetbrains.kotlin.platform.impl.JsIdePlatformKind"/>
-
-        <idePlatformKindTooling implementation="org.jetbrains.kotlin.idea.core.platform.impl.JvmIdePlatformKindTooling"/>
-        <idePlatformKindTooling implementation="org.jetbrains.kotlin.idea.core.platform.impl.JsIdePlatformKindTooling"/>
-
         <syntheticScopeProviderExtension implementation="org.jetbrains.kotlin.idea.debugger.evaluate.DebuggerFieldSyntheticScopeProvider"/>
         <expressionCodegenExtension implementation="org.jetbrains.kotlin.idea.debugger.evaluate.DebuggerFieldExpressionCodegenExtension"/>
         <completionInformationProvider implementation="org.jetbrains.kotlin.idea.debugger.evaluate.DebuggerFieldCompletionInformationProvider" />
+        <kotlinIndicesHelperExtension implementation="org.jetbrains.kotlin.idea.debugger.evaluate.DebuggerFieldKotlinIndicesHelperExtension"/>
     </extensions>
 </idea-plugin>

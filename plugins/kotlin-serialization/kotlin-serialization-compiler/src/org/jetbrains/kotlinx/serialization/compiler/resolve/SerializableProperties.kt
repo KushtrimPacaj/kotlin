@@ -21,27 +21,43 @@ import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.descriptorUtil.getSuperClassNotAny
 import org.jetbrains.kotlin.resolve.hasBackingField
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
+import org.jetbrains.kotlinx.serialization.compiler.diagnostic.SERIALIZABLE_PROPERTIES
 
 class SerializableProperties(private val serializableClass: ClassDescriptor, val bindingContext: BindingContext) {
     private val primaryConstructorParameters: List<ValueParameterDescriptor> =
         serializableClass.unsubstitutedPrimaryConstructor?.valueParameters ?: emptyList()
 
-    private val primaryConstructorProperties: Map<PropertyDescriptor, Boolean> =
-        primaryConstructorParameters.asSequence()
-            .map { parameter -> bindingContext[BindingContext.VALUE_PARAMETER_AS_PROPERTY, parameter] to parameter.declaresDefaultValue() }
-            .mapNotNull { (a, b) -> if (a == null) null else a to b }
-            .toMap()
+    val serializableProperties: List<SerializableProperty>
+    val isExternallySerializable: Boolean
+    private val primaryConstructorProperties: Map<PropertyDescriptor, Boolean>
 
-    val isExternallySerializable: Boolean =
-        primaryConstructorParameters.size == primaryConstructorProperties.size
 
-    val serializableProperties: List<SerializableProperty> =
-        serializableClass.unsubstitutedMemberScope.getContributedDescriptors(DescriptorKindFilter.VARIABLES)
+    init {
+        val descriptorsSequence = serializableClass.unsubstitutedMemberScope.getContributedDescriptors(DescriptorKindFilter.VARIABLES)
             .asSequence()
-            .filterIsInstance<PropertyDescriptor>()
+        // call to any BindingContext.get should be only AFTER MemberScope.getContributedDescriptors
+        primaryConstructorProperties =
+            primaryConstructorParameters.asSequence()
+                .map { parameter -> bindingContext[BindingContext.VALUE_PARAMETER_AS_PROPERTY, parameter] to parameter.declaresDefaultValue() }
+                .mapNotNull { (a, b) -> if (a == null) null else a to b }
+                .toMap()
+
+        fun isPropSerializable(it: PropertyDescriptor) =
+            if (serializableClass.isInternalSerializable) !it.annotations.serialTransient
+            else !Visibilities.isPrivate(it.visibility) && ((it.isVar && !it.annotations.serialTransient) || primaryConstructorProperties.contains(
+                it
+            ))
+
+        serializableProperties = descriptorsSequence.filterIsInstance<PropertyDescriptor>()
             .filter { it.kind == CallableMemberDescriptor.Kind.DECLARATION }
-            .filter(this::isPropSerializable)
-            .map { prop -> SerializableProperty(prop, primaryConstructorProperties[prop] ?: false, prop.hasBackingField(bindingContext)) }
+            .filter(::isPropSerializable)
+            .map { prop ->
+                SerializableProperty(
+                    prop,
+                    primaryConstructorProperties[prop] ?: false,
+                    prop.hasBackingField(bindingContext)
+                )
+            }
             .filterNot { it.transient }
             .partition { primaryConstructorProperties.contains(it.descriptor) }
             .run {
@@ -51,21 +67,8 @@ class SerializableProperties(private val serializableClass: ClassDescriptor, val
                 else
                     SerializableProperties(supers, bindingContext).serializableProperties + first + second
             }
-            .also(::validateUniqueSerialNames)
-
-    private fun validateUniqueSerialNames(props: List<SerializableProperty>) {
-        val namesSet = mutableSetOf<String>()
-        props.forEach {
-            if (!namesSet.add(it.name)) throw IllegalStateException("$serializableClass has duplicate serial name of property ${it.name}, either in it or its parents.")
-        }
+        isExternallySerializable = primaryConstructorParameters.size == primaryConstructorProperties.size
     }
-
-
-    private fun isPropSerializable(it: PropertyDescriptor) =
-        if (serializableClass.isInternalSerializable) !it.annotations.serialTransient
-        else !Visibilities.isPrivate(it.visibility) && ((it.isVar && !it.annotations.serialTransient) || primaryConstructorProperties.contains(
-            it
-        ))
 
     val serializableConstructorProperties: List<SerializableProperty> =
         serializableProperties.asSequence()
@@ -85,3 +88,6 @@ class SerializableProperties(private val serializableClass: ClassDescriptor, val
 
 internal fun List<SerializableProperty>.bitMaskSlotCount() = size / 32 + 1
 internal fun bitMaskSlotAt(propertyIndex: Int) = propertyIndex / 32
+
+internal fun BindingContext.serializablePropertiesFor(classDescriptor: ClassDescriptor): SerializableProperties =
+    this.get(SERIALIZABLE_PROPERTIES, classDescriptor) ?: SerializableProperties(classDescriptor, this)

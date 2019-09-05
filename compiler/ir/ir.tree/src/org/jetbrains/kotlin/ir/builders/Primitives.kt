@@ -40,40 +40,48 @@ fun primitiveOp1(
 fun primitiveOp2(
     startOffset: Int, endOffset: Int,
     primitiveOpSymbol: IrSimpleFunctionSymbol,
+    primitiveOpReturnType: IrType,
     origin: IrStatementOrigin,
     argument1: IrExpression, argument2: IrExpression
 ): IrExpression =
-    IrBinaryPrimitiveImpl(startOffset, endOffset, primitiveOpSymbol.owner.returnType, origin, primitiveOpSymbol, argument1, argument2)
+    IrCallImpl(
+        startOffset, endOffset,
+        primitiveOpReturnType,
+        primitiveOpSymbol, primitiveOpSymbol.descriptor,
+        typeArgumentsCount = 0,
+        valueArgumentsCount = 2,
+        origin = origin
+    ).apply {
+        putValueArgument(0, argument1)
+        putValueArgument(1, argument2)
+    }
 
-fun IrGeneratorContext.constNull(startOffset: Int, endOffset: Int): IrExpression =
+fun IrGeneratorContextInterface.constNull(startOffset: Int, endOffset: Int): IrExpression =
     IrConstImpl.constNull(startOffset, endOffset, irBuiltIns.nothingNType)
 
-fun IrGeneratorContext.equalsNull(startOffset: Int, endOffset: Int, argument: IrExpression): IrExpression =
+fun IrGeneratorContextInterface.equalsNull(startOffset: Int, endOffset: Int, argument: IrExpression): IrExpression =
     primitiveOp2(
-        startOffset, endOffset, irBuiltIns.eqeqSymbol, IrStatementOrigin.EQEQ,
+        startOffset, endOffset, irBuiltIns.eqeqSymbol, irBuiltIns.booleanType, IrStatementOrigin.EQEQ,
         argument, constNull(startOffset, endOffset)
     )
 
-fun IrGeneratorContext.eqeqeq(startOffset: Int, endOffset: Int, argument1: IrExpression, argument2: IrExpression): IrExpression =
-    primitiveOp2(startOffset, endOffset, irBuiltIns.eqeqeqSymbol, IrStatementOrigin.EQEQEQ, argument1, argument2)
+fun IrGeneratorContextInterface.eqeqeq(startOffset: Int, endOffset: Int, argument1: IrExpression, argument2: IrExpression): IrExpression =
+    primitiveOp2(startOffset, endOffset, irBuiltIns.eqeqeqSymbol, irBuiltIns.booleanType, IrStatementOrigin.EQEQEQ, argument1, argument2)
 
-fun IrGeneratorContext.throwNpe(startOffset: Int, endOffset: Int, origin: IrStatementOrigin): IrExpression =
-    IrNullaryPrimitiveImpl(startOffset, endOffset, irBuiltIns.nothingType, origin, irBuiltIns.throwNpeSymbol)
-
-fun IrGeneratorContext.constTrue(startOffset: Int, endOffset: Int) =
+fun IrGeneratorContextInterface.constTrue(startOffset: Int, endOffset: Int) =
     IrConstImpl.constTrue(startOffset, endOffset, irBuiltIns.booleanType)
 
-fun IrGeneratorContext.constFalse(startOffset: Int, endOffset: Int) =
+fun IrGeneratorContextInterface.constFalse(startOffset: Int, endOffset: Int) =
     IrConstImpl.constFalse(startOffset, endOffset, irBuiltIns.booleanType)
 
-fun IrGeneratorContext.elseBranch(elseExpr: IrExpression): IrElseBranch {
+fun IrGeneratorContextInterface.elseBranch(elseExpr: IrExpression): IrElseBranch {
     val startOffset = elseExpr.startOffset
     val endOffset = elseExpr.endOffset
     return IrElseBranchImpl(startOffset, endOffset, constTrue(startOffset, endOffset), elseExpr)
 }
 
 // a || b == if (a) true else b
-fun IrGeneratorContext.oror(
+fun IrGeneratorContextInterface.oror(
     startOffset: Int,
     endOffset: Int,
     a: IrExpression,
@@ -85,14 +93,14 @@ fun IrGeneratorContext.oror(
         branches.add(elseBranch(b))
     }
 
-fun IrGeneratorContext.oror(a: IrExpression, b: IrExpression, origin: IrStatementOrigin = IrStatementOrigin.OROR): IrWhen =
+fun IrGeneratorContextInterface.oror(a: IrExpression, b: IrExpression, origin: IrStatementOrigin = IrStatementOrigin.OROR): IrWhen =
     oror(b.startOffset, b.endOffset, a, b, origin)
 
-fun IrGeneratorContext.whenComma(a: IrExpression, b: IrExpression): IrWhen =
+fun IrGeneratorContextInterface.whenComma(a: IrExpression, b: IrExpression): IrWhen =
     oror(a, b, IrStatementOrigin.WHEN_COMMA)
 
 // a && b == if (a) b else false
-fun IrGeneratorContext.andand(
+fun IrGeneratorContextInterface.andand(
     startOffset: Int,
     endOffset: Int,
     a: IrExpression,
@@ -104,5 +112,5 @@ fun IrGeneratorContext.andand(
         branches.add(elseBranch(constFalse(b.startOffset, b.endOffset)))
     }
 
-fun IrGeneratorContext.andand(a: IrExpression, b: IrExpression, origin: IrStatementOrigin = IrStatementOrigin.ANDAND): IrWhen =
+fun IrGeneratorContextInterface.andand(a: IrExpression, b: IrExpression, origin: IrStatementOrigin = IrStatementOrigin.ANDAND): IrWhen =
     andand(b.startOffset, b.endOffset, a, b, origin)

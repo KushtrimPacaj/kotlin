@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.load.java;
@@ -43,7 +43,6 @@ public final class JvmAbi {
     public static final String INSTANCE_FIELD = "INSTANCE";
     public static final String HIDDEN_INSTANCE_FIELD = "$$" + INSTANCE_FIELD;
 
-    public static final String DEFAULT_MODULE_NAME = "main";
     public static final ClassId REFLECTION_FACTORY_IMPL = ClassId.topLevel(new FqName("kotlin.reflect.jvm.internal.ReflectionFactoryImpl"));
 
     public static final String LOCAL_VARIABLE_NAME_PREFIX_INLINE_ARGUMENT = "$i$a$";
@@ -51,9 +50,12 @@ public final class JvmAbi {
 
     public static final String IMPL_SUFFIX_FOR_INLINE_CLASS_MEMBERS = "-impl";
 
+    /**
+     * @param baseName JVM name of the property getter since Kotlin 1.4, or Kotlin name of the property otherwise.
+     */
     @NotNull
-    public static String getSyntheticMethodNameForAnnotatedProperty(@NotNull Name propertyName) {
-        return propertyName.asString() + ANNOTATED_PROPERTY_METHOD_NAME_SUFFIX;
+    public static String getSyntheticMethodNameForAnnotatedProperty(@NotNull String baseName) {
+        return baseName + ANNOTATED_PROPERTY_METHOD_NAME_SUFFIX;
     }
 
     @NotNull

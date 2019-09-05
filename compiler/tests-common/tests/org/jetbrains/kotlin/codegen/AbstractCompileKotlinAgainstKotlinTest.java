@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen;
@@ -11,7 +11,6 @@ import com.intellij.openapi.util.Disposer;
 import kotlin.Pair;
 import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.cli.common.modules.ModuleBuilder;
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles;
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment;
@@ -22,6 +21,7 @@ import org.jetbrains.kotlin.load.kotlin.ModuleVisibilityManager;
 import org.jetbrains.kotlin.load.kotlin.PackagePartClassUtils;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.test.ConfigurationKind;
+import org.jetbrains.kotlin.test.InTextDirectivesUtils;
 import org.jetbrains.kotlin.test.KotlinTestUtils;
 import org.jetbrains.kotlin.utils.ExceptionUtilsKt;
 
@@ -49,13 +49,13 @@ public abstract class AbstractCompileKotlinAgainstKotlinTest extends CodegenTest
     }
 
     @Override
-    protected void doMultiFileTest(@NotNull File wholeFile, @NotNull List<TestFile> files, @Nullable File javaFilesDir) throws Exception {
-        assert javaFilesDir == null : ".java files are not supported yet in this test";
-        doTwoFileTest(files);
+    protected void doMultiFileTest(@NotNull File wholeFile, @NotNull List<TestFile> files) {
+        boolean isIgnored = InTextDirectivesUtils.isIgnoredTarget(getBackend(), wholeFile);
+        doTwoFileTest(files, !isIgnored);
     }
 
     @NotNull
-    protected Pair<ClassFileFactory, ClassFileFactory> doTwoFileTest(@NotNull List<TestFile> files) throws Exception {
+    protected Pair<ClassFileFactory, ClassFileFactory> doTwoFileTest(@NotNull List<TestFile> files, boolean reportProblems) {
         // Note that it may be beneficial to improve this test to handle many files, compiling them successively against all previous
         assert files.size() == 2 || (files.size() == 3 && files.get(2).name.equals("CoroutineUtil.kt")) : "There should be exactly two files in this test";
         TestFile fileA = files.get(0);
@@ -67,11 +67,13 @@ public abstract class AbstractCompileKotlinAgainstKotlinTest extends CodegenTest
             invokeBox(PackagePartClassUtils.getFilePartShortName(new File(fileB.name).getName()));
         }
         catch (Throwable e) {
-            String result = "FIRST: \n\n" + factoryA.createText();
-            if (factoryB != null) {
-                result += "\n\nSECOND: \n\n" + factoryB.createText();
+            if (reportProblems) {
+                String result = "FIRST: \n\n" + factoryA.createText();
+                if (factoryB != null) {
+                    result += "\n\nSECOND: \n\n" + factoryB.createText();
+                }
+                System.out.println(result);
             }
-            System.out.println(result);
             throw ExceptionUtilsKt.rethrow(e);
         }
         return new Pair<>(factoryA, factoryB);

@@ -1,12 +1,18 @@
-@file:Suppress("PropertyName")
+@file:Suppress("PropertyName", "HasPlatformType", "UnstableApiUsage")
 
-import org.gradle.api.publish.ivy.internal.artifact.FileBasedIvyArtifact
-import org.gradle.api.publish.ivy.internal.publication.DefaultIvyConfiguration
-import org.gradle.api.publish.ivy.internal.publication.DefaultIvyPublicationIdentity
-import org.gradle.api.publish.ivy.internal.publisher.IvyDescriptorFileGenerator
 import org.gradle.internal.os.OperatingSystem
+import java.io.Closeable
+import java.io.FileWriter
+import java.io.OutputStreamWriter
+import java.net.URI
+import java.text.SimpleDateFormat
+import java.util.*
+import javax.xml.stream.XMLOutputFactory
 
-val cacheRedirectorEnabled = findProperty("cacheRedirectorEnabled")?.toString()?.toBoolean() == true
+plugins {
+    base
+}
+
 val verifyDependencyOutput: Boolean by rootProject.extra
 val intellijUltimateEnabled: Boolean by rootProject.extra
 val intellijReleaseType: String by rootProject.extra
@@ -17,9 +23,6 @@ val androidStudioBuild = rootProject.findProperty("versions.androidStudioBuild")
 val intellijSeparateSdks: Boolean by rootProject.extra
 val installIntellijCommunity = !intellijUltimateEnabled || intellijSeparateSdks
 val installIntellijUltimate = intellijUltimateEnabled
-
-val androidBuildToolsVersion = rootProject.extra["versions.androidBuildTools"] as String
-val androidDxSourcesVersion = rootProject.extra["versions.androidDxSources"] as String
 
 val intellijVersionDelimiterIndex = intellijVersion.indexOfAny(charArrayOf('.', '-'))
 if (intellijVersionDelimiterIndex == -1) {
@@ -49,45 +52,36 @@ val androidStudioOs by lazy {
     }
 }
 
-val androidToolsOs by lazy {
-    when {
-        OperatingSystem.current().isWindows -> "windows"
-        OperatingSystem.current().isMacOsX -> "macosx"
-        OperatingSystem.current().isLinux -> "linux"
-        else -> {
-            logger.error("Unknown operating system for android tools: ${OperatingSystem.current().name}")
-            ""
-        }
-    }
-}
-
-
 repositories {
     if (androidStudioRelease != null) {
         ivy {
-            if (cacheRedirectorEnabled) {
-                artifactPattern("https://cache-redirector.jetbrains.com/dl.google.com/dl/android/studio/ide-zips/$androidStudioRelease/[artifact]-[revision]-$androidStudioOs.zip")
+            url = URI("https://dl.google.com/dl/android/studio/ide-zips/$androidStudioRelease")
+
+            patternLayout {
+                artifact("[artifact]-[revision]-$androidStudioOs.[ext]")
             }
 
-            artifactPattern("https://dl.google.com/dl/android/studio/ide-zips/$androidStudioRelease/[artifact]-[revision]-$androidStudioOs.zip")
             metadataSources {
                 artifact()
             }
         }
-    }
 
-    ivy {
-        artifactPattern("https://dl.google.com/android/repository/[artifact]_[revision](-[classifier]).[ext]")
-        artifactPattern("https://android.googlesource.com/platform/dalvik/+archive/android-$androidDxSourcesVersion/[artifact].[ext]")
-        metadataSources {
-            artifact()
+        ivy {
+            url = URI("https://dl.bintray.com/kotlin/as/")
+
+            patternLayout {
+                artifact("[artifact]-[revision]-$androidStudioOs.[ext]")
+            }
+
+            credentials {
+                username = System.getenv("AS_BINTRAY_USER_NAME") ?: findProperty("bintray.user") as String?
+                password = System.getenv("AS_BINTRAY_API_KEY") ?: findProperty("bintray.apikey") as String?
+            }
+
+            metadataSources {
+                artifact()
+            }
         }
-    }
-
-    if (cacheRedirectorEnabled) {
-        maven("https://cache-redirector.jetbrains.com/www.jetbrains.com/intellij-repository/$intellijReleaseType")
-        maven("https://cache-redirector.jetbrains.com/plugins.jetbrains.com/maven")
-        maven("https://cache-redirector.jetbrains.com/jetbrains.bintray.com/intellij-third-party-dependencies/")
     }
 
     maven("https://www.jetbrains.com/intellij-repository/$intellijReleaseType")
@@ -102,8 +96,6 @@ val sources by configurations.creating
 val jpsStandalone by configurations.creating
 val intellijCore by configurations.creating
 val nodeJSPlugin by configurations.creating
-val androidBuildTools by configurations.creating
-val androidDxSources by configurations.creating
 
 /**
  * Special repository for annotations.jar required for idea runtime only.
@@ -112,18 +104,24 @@ val androidDxSources by configurations.creating
  */
 val intellijRuntimeAnnotations = "intellij-runtime-annotations"
 
-val customDepsRepoDir = rootProject.rootDir.parentFile.resolve("dependencies/repo")
+val dependenciesDir = (findProperty("kotlin.build.dependencies.dir") as String?)?.let(::File)
+    ?: rootProject.rootDir.parentFile.resolve("dependencies")
+
+val customDepsRepoDir = dependenciesDir.resolve("repo")
+
 val customDepsOrg: String by rootProject.extra
 val customDepsRevision = intellijVersion
 val repoDir = File(customDepsRepoDir, customDepsOrg)
 
-val androidDxModuleName = "android-dx"
-val androidDxRevision = androidBuildToolsVersion
-val androidDxRepoModuleDir = File(repoDir, "$androidDxModuleName/$androidDxRevision")
-
 dependencies {
     if (androidStudioRelease != null) {
-        androidStudio("google:android-studio-ide:$androidStudioBuild")
+        val extension = if (androidStudioOs == "linux" &&
+            (androidStudioRelease.startsWith("3.5") || androidStudioRelease.startsWith("3.6")))
+            "tar.gz"
+        else
+            "zip"
+
+        androidStudio("google:android-studio-ide:$androidStudioBuild@$extension")
     } else {
         if (installIntellijCommunity) {
             intellij("com.jetbrains.intellij.idea:ideaIC:$intellijVersion")
@@ -143,71 +141,11 @@ dependencies {
     if (intellijUltimateEnabled) {
         nodeJSPlugin("com.jetbrains.plugins:NodeJS:${rootProject.extra["versions.idea.NodeJS"]}@zip")
     }
-
-    androidBuildTools("google:build-tools:$androidBuildToolsVersion:$androidToolsOs@zip")
-    androidDxSources("google:dx:0@tar.gz")
-}
-
-val dxSourcesTargetDir = File(buildDir, "dx_src")
-
-val untarDxSources by tasks.creating {
-    dependsOn(androidDxSources)
-    inputs.files(androidDxSources)
-    outputs.dir(dxSourcesTargetDir)
-    doFirst {
-        project.copy {
-            from(tarTree(androidDxSources.singleFile))
-            include("src/**")
-            includeEmptyDirs = false
-            into(dxSourcesTargetDir)
-        }
-    }
-}
-
-val prepareDxSourcesJar by tasks.creating(Jar::class) {
-    dependsOn(untarDxSources)
-    from("$dxSourcesTargetDir/src")
-    destinationDir = File(repoDir, sources.name)
-    baseName = androidDxModuleName
-    classifier = "sources"
-    version = androidBuildToolsVersion
-}
-
-val unzipDxJar by tasks.creating {
-    dependsOn(androidBuildTools)
-    inputs.files(androidBuildTools)
-    outputs.files(File(androidDxRepoModuleDir, "dx.jar"))
-    doFirst {
-        project.copy {
-            from(zipTree(androidBuildTools.singleFile).files)
-            include("**/dx.jar")
-            into(androidDxRepoModuleDir)
-        }
-    }
-}
-
-val buildIvyRepoForAndroidDx by tasks.creating {
-    dependsOn(unzipDxJar, prepareDxSourcesJar)
-    inputs.files(unzipDxJar, prepareDxSourcesJar)
-    outputs.file(File(androidDxRepoModuleDir, "$androidDxModuleName.ivy.xml"))
-
-    doLast {
-        writeIvyXml(
-            customDepsOrg,
-            androidDxModuleName,
-            androidBuildToolsVersion,
-            androidDxModuleName,
-            androidDxRepoModuleDir,
-            androidDxRepoModuleDir,
-            androidDxRepoModuleDir,
-            prepareDxSourcesJar.outputs.files.singleFile
-        )
-    }
 }
 
 val makeIntellijCore = buildIvyRepositoryTask(intellijCore, customDepsOrg, customDepsRepoDir)
 
-val makeIntellijAnnotations by tasks.creating(Copy::class.java) {
+val makeIntellijAnnotations by tasks.registering(Copy::class) {
     dependsOn(makeIntellijCore)
 
     from(repoDir.resolve("intellij-core/$intellijVersion/artifacts/annotations.jar"))
@@ -235,10 +173,10 @@ val makeIntellijAnnotations by tasks.creating(Copy::class.java) {
 val mergeSources by tasks.creating(Jar::class.java) {
     dependsOn(sources)
     from(provider { sources.map(::zipTree) })
-    destinationDir = File(repoDir, sources.name)
-    baseName = "intellij"
-    classifier = "sources"
-    version = intellijVersion
+    destinationDirectory.set(File(repoDir, sources.name))
+    archiveBaseName.set("intellij")
+    archiveClassifier.set("sources")
+    archiveVersion.set(intellijVersion)
 }
 
 val sourcesFile = mergeSources.outputs.files.singleFile
@@ -267,29 +205,29 @@ val makeIde = if (androidStudioBuild != null) {
     task
 }
 
-val build by tasks.creating {
+val buildJpsStandalone = buildIvyRepositoryTask(jpsStandalone, customDepsOrg, customDepsRepoDir, null, sourcesFile)
+val buildNodeJsPlugin = buildIvyRepositoryTask(nodeJSPlugin, customDepsOrg, customDepsRepoDir, ::skipToplevelDirectory, sourcesFile)
+
+tasks.named("build") {
     dependsOn(
         makeIntellijCore,
         makeIde,
-        buildIvyRepositoryTask(jpsStandalone, customDepsOrg, customDepsRepoDir, null, sourcesFile),
-        makeIntellijAnnotations,
-        buildIvyRepoForAndroidDx
+        buildJpsStandalone,
+        makeIntellijAnnotations
     )
 
     if (installIntellijUltimate) {
-        dependsOn(
-            buildIvyRepositoryTask(nodeJSPlugin, customDepsOrg, customDepsRepoDir, ::skipToplevelDirectory, sourcesFile)
-        )
+        dependsOn(buildNodeJsPlugin)
     }
 }
 
 // Task to delete legacy repo locations
-tasks.create("cleanLegacy", Delete::class.java) {
+tasks.register<Delete>("cleanLegacy") {
     delete("$projectDir/android-dx")
     delete("$projectDir/intellij-sdk")
 }
 
-tasks.create("clean", Delete::class.java) {
+tasks.named<Delete>("clean") {
     delete(customDepsRepoDir)
 }
 
@@ -326,7 +264,13 @@ fun buildIvyRepositoryTask(
 
             logger.info("Unpacking ${file.name} into ${artifactsDirectory.absolutePath}")
             copy {
-                from(zipTree(file).matching {
+                val fileTree = when (extension) {
+                    "tar.gz" -> tarTree(file)
+                    "zip" -> zipTree(file)
+                    else -> error("Unsupported artifact extension: $extension")
+                }
+
+                from(fileTree.matching {
                     exclude("**/plugins/Kotlin/**")
                 })
 
@@ -390,40 +334,120 @@ fun writeIvyXml(
                 && !jar.name.startsWith("kotlin-")
                 && (allowAnnotations || jar.name != "annotations.jar") // see comments for [intellijAnnotations] above
 
-    with(IvyDescriptorFileGenerator(DefaultIvyPublicationIdentity(organization, moduleName, version))) {
-        addConfiguration(DefaultIvyConfiguration("default"))
-        addConfiguration(DefaultIvyConfiguration("sources"))
-        artifactDir.listFiles()?.forEach { jarFile ->
-            if (shouldIncludeIntellijJar(jarFile)) {
-                val relativeName = jarFile.toRelativeString(baseDir).removeSuffix(".jar")
-                addArtifact(
-                    FileBasedIvyArtifact(
-                        jarFile,
-                        DefaultIvyPublicationIdentity(organization, relativeName, version)
-                    ).also {
-                        it.conf = "default"
+    val ivyFile = targetDir.resolve("$fileName.ivy.xml")
+    ivyFile.parentFile.mkdirs()
+    with(XMLWriter(FileWriter(ivyFile))) {
+        document("UTF-8", "1.0") {
+            element("ivy-module") {
+                attribute("version", "2.0")
+                attribute("xmlns:m", "http://ant.apache.org/ivy/maven")
+
+                emptyElement("info") {
+                    attributes(
+                        "organisation" to organization,
+                        "module" to moduleName,
+                        "revision" to version,
+                        "publication" to SimpleDateFormat("yyyyMMddHHmmss").format(Date())
+                    )
+                }
+
+                element("configurations") {
+                    listOf("default", "sources").forEach { configurationName ->
+                        emptyElement("conf") {
+                            attributes("name" to configurationName, "visibility" to "public")
+                        }
                     }
-                )
+                }
+
+                element("publications") {
+                    artifactDir.listFiles()?.filter(::shouldIncludeIntellijJar)?.forEach { jarFile ->
+                        val relativeName = jarFile.toRelativeString(baseDir).removeSuffix(".jar")
+                        emptyElement("artifact") {
+                            attributes(
+                                "name" to relativeName,
+                                "type" to "jar",
+                                "ext" to "jar",
+                                "conf" to "default"
+                            )
+                        }
+                    }
+
+                    sourcesJar.forEach { jarFile ->
+                        emptyElement("artifact") {
+                            val sourcesArtifactName = jarFile.name
+                                .substringBeforeLast("-")
+                                .substringBeforeLast("-")
+
+                            attributes(
+                                "name" to sourcesArtifactName,
+                                "type" to "jar",
+                                "ext" to "jar",
+                                "conf" to "sources",
+                                "m:classifier" to "sources"
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        sourcesJar.forEach {
-            val sourcesArtifactName = it.name.substringBeforeLast("-").substringBeforeLast("-")
-            addArtifact(
-                FileBasedIvyArtifact(
-                    it,
-                    DefaultIvyPublicationIdentity(organization, sourcesArtifactName, version)
-                ).also { artifact ->
-                    artifact.conf = "sources"
-                    artifact.classifier = "sources"
-                }
-            )
-        }
-
-        writeTo(File(targetDir, "$fileName.ivy.xml"))
+        close()
     }
 }
 
 fun skipToplevelDirectory(path: String) = path.substringAfter('/')
 
 fun skipContentsDirectory(path: String) = path.substringAfter("Contents/")
+
+class XMLWriter(private val outputStreamWriter: OutputStreamWriter) : Closeable {
+
+    private val xmlStreamWriter = XMLOutputFactory.newInstance().createXMLStreamWriter(outputStreamWriter)
+
+    private var depth = 0
+    private val indent = "  "
+
+    fun document(encoding: String, version: String, init: XMLWriter.() -> Unit) = apply {
+        xmlStreamWriter.writeStartDocument(encoding, version)
+
+        init()
+
+        xmlStreamWriter.writeEndDocument()
+    }
+
+    fun element(name: String, init: XMLWriter.() -> Unit) = apply {
+        writeIndent()
+        xmlStreamWriter.writeStartElement(name)
+        depth += 1
+
+        init()
+
+        depth -= 1
+        writeIndent()
+        xmlStreamWriter.writeEndElement()
+    }
+
+    fun emptyElement(name: String, init: XMLWriter.() -> Unit) = apply {
+        writeIndent()
+        xmlStreamWriter.writeEmptyElement(name)
+        init()
+    }
+
+    fun attribute(name: String, value: String): Unit = xmlStreamWriter.writeAttribute(name, value)
+
+    fun attributes(vararg attributes: Pair<String, String>) {
+        attributes.forEach { attribute(it.first, it.second) }
+    }
+
+    private fun writeIndent() {
+        xmlStreamWriter.writeCharacters("\n")
+        repeat(depth) {
+            xmlStreamWriter.writeCharacters(indent)
+        }
+    }
+
+    override fun close() {
+        xmlStreamWriter.flush()
+        xmlStreamWriter.close()
+        outputStreamWriter.close()
+    }
+}

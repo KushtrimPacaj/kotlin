@@ -33,7 +33,7 @@ class KtClassBody : KtElementImplStub<KotlinPlaceHolderStub<KtClassBody>>, KtDec
 
     override fun getParent() = parentByStub
 
-    override fun getDeclarations() = Arrays.asList(*getStubOrPsiChildren(DECLARATION_TYPES, KtDeclaration.ARRAY_FACTORY))
+    override fun getDeclarations() = listOf(*getStubOrPsiChildren(DECLARATION_TYPES, KtDeclaration.ARRAY_FACTORY))
 
     override fun <R, D> accept(visitor: KtVisitor<R, D>, data: D) = visitor.visitClassBody(this, data)
 
@@ -45,6 +45,9 @@ class KtClassBody : KtElementImplStub<KotlinPlaceHolderStub<KtClassBody>>, KtDec
 
     val properties: List<KtProperty>
         get() = getStubOrPsiChildrenAsList(KtStubElementTypes.PROPERTY)
+
+    val functions: List<KtFunction>
+        get() = getStubOrPsiChildrenAsList(KtStubElementTypes.FUNCTION)
 
     val enumEntries: List<KtEnumEntry>
         get() = getStubOrPsiChildrenAsList(KtStubElementTypes.ENUM_ENTRY).filterIsInstance<KtEnumEntry>()

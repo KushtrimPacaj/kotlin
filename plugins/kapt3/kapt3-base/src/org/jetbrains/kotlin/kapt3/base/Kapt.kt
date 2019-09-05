@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt3.base
@@ -62,22 +62,7 @@ object Kapt {
     }
 
     private fun findClassLoaderWithJavac(): ClassLoader {
-        fun Class<*>.toClassFilePath() = name.replace('.', '/') + ".class"
-
-        // find topmost class loader with javac
-        val javacContextPath = Context::class.java.toClassFilePath()
-        val kaptPath = Kapt::class.java.toClassFilePath()
-
-        fun findRightClassLoader(current: ClassLoader): ClassLoader? {
-            if (current.getResource(javacContextPath) != null && current.getResource(kaptPath) == null) {
-                return current
-            }
-
-            val parent = current.parent ?: return null
-            return findRightClassLoader(parent)
-        }
-
-        val kaptClassLoader = Kapt::class.java.classLoader
-        return findRightClassLoader(kaptClassLoader) ?: kaptClassLoader
+        // Class.getClassLoader() may return null if the class is defined in a bootstrap class loader
+        return Context::class.java.classLoader ?: ClassLoader.getSystemClassLoader()
     }
 }

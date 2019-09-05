@@ -21,7 +21,6 @@ import com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.base.kapt3.*
 import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
-import org.jetbrains.kotlin.cli.common.config.KotlinSourceRoot
 import org.jetbrains.kotlin.cli.common.messages.MessageRenderer
 import org.jetbrains.kotlin.cli.common.messages.PrintingMessageCollector
 import org.jetbrains.kotlin.cli.jvm.config.JavaSourceRoot
@@ -45,9 +44,9 @@ import org.jetbrains.kotlin.kapt3.base.util.KaptLogger
 import org.jetbrains.kotlin.kapt3.util.MessageCollectorBackedKaptLogger
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.BindingTrace
-import org.jetbrains.kotlin.resolve.TargetPlatform
+import org.jetbrains.kotlin.platform.TargetPlatform
+import org.jetbrains.kotlin.platform.jvm.isJvm
 import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisHandlerExtension
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
 import org.jetbrains.kotlin.utils.decodePluginOptions
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -97,10 +96,11 @@ class Kapt3CommandLineProcessor : CommandLineProcessor {
             STUBS_OUTPUT_DIR_OPTION -> stubsOutputDir = File(value)
             INCREMENTAL_DATA_OUTPUT_DIR_OPTION -> incrementalDataOutputDir = File(value)
 
-            CHANGED_FILES -> changedFiles.addAll(value.split(File.pathSeparator).map { File(it) })
+            CHANGED_FILES -> changedFiles.add(File(value))
             COMPILED_SOURCES_DIR -> compiledSources.addAll(value.split(File.pathSeparator).map { File(it) })
             INCREMENTAL_CACHE -> incrementalCache = File(value)
-            CLASSPATH_FQ_NAMES_HISTORY -> classpathFqNamesHistory = File(value)
+            CLASSPATH_CHANGES -> classpathChanges.add(value)
+            PROCESS_INCREMENTALLY -> setFlag(KaptFlag.INCREMENTAL_APT, value)
 
             ANNOTATION_PROCESSOR_CLASSPATH_OPTION -> processingClasspath += File(value)
             ANNOTATION_PROCESSORS_OPTION -> processors.addAll(value.split(',').map { it.trim() }.filter { it.isNotEmpty() })
@@ -241,7 +241,7 @@ class Kapt3ComponentRegistrar : ComponentRegistrar {
             platform: TargetPlatform,
             moduleDescriptor: ModuleDescriptor
         ) {
-            if (platform != JvmPlatform) return
+            if (!platform.isJvm()) return
             container.useInstance(KaptAnonymousTypeTransformer())
         }
     }

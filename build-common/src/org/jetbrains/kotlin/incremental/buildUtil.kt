@@ -16,8 +16,6 @@
 
 package org.jetbrains.kotlin.incremental
 
-import com.intellij.openapi.util.io.FileUtil
-import com.intellij.openapi.util.text.StringUtil
 import org.jetbrains.kotlin.build.GeneratedFile
 import org.jetbrains.kotlin.build.GeneratedJvmClass
 import org.jetbrains.kotlin.build.JvmSourceRoot
@@ -32,6 +30,7 @@ import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.progress.CompilationCanceledStatus
 import org.jetbrains.kotlin.synthetic.SAM_LOOKUP_NAME
 import org.jetbrains.kotlin.utils.addToStdlib.flattenTo
+import org.jetbrains.kotlin.utils.keysToMap
 import java.io.File
 import java.util.*
 import kotlin.collections.HashSet
@@ -67,10 +66,22 @@ fun makeModuleFile(
             friendDirs
     )
 
-    val scriptFile = File.createTempFile("kjps", StringUtil.sanitizeJavaIdentifier(name) + ".script.xml")
-    FileUtil.writeToFile(scriptFile, builder.asText().toString())
+    val scriptFile = File.createTempFile("kjps", sanitizeJavaIdentifier(name) + ".script.xml")
+    scriptFile.writeText(builder.asText().toString())
     return scriptFile
 }
+
+private fun sanitizeJavaIdentifier(string: String) =
+    buildString {
+        for (char in string) {
+            if (char.isJavaIdentifierPart()) {
+                if (length == 0 && !char.isJavaIdentifierStart()) {
+                    append('_')
+                }
+                append(char)
+            }
+        }
+    }
 
 fun makeCompileServices(
         incrementalCaches: Map<TargetId, IncrementalCache>,
@@ -116,7 +127,7 @@ fun LookupStorage.update(
 
     removeLookupsFrom(filesToCompile.asSequence() + removedFiles.asSequence())
 
-    addAll(lookupTracker.lookups.entrySet(), lookupTracker.pathInterner.values)
+    addAll(lookupTracker.lookups, lookupTracker.pathInterner.values)
 }
 
 data class DirtyData(

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt3.base
@@ -55,16 +55,24 @@ open class ProcessorLoader(private val options: KaptOptions, private val logger:
     }
 
     private fun wrapInIncrementalProcessor(processors: List<Processor>, classpath: Iterable<File>): List<IncrementalProcessor> {
+        if (options.incrementalCache == null) {
+            return processors.map { IncrementalProcessor(it, DeclaredProcType.NON_INCREMENTAL) }
+        }
+
         val processorNames = processors.map {it.javaClass.name}.toSet()
 
         val processorsInfo: Map<String, DeclaredProcType> = getIncrementalProcessorsFromClasspath(processorNames, classpath)
 
         val nonIncremental = processorNames.filter { !processorsInfo.containsKey(it) }
-        return if (nonIncremental.isNotEmpty()) {
-            logger.info("Incremental KAPT support is disabled. Processors that are not incremental: ${nonIncremental.joinToString()}.")
-            processors.map { IncrementalProcessor(it, DeclaredProcType.NON_INCREMENTAL) }
-        } else {
-            processors.map { IncrementalProcessor(it, processorsInfo.getValue(it.javaClass.name)) }
+        return processors.map {
+            val procType = processorsInfo[it.javaClass.name]?.let {
+                if (nonIncremental.isEmpty()) {
+                    it
+                } else {
+                    DeclaredProcType.INCREMENTAL_BUT_OTHER_APS_ARE_NOT
+                }
+            } ?: DeclaredProcType.NON_INCREMENTAL
+            IncrementalProcessor(it, procType)
         }
     }
 

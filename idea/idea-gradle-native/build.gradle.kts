@@ -17,7 +17,6 @@ dependencies {
 
     compile(project(":compiler:frontend"))
     compile(project(":compiler:frontend.java"))
-    compile(project(":compiler:frontend.script"))
 
     compile(project(":js:js.frontend"))
 
@@ -33,6 +32,10 @@ dependencies {
     testCompileOnly(intellijPluginDep("Groovy"))
     testCompileOnly(intellijDep())
 
+    Platform[192].orHigher {
+        compileOnly(intellijPluginDep("java"))
+    }
+
     testRuntime(project(":kotlin-reflect"))
     testRuntime(project(":idea:idea-jvm"))
     testRuntime(project(":idea:idea-android"))
@@ -45,6 +48,9 @@ dependencies {
     testRuntime(project(":kotlin-scripting-idea"))
     testRuntime(project(":kotlinx-serialization-ide-plugin"))
     // TODO: the order of the plugins matters here, consider avoiding order-dependency
+    Platform[192].orHigher {
+        testRuntime(intellijPluginDep("java"))
+    }
     testRuntime(intellijPluginDep("junit"))
     testRuntime(intellijPluginDep("testng"))
     testRuntime(intellijPluginDep("properties"))
@@ -56,6 +62,11 @@ dependencies {
     }
     testRuntime(intellijPluginDep("android"))
     testRuntime(intellijPluginDep("smali"))
+
+    if (Ide.AS36.orHigher()) {
+        testRuntime(intellijPluginDep("android-layoutlib"))
+        testRuntime(intellijPluginDep("android-wizardTemplate-plugin"))
+    }
 }
 
 sourceSets {
@@ -65,7 +76,7 @@ sourceSets {
 
 testsJar()
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
     useAndroidSdk()
 }

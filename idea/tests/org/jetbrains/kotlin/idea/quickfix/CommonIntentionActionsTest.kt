@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.quickfix
@@ -21,9 +21,12 @@ import org.jetbrains.kotlin.asJava.toLightElements
 import org.jetbrains.kotlin.idea.search.allScope
 import org.jetbrains.kotlin.idea.test.KotlinWithJdkAndRuntimeLightProjectDescriptor
 import org.jetbrains.kotlin.psi.KtModifierListOwner
+import org.jetbrains.kotlin.test.JUnit3WithIdeaConfigurationRunner
 import org.jetbrains.uast.toUElement
 import org.junit.Assert
+import org.junit.runner.RunWith
 
+@RunWith(JUnit3WithIdeaConfigurationRunner::class)
 class CommonIntentionActionsTest : LightPlatformCodeInsightFixtureTestCase() {
     private class SimpleMethodRequest(
         project: Project,
@@ -280,8 +283,8 @@ class CommonIntentionActionsTest : LightPlatformCodeInsightFixtureTestCase() {
         )
 
         TestCase.assertEquals(
-            "KtLightMethodImpl -> org.jetbrains.annotations.NotNull," +
-                    " KtLightFieldForDeclaration -> pkg.myannotation.JavaAnnotation, org.jetbrains.annotations.NotNull",
+            "KtUltraLightMethodForSourceDeclaration -> org.jetbrains.annotations.NotNull," +
+                    " KtUltraLightFieldForSourceDeclaration -> pkg.myannotation.JavaAnnotation, org.jetbrains.annotations.NotNull",
             annotationsString(myFixture.findElementByText("bar", KtModifierListOwner::class.java))
         )
     }
@@ -332,14 +335,14 @@ class CommonIntentionActionsTest : LightPlatformCodeInsightFixtureTestCase() {
         )
 
         TestCase.assertEquals(
-            "KtLightMethodImpl -> org.jetbrains.annotations.NotNull," +
-                    " KtLightFieldForDeclaration -> pkg.myannotation.JavaAnnotation, org.jetbrains.annotations.NotNull",
+            "KtUltraLightMethodForSourceDeclaration -> org.jetbrains.annotations.NotNull," +
+                    " KtUltraLightFieldForSourceDeclaration -> pkg.myannotation.JavaAnnotation, org.jetbrains.annotations.NotNull",
             annotationsString(myFixture.findElementByText("bar", KtModifierListOwner::class.java))
         )
     }
 
     private fun annotationsString(findElementByText: KtModifierListOwner) = findElementByText.toLightElements()
-        .joinToString { elem -> "${elem.javaClass.simpleName} -> ${(elem as PsiModifierListOwner).annotations.joinToString { it.qualifiedName!! }}" }
+        .joinToString { elem -> "${elem.javaClass.simpleName} -> ${(elem as PsiModifierListOwner).annotations.mapNotNull { it.qualifiedName }.joinToString()}" }
 
     fun testDontMakePublicPublic() {
         myFixture.configureByText(

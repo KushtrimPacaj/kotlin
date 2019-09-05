@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir
@@ -22,9 +22,13 @@ import org.jetbrains.kotlin.fir.resolve.FirProvider
 import org.jetbrains.kotlin.fir.resolve.impl.FirProviderImpl
 import org.jetbrains.kotlin.fir.resolve.transformers.FirTotalResolveTransformer
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.resolve.MultiTargetPlatform
-import org.jetbrains.kotlin.resolve.TargetPlatform
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
+import org.jetbrains.kotlin.platform.CommonPlatforms
+import org.jetbrains.kotlin.platform.TargetPlatform
+import org.jetbrains.kotlin.platform.js.JsPlatforms
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
+import org.jetbrains.kotlin.platform.konan.KonanPlatforms
+import org.jetbrains.kotlin.resolve.PlatformDependentAnalyzerServices
+import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatformAnalyzerServices
 import java.io.File
 import java.util.*
 
@@ -49,7 +53,6 @@ abstract class AbstractFirDiagnosticsSmokeTest : BaseDiagnosticsTest() {
     }
 
     private fun analyzeAndCheckUnhandled(files: List<TestFile>) {
-
         val groupedByModule = files.groupBy(TestFile::module)
 
         val modules = createModules(groupedByModule)
@@ -57,7 +60,11 @@ abstract class AbstractFirDiagnosticsSmokeTest : BaseDiagnosticsTest() {
         val sessionProvider = FirProjectSessionProvider(project)
 
         //For BuiltIns, registered in sessionProvider automatically
-        FirLibrarySession(builtInsModuleInfo, sessionProvider, GlobalSearchScope.EMPTY_SCOPE)
+        val allProjectScope = GlobalSearchScope.allScope(project)
+        FirLibrarySession.create(
+            builtInsModuleInfo, sessionProvider, allProjectScope, project,
+            environment.createPackagePartProvider(allProjectScope)
+        )
 
         val configToSession = modules.mapValues { (config, info) ->
             val moduleFiles = groupedByModule.getValue(config)
@@ -125,21 +132,16 @@ abstract class AbstractFirDiagnosticsSmokeTest : BaseDiagnosticsTest() {
     private val builtInsModuleInfo = BuiltInModuleInfo(Name.special("<built-ins>"))
 
     protected open fun createModule(moduleName: String): TestModuleInfo {
-        val nameSuffix = moduleName.substringAfterLast("-", "")
-        // TODO: use platform
-        @Suppress("UNUSED_VARIABLE")
-        val platform =
-            when {
-                nameSuffix.isEmpty() -> null
-                nameSuffix == "common" -> MultiTargetPlatform.Common
-                else -> MultiTargetPlatform.Specific(nameSuffix.toUpperCase())
-            }
+        parseModulePlatformByName(moduleName)
         return TestModuleInfo(Name.special("<$moduleName>"))
     }
 
     class BuiltInModuleInfo(override val name: Name) : ModuleInfo {
-        override val platform: TargetPlatform?
-            get() = JvmPlatform
+        override val platform: TargetPlatform
+            get() = JvmPlatforms.unspecifiedJvmPlatform
+
+        override val analyzerServices: PlatformDependentAnalyzerServices
+            get() = JvmPlatformAnalyzerServices
 
         override fun dependencies(): List<ModuleInfo> {
             return listOf(this)
@@ -147,8 +149,11 @@ abstract class AbstractFirDiagnosticsSmokeTest : BaseDiagnosticsTest() {
     }
 
     protected class TestModuleInfo(override val name: Name) : ModuleInfo {
-        override val platform: TargetPlatform?
-            get() = JvmPlatform
+        override val platform: TargetPlatform
+            get() = JvmPlatforms.unspecifiedJvmPlatform
+
+        override val analyzerServices: PlatformDependentAnalyzerServices
+            get() = JvmPlatformAnalyzerServices
 
         val dependencies = mutableListOf<ModuleInfo>(this)
         override fun dependencies(): List<ModuleInfo> {
@@ -157,7 +162,7 @@ abstract class AbstractFirDiagnosticsSmokeTest : BaseDiagnosticsTest() {
     }
 
     protected open fun createSealedModule(): TestModuleInfo =
-        createModule("test-module").apply {
+        createModule("test-module-jvm").apply {
             dependencies += builtInsModuleInfo
         }
 

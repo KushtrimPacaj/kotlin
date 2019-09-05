@@ -1,17 +1,34 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle.targets.js
 
-import org.jetbrains.kotlin.gradle.plugin.*
+import org.jetbrains.kotlin.gradle.plugin.Kotlin2JsSourceSetProcessor
+import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetProcessor
+import org.jetbrains.kotlin.gradle.plugin.KotlinTargetConfigurator
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinJsCompilation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinOnlyTarget
+import org.jetbrains.kotlin.gradle.targets.js.npm.tasks.KotlinPackageJsonTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinTasksProvider
 
-class KotlinJsTargetConfigurator(kotlinPluginVersion: String) :
-        KotlinTargetConfigurator<KotlinJsCompilation>(true, true, kotlinPluginVersion) {
+open class KotlinJsTargetConfigurator(kotlinPluginVersion: String) :
+    KotlinTargetConfigurator<KotlinJsCompilation>(true, true, kotlinPluginVersion) {
+
+    override fun configureTarget(target: KotlinOnlyTarget<KotlinJsCompilation>) {
+        target as KotlinJsTarget
+
+        super.configureTarget(target)
+    }
+
+    override fun configureTest(target: KotlinOnlyTarget<KotlinJsCompilation>) {
+        target as KotlinJsTarget
+
+        // always create jsTest task for compatibility (KT-31527)
+        // actual tests tasks for browser and nodejs will be configured in KotlinJsSubTarget.configure
+        target.testTask
+    }
 
     override fun buildCompilationProcessor(compilation: KotlinJsCompilation): KotlinSourceSetProcessor<*> {
         val tasksProvider = KotlinTasksProvider(compilation.target.targetName)
@@ -22,20 +39,11 @@ class KotlinJsTargetConfigurator(kotlinPluginVersion: String) :
         super.configureCompilations(platformTarget)
 
         platformTarget.compilations.all {
-            it.compileKotlinTask.kotlinOptions.moduleKind = "umd"
-        }
-    }
-
-    override fun configureTest(target: KotlinOnlyTarget<KotlinJsCompilation>) {
-        target.compilations.all {
-            if (isTestCompilation(it)) {
-                KotlinJsCompilationTestsConfigurator(it).configure()
+            it.compileKotlinTask.kotlinOptions {
+                moduleKind = "umd"
+                sourceMap = true
+                sourceMapEmbedSources = null
             }
         }
-    }
-
-    companion object {
-        internal fun isTestCompilation(it: KotlinJsCompilation) =
-            it.name == KotlinCompilation.TEST_COMPILATION_NAME
     }
 }

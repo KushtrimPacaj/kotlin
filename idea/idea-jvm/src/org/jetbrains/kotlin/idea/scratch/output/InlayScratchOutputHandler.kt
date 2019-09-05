@@ -16,20 +16,23 @@
 
 package org.jetbrains.kotlin.idea.scratch.output
 
+import com.intellij.openapi.application.TransactionGuard
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.StringUtil
-import com.intellij.util.ui.UIUtil
 import org.jetbrains.kotlin.idea.scratch.ScratchExpression
 import org.jetbrains.kotlin.idea.scratch.ScratchFile
 
-object InlayScratchOutputHandler : ScratchOutputHandler {
-    private const val maxLineLength = 120
-    private const val maxInsertOffset = 60
-    private const val minSpaceCount = 4
+class InlayScratchOutputHandler(
+    private val textEditor: TextEditor,
+    private val toolWindowHandler: ScratchOutputHandler
+) : ScratchOutputHandler {
+    private val maxLineLength = 120
+    private val maxInsertOffset = 60
+    private val minSpaceCount = 4
 
     override fun onStart(file: ScratchFile) {
-        clear(file)
+        toolWindowHandler.onStart(file)
     }
 
     override fun handle(file: ScratchFile, expression: ScratchExpression, output: ScratchOutput) {
@@ -38,26 +41,26 @@ object InlayScratchOutputHandler : ScratchOutputHandler {
         createInlay(file, expression, output)
 
         if (output.type == ScratchOutputType.ERROR) {
-            getToolwindowHandler().handle(file, expression, output)
+            toolWindowHandler.handle(file, expression, output)
         }
     }
 
     override fun error(file: ScratchFile, message: String) {
-        getToolwindowHandler().error(file, message)
+        toolWindowHandler.error(file, message)
     }
 
     override fun onFinish(file: ScratchFile) {
-
+        toolWindowHandler.onFinish(file)
     }
 
     override fun clear(file: ScratchFile) {
-        clearInlays(file.editor)
-        getToolwindowHandler().clear(file)
+        clearInlays(textEditor)
+        toolWindowHandler.clear(file)
     }
 
     private fun createInlay(file: ScratchFile, expression: ScratchExpression, output: ScratchOutput) {
-        UIUtil.invokeLaterIfNeeded {
-            val editor = file.editor.editor
+        TransactionGuard.submitTransaction(file.project, Runnable {
+            val editor = textEditor.editor
             val line = expression.lineStart
 
             val lineStartOffset = editor.document.getLineStartOffset(line)
@@ -74,33 +77,32 @@ object InlayScratchOutputHandler : ScratchOutputHandler {
                 if (shortText != text) {
                     printToToolWindow(file, expression, output)
                 }
-                editor.inlayModel.addInlineElement(
+                editor.inlayModel.addInlay(
                     lineEndOffset,
-                    true,
                     InlayScratchFileRenderer(" ".repeat(spaceCount) + shortText, output.type)
                 )
             }
 
             val existing = editor.inlayModel
-                .getInlineElementsInRange(lineEndOffset, lineEndOffset)
-                .singleOrNull { it.renderer is InlayScratchFileRenderer }
+                .getInlays(lineEndOffset, lineEndOffset)
+                .singleOrNull()
             if (existing != null) {
                 existing.dispose()
                 addInlay(((existing.renderer as InlayScratchFileRenderer).text + "; " + output.text).drop(spaceCount))
             } else {
                 addInlay(output.text)
             }
-        }
+        })
     }
 
     private fun printToToolWindow(file: ScratchFile, expression: ScratchExpression, output: ScratchOutput) {
         if (output.type != ScratchOutputType.ERROR) {
-            getToolwindowHandler().handle(file, expression, output)
+            toolWindowHandler.handle(file, expression, output)
         }
     }
 
     private fun maxLineLength(file: ScratchFile): Int {
-        val doc = file.editor.editor.document
+        val doc = textEditor.editor.document
         return file.getExpressions()
             .flatMap { it.lineStart..it.lineEnd }
             .map { doc.getLineEndOffset(it) - doc.getLineStartOffset(it) }
@@ -108,11 +110,10 @@ object InlayScratchOutputHandler : ScratchOutputHandler {
     }
 
     private fun clearInlays(editor: TextEditor) {
-        UIUtil.invokeLaterIfNeeded {
+        TransactionGuard.submitTransaction(editor, Runnable {
             editor
-                .editor.inlayModel.getInlineElementsInRange(0, editor.editor.document.textLength)
-                .filter { it.renderer is InlayScratchFileRenderer }
+                .editor.inlayModel.getInlays(0, editor.editor.document.textLength)
                 .forEach { Disposer.dispose(it) }
-        }
+        })
     }
 }

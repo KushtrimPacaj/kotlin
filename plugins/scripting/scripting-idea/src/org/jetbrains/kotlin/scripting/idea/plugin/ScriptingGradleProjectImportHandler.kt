@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.scripting.idea.plugin
@@ -8,7 +8,7 @@ package org.jetbrains.kotlin.scripting.idea.plugin
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.idea.configuration.GradleProjectImportHandler
 import org.jetbrains.kotlin.idea.facet.KotlinFacet
-import org.jetbrains.kotlin.scripting.shared.KOTLIN_SCRIPTING_PLUGIN_ID
+import org.jetbrains.kotlin.scripting.KOTLIN_SCRIPTING_PLUGIN_ID
 import org.jetbrains.plugins.gradle.model.data.GradleSourceSetData
 import java.io.File
 

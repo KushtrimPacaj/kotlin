@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir.java
@@ -22,17 +22,20 @@ import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
 import org.jetbrains.kotlin.fir.FirRenderer
 import org.jetbrains.kotlin.fir.createSession
 import org.jetbrains.kotlin.fir.declarations.FirDeclaration
+import org.jetbrains.kotlin.fir.declarations.classId
 import org.jetbrains.kotlin.fir.java.declarations.FirJavaClass
 import org.jetbrains.kotlin.fir.java.declarations.FirJavaConstructor
 import org.jetbrains.kotlin.fir.java.declarations.FirJavaField
 import org.jetbrains.kotlin.fir.java.declarations.FirJavaMethod
 import org.jetbrains.kotlin.fir.java.scopes.JavaClassEnhancementScope
 import org.jetbrains.kotlin.fir.resolve.FirSymbolProvider
+import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.impl.FirCompositeSymbolProvider
 import org.jetbrains.kotlin.fir.scopes.ProcessorAction
 import org.jetbrains.kotlin.fir.scopes.impl.FirCompositeScope
 import org.jetbrains.kotlin.fir.service
-import org.jetbrains.kotlin.fir.symbols.impl.FirFunctionSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirConstructorSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
@@ -142,7 +145,7 @@ abstract class AbstractFirTypeEnhancementTest : KtUsefulTestCase() {
 
         val scope = GlobalSearchScope.filesScope(project, virtualFiles)
             .uniteWith(TopDownAnalyzerFacadeForJVM.AllJavaSourcesInProjectScope(project))
-        val session = createSession(project, scope)
+        val session = createSession(environment, scope)
 
         val topPsiClasses = psiFiles.flatMap { it.getChildrenOfType<PsiClass>().toList() }
 
@@ -170,7 +173,7 @@ abstract class AbstractFirTypeEnhancementTest : KtUsefulTestCase() {
             val processedJavaClasses = mutableSetOf<FirJavaClass>()
             for (javaClass in javaProvider.getJavaTopLevelClasses().sortedBy { it.name }) {
                 if (javaClass !is FirJavaClass || javaClass in processedJavaClasses) continue
-                val enhancementScope = javaClass.buildClassSpecificUseSiteScope(session).let {
+                val enhancementScope = javaProvider.getClassUseSiteMemberScope(javaClass.classId, session, ScopeSession()).let {
                     when (it) {
                         is FirCompositeScope -> it.scopes.filterIsInstance<JavaClassEnhancementScope>().first()
                         is JavaClassEnhancementScope -> it
@@ -188,8 +191,8 @@ abstract class AbstractFirTypeEnhancementTest : KtUsefulTestCase() {
                             if (declaration in renderedDeclarations) continue
                             when (declaration) {
                                 is FirJavaConstructor -> enhancementScope.processFunctionsByName(javaClass.name) { symbol ->
-                                    val enhanced = (symbol as? FirFunctionSymbol)?.fir
-                                    if (enhanced != null && enhanced !in renderedDeclarations) {
+                                    val enhanced = symbol.fir
+                                    if (enhanced !in renderedDeclarations) {
                                         enhanced.accept(renderer, null)
                                         renderer.newLine()
                                         renderedDeclarations += enhanced
@@ -197,8 +200,8 @@ abstract class AbstractFirTypeEnhancementTest : KtUsefulTestCase() {
                                     ProcessorAction.NEXT
                                 }
                                 is FirJavaMethod -> enhancementScope.processFunctionsByName(declaration.name) { symbol ->
-                                    val enhanced = (symbol as? FirFunctionSymbol)?.fir
-                                    if (enhanced != null && enhanced !in renderedDeclarations) {
+                                    val enhanced = symbol.fir
+                                    if (enhanced !in renderedDeclarations) {
                                         enhanced.accept(renderer, null)
                                         renderer.newLine()
                                         renderedDeclarations += enhanced
@@ -206,8 +209,8 @@ abstract class AbstractFirTypeEnhancementTest : KtUsefulTestCase() {
                                     ProcessorAction.NEXT
                                 }
                                 is FirJavaField -> enhancementScope.processPropertiesByName(declaration.name) { symbol ->
-                                    val enhanced = (symbol as? FirPropertySymbol)?.fir
-                                    if (enhanced != null && enhanced !in renderedDeclarations) {
+                                    val enhanced = symbol.fir
+                                    if (enhanced !in renderedDeclarations) {
                                         enhanced.accept(renderer, null)
                                         renderer.newLine()
                                         renderedDeclarations += enhanced

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.base.test.org.jetbrains.kotlin.kapt3.base.incremental
@@ -29,11 +29,9 @@ class TestComplexIncrementalAptCache {
         @JvmStatic
         @BeforeClass
         fun setUp() {
-            val classpathHistory = tmp.newFolder()
-            cache = JavaClassCacheManager(tmp.newFolder(), classpathHistory)
+            cache = JavaClassCacheManager(tmp.newFolder())
             generatedSources = tmp.newFolder()
             cache.close()
-            classpathHistory.resolve("0").createNewFile()
             val processor = SimpleProcessor().toAggregating()
             val srcFiles = listOf(
                 "MyEnum.java",
@@ -48,7 +46,7 @@ class TestComplexIncrementalAptCache {
                 srcFiles,
                 listOf(processor),
                 generatedSources
-            ) { trees -> MentionedTypesTaskListener(cache.javaCache, trees) }
+            ) { elements, trees -> MentionedTypesTaskListener(cache.javaCache, elements, trees) }
             cache.updateCache(listOf(processor))
         }
     }
@@ -61,7 +59,6 @@ class TestComplexIncrementalAptCache {
         assertEquals(emptySet<String>(), myEnum.getMentionedAnnotations())
         assertEquals(emptySet<String>(), myEnum.getPrivateTypes())
         assertEquals(setOf("test.MyEnum", "test.TypeGeneratedByApt"), myEnum.getMentionedTypes())
-        assertEquals(emptyMap<String, Any>(), myEnum.getDefinedConstants())
     }
 
     @Test
@@ -115,7 +112,6 @@ class TestComplexIncrementalAptCache {
                 "java.util.HashSet"
             ), myNumber.getMentionedTypes()
         )
-        assertEquals(emptyMap<String, String>(), myNumber.getDefinedConstants())
     }
 
     @Test
@@ -134,7 +130,6 @@ class TestComplexIncrementalAptCache {
                 "test.NumberManager"
             ), numberAnnotation.getMentionedTypes()
         )
-        assertEquals(emptyMap<String, String>(), numberAnnotation.getDefinedConstants())
     }
 
     @Test
@@ -145,7 +140,6 @@ class TestComplexIncrementalAptCache {
         assertEquals(emptySet<String>(), numberException.getMentionedAnnotations())
         assertEquals(emptySet<String>(), numberException.getPrivateTypes())
         assertEquals(setOf("test.NumberException", "java.lang.RuntimeException"), numberException.getMentionedTypes())
-        assertEquals(emptyMap<String, String>(), numberException.getDefinedConstants())
     }
 
     @Test
@@ -168,7 +162,6 @@ class TestComplexIncrementalAptCache {
                 "test.NumberException"
             ), numberHolder.getMentionedTypes()
         )
-        assertEquals(emptyMap<String, String>(), numberHolder.getDefinedConstants())
     }
 
     @Test
@@ -185,7 +178,6 @@ class TestComplexIncrementalAptCache {
                 "test.NumberHolder"
             ), numberManager.getMentionedTypes()
         )
-        assertEquals(mapOf("CONST" to "STRING_CONST", "INT_CONST" to 246), numberManager.getDefinedConstants())
     }
 
     @Test
@@ -205,6 +197,5 @@ class TestComplexIncrementalAptCache {
                 "java.lang.Number"
             ), genericNumber.getMentionedTypes()
         )
-        assertEquals(emptyMap<String, String>(), genericNumber.getDefinedConstants())
     }
 }

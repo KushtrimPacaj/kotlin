@@ -13,8 +13,6 @@ plugins {
 
 publish()
 
-// todo: make lazy
-val jar: Jar by tasks
 val jarContents by configurations.creating
 
 sourcesJar()
@@ -22,7 +20,7 @@ javadocJar()
 
 repositories {
     google()
-    maven(url = "https://plugins.gradle.org/m2/")
+    maven("https://plugins.gradle.org/m2/")
 }
 
 pill {
@@ -34,7 +32,7 @@ dependencies {
     compile(project(":kotlin-gradle-plugin-model"))
     compileOnly(project(":compiler"))
     compileOnly(project(":compiler:incremental-compilation-impl"))
-    compileOnly(project(":compiler:daemon-common"))
+    compileOnly(project(":daemon-common"))
 
     compile(kotlinStdlib())
     compile(project(":kotlin-native:kotlin-native-utils"))
@@ -46,6 +44,9 @@ dependencies {
     compileOnly(project(":kotlin-annotation-processing-gradle"))
     compileOnly(project(":kotlin-scripting-compiler"))
 
+    compile("com.google.code.gson:gson:${rootProject.extra["versions.jar.gson"]}")
+    compile("de.undercouch:gradle-download-task:3.4.3")
+    
     compileOnly("com.android.tools.build:gradle:2.0.0")
     compileOnly("com.android.tools.build:gradle-core:2.0.0")
     compileOnly("com.android.tools.build:builder:2.0.0")
@@ -60,17 +61,20 @@ dependencies {
     runtime(projectRuntimeJar(":kotlin-android-extensions"))
     runtime(projectRuntimeJar(":kotlin-compiler-runner"))
     runtime(projectRuntimeJar(":kotlin-scripting-compiler-embeddable"))
+    runtime(projectRuntimeJar(":kotlin-scripting-compiler-impl-embeddable"))
     runtime(project(":kotlin-reflect"))
 
-    jarContents(compileOnly(intellijDep()) { includeJars("serviceMessages") })
-    jarContents(projectArchives(":kotlin-test-nodejs-runner"))
+    jarContents(compileOnly(intellijDep()) {
+        includeJars("asm-all", "serviceMessages", "gson", rootProject = rootProject)
+    })
 
     // com.android.tools.build:gradle has ~50 unneeded transitive dependencies
     compileOnly("com.android.tools.build:gradle:3.0.0") { isTransitive = false }
     compileOnly("com.android.tools.build:gradle-core:3.0.0") { isTransitive = false }
     compileOnly("com.android.tools.build:builder-model:3.0.0") { isTransitive = false }
 
-    testCompileOnly (project(":compiler"))
+    testCompile(intellijDep()) { includeJars("serviceMessages", "junit", rootProject = rootProject) }
+    testCompileOnly(project(":compiler"))
     testCompile(projectTests(":kotlin-build-common"))
     testCompile(project(":kotlin-android-extensions"))
     testCompile(project(":kotlin-compiler-runner"))
@@ -81,7 +85,11 @@ dependencies {
     testCompileOnly(project(":kotlin-annotation-processing-gradle"))
 }
 
-runtimeJar(rewriteDepsToShadedCompiler(jar)) {
+if (kotlinBuildProperties.isInJpsBuildIdeaSync) {
+    configurations.compile.get().exclude("com.android.tools.external.com-intellij", "intellij-core")
+}
+
+runtimeJar(rewriteDefaultJarDepsToShadedCompiler()).configure {
     dependsOn(jarContents)
 
     from {
@@ -119,6 +127,10 @@ tasks {
 
     named<ValidateTaskProperties>("validateTaskProperties") {
         failOnWarning = true
+    }
+
+    named<Upload>("install") {
+        dependsOn(named("validateTaskProperties"))
     }
 
     named<DokkaTask>("dokka") {
@@ -175,5 +187,10 @@ pluginBundle {
         name = "kotlinScriptingPlugin",
         id = "org.jetbrains.kotlin.plugin.scripting",
         display = "Gradle plugin for kotlin scripting"
+    )
+    create(
+        name = "kotlinNativeCocoapodsPlugin",
+        id = "org.jetbrains.kotlin.native.cocoapods",
+        display = "Kotlin Native plugin for CocoaPods integration"
     )
 }

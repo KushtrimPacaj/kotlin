@@ -16,15 +16,15 @@
 
 package org.jetbrains.kotlin.idea.completion.handlers
 
+import com.intellij.application.options.CodeStyle
 import com.intellij.codeInsight.AutoPopupController
 import com.intellij.codeInsight.completion.InsertionContext
 import com.intellij.codeInsight.lookup.Lookup
 import com.intellij.codeInsight.lookup.LookupElement
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager
+import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.idea.completion.LambdaSignatureTemplates
 import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
 import org.jetbrains.kotlin.idea.util.CallType
@@ -91,7 +91,7 @@ sealed class KotlinFunctionInsertHandler(callType: CallType<*>) : KotlinCallable
             val document = context.document
             val editor = context.editor
             val project = context.project
-            val chars = document.charsSequence
+            var chars = document.charsSequence
 
             val isSmartEnterCompletion = completionChar == Lookup.COMPLETE_STATEMENT_SELECT_CHAR
             val isReplaceCompletion = completionChar == Lookup.REPLACE_SELECT_CHAR
@@ -127,6 +127,7 @@ sealed class KotlinFunctionInsertHandler(callType: CallType<*>) : KotlinCallable
 
             if (insertTypeArguments) {
                 document.insertString(offset, "<>")
+                chars = document.charsSequence
                 editor.caretModel.moveToOffset(offset + 1)
                 offset += 2
             }
@@ -145,7 +146,7 @@ sealed class KotlinFunctionInsertHandler(callType: CallType<*>) : KotlinCallable
                         context.setAddCompletionChar(false)
                     }
 
-                    if (isInsertSpacesInOneLineFunctionEnabled(project)) {
+                    if (isInsertSpacesInOneLineFunctionEnabled(context.file)) {
                         document.insertString(offset, " {  }")
                         inBracketsShift = 1
                     } else {
@@ -160,8 +161,8 @@ sealed class KotlinFunctionInsertHandler(callType: CallType<*>) : KotlinCallable
                 }
                 PsiDocumentManager.getInstance(project).commitDocument(document)
 
-                openingBracketOffset = chars.indexOfSkippingSpace(openingBracket, offset)!!
-                closeBracketOffset = chars.indexOfSkippingSpace(closingBracket, openingBracketOffset + 1)
+                openingBracketOffset = document.charsSequence.indexOfSkippingSpace(openingBracket, offset)!!
+                closeBracketOffset = document.charsSequence.indexOfSkippingSpace(closingBracket, openingBracketOffset + 1)
             }
 
             if (insertLambda && lambdaInfo!!.explicitParameters) {
@@ -199,8 +200,8 @@ sealed class KotlinFunctionInsertHandler(callType: CallType<*>) : KotlinCallable
             return inputValueArguments || lambdaInfo != null
         }
 
-        private fun isInsertSpacesInOneLineFunctionEnabled(project: Project) =
-            CodeStyleSettingsManager.getSettings(project).getCustomSettings(KotlinCodeStyleSettings::class.java)!!.INSERT_WHITESPACES_IN_SIMPLE_ONE_LINE_METHOD
+        private fun isInsertSpacesInOneLineFunctionEnabled(file: PsiFile) =
+            CodeStyle.getCustomSettings(file, KotlinCodeStyleSettings::class.java).INSERT_WHITESPACES_IN_SIMPLE_ONE_LINE_METHOD
     }
 
     object Infix : KotlinFunctionInsertHandler(CallType.INFIX) {

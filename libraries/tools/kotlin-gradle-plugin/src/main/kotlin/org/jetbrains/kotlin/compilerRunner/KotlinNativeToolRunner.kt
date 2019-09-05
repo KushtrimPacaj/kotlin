@@ -20,6 +20,8 @@ import org.gradle.api.Named
 import org.gradle.api.Project
 import org.gradle.api.file.FileCollection
 import org.jetbrains.kotlin.cli.common.messages.MessageRenderer
+import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider
+import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.KOTLIN_NATIVE_HOME
 import org.jetbrains.kotlin.gradle.utils.NativeCompilerDownloader
 import org.jetbrains.kotlin.konan.KonanVersion
 import org.jetbrains.kotlin.konan.target.HostManager
@@ -29,32 +31,16 @@ import java.util.*
 
 /** Copied from Kotlin/Native repository. */
 
-internal enum class KotlinNativeProjectProperty(val propertyName: String) {
-    KONAN_HOME_OVERRIDE("org.jetbrains.kotlin.native.home"),
-    KONAN_JVM_ARGS("org.jetbrains.kotlin.native.jvmArgs"),
-    KONAN_VERSION("org.jetbrains.kotlin.native.version"),
-    KONAN_USE_ENVIRONMENT_VARIABLES("org.jetbrains.kotlin.native.useEnvironmentVariables")
-}
-
-internal fun Project.hasProperty(property: KotlinNativeProjectProperty) = hasProperty(property.propertyName)
-internal fun Project.findProperty(property: KotlinNativeProjectProperty): Any? = findProperty(property.propertyName)
-
-internal fun Project.setProperty(property: KotlinNativeProjectProperty, value: Any?) =
-    extensions.extraProperties.set(property.propertyName, value)
-
-internal fun Project.getProperty(property: KotlinNativeProjectProperty) = findProperty(property)
-    ?: throw IllegalArgumentException("No such property in the project: ${property.propertyName}")
-
-internal val Project.jvmArgs
-    get() = (findProperty(KotlinNativeProjectProperty.KONAN_JVM_ARGS) as String?)?.split("\\s+".toRegex()).orEmpty()
+private val Project.jvmArgs
+    get() = PropertiesProvider(this).nativeJvmArgs?.split("\\s+".toRegex()).orEmpty()
 
 internal val Project.konanHome: String
-    get() = findProperty(KotlinNativeProjectProperty.KONAN_HOME_OVERRIDE)?.let {
+    get() = PropertiesProvider(this).nativeHome?.let {
         file(it).absolutePath
     } ?: NativeCompilerDownloader(project).compilerDirectory.absolutePath
 
 internal val Project.konanVersion: KonanVersion
-    get() = project.findProperty(KotlinNativeProjectProperty.KONAN_VERSION)?.let {
+    get() = PropertiesProvider(this).nativeVersion?.let {
         KonanVersion.fromString(it.toString())
     } ?: NativeCompilerDownloader.DEFAULT_KONAN_VERSION
 
@@ -132,7 +118,7 @@ internal abstract class KonanCliRunner(
         if (classpath.isEmpty) {
             throw IllegalStateException(
                 "Classpath of the tool is empty: $toolName\n" +
-                        "Probably the '${KotlinNativeProjectProperty.KONAN_HOME_OVERRIDE.propertyName}' project property contains an incorrect path.\n" +
+                        "Probably the '$KOTLIN_NATIVE_HOME' project property contains an incorrect path.\n" +
                         "Please change it to the compiler root directory and rerun the build."
             )
         }
@@ -160,11 +146,11 @@ internal class KonanInteropRunner(project: Project, additionalJvmArgs: List<Stri
     KonanCliRunner("cinterop", "Kotlin/Native cinterop tool", project, additionalJvmArgs) {
     init {
         if (HostManager.host == KonanTarget.MINGW_X64) {
-            // TODO: Read it from KonanDistribution when it is accessible.
+            // TODO: Read it from Platform properties when it is accessible.
             val konanProperties = Properties().apply {
                 project.file("${project.konanHome}/konan/konan.properties").inputStream().use(::load)
             }
-            val toolchainDir = konanProperties.getProperty("targetToolchain.mingw_x64")
+            val toolchainDir = konanProperties.getProperty("llvmHome.mingw_x64")
             if (toolchainDir != null) {
                 environment.put(
                     "PATH",

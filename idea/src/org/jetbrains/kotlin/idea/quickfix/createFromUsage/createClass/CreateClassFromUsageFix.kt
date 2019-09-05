@@ -26,9 +26,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.psi.*
 import org.jetbrains.kotlin.idea.KotlinFileType
-import org.jetbrains.kotlin.idea.codeInsight.CodeInsightUtils
-import org.jetbrains.kotlin.idea.core.getPackage
+import org.jetbrains.kotlin.idea.core.getFqNameWithImplicitPrefix
 import org.jetbrains.kotlin.idea.core.quoteIfNeeded
+import org.jetbrains.kotlin.idea.core.util.CodeInsightUtils
 import org.jetbrains.kotlin.idea.quickfix.IntentionActionPriority
 import org.jetbrains.kotlin.idea.quickfix.createFromUsage.CreateFromUsageFixBase
 import org.jetbrains.kotlin.idea.quickfix.createFromUsage.callableBuilder.*
@@ -44,7 +44,6 @@ import org.jetbrains.kotlin.idea.util.application.executeCommand
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.idea.util.projectStructure.module
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.allChildren
@@ -70,7 +69,7 @@ val ClassKind.actionPriority: IntentionActionPriority
     get() = if (this == ANNOTATION_CLASS) IntentionActionPriority.LOW else IntentionActionPriority.NORMAL
 
 data class ClassInfo(
-    val kind: ClassKind = ClassKind.DEFAULT,
+    val kind: ClassKind = DEFAULT,
     val name: String,
     private val targetParents: List<PsiElement>,
     val expectedTypeInfo: TypeInfo,
@@ -81,7 +80,7 @@ data class ClassInfo(
 ) {
     val applicableParents by lazy {
         targetParents.filter {
-            if (kind == ClassKind.OBJECT && it is KtClass && (it.isInner() || it.isLocal)) return@filter false
+            if (kind == OBJECT && it is KtClass && (it.isInner() || it.isLocal)) return@filter false
             true
         }
     }
@@ -124,7 +123,7 @@ open class CreateClassFromUsageFix<E : KtElement> protected constructor(
                 }
             }
 
-            if (classInfo.kind != ClassKind.ENUM_ENTRY && parents.find { it is PsiPackage } == null) {
+            if (classInfo.kind != ENUM_ENTRY && parents.find { it is PsiPackage } == null) {
                 parents += SeparateFileWrapper(PsiManager.getInstance(project))
             }
         }
@@ -201,7 +200,7 @@ open class CreateClassFromUsageFix<E : KtElement> protected constructor(
 
             val targetDirectory = dialog.targetDirectory ?: return
             val fileName = "$className.${KotlinFileType.EXTENSION}"
-            val packageFqName = targetDirectory.getPackage()?.qualifiedName?.let { FqName(it).quoteIfNeeded() }
+            val packageFqName = targetDirectory.getFqNameWithImplicitPrefix()?.quoteIfNeeded()
 
             file.project.executeWriteCommand(text) {
                 val targetFile = getOrCreateKotlinFile(fileName, targetDirectory, (packageFqName ?: defaultPackageFqName).asString())

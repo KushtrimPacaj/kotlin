@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.android.configure
@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.gradle.KotlinMPPGradleModelBuilder
 import org.jetbrains.kotlin.gradle.KotlinPlatform
 import org.jetbrains.kotlin.idea.configuration.KotlinAndroidSourceSetData
 import org.jetbrains.kotlin.idea.configuration.KotlinMPPGradleProjectResolver
+import org.jetbrains.kotlin.idea.configuration.getMppModel
 import org.jetbrains.kotlin.idea.configuration.kotlinSourceSet
 import org.jetbrains.plugins.gradle.model.data.GradleSourceSetData
 import org.jetbrains.plugins.gradle.service.project.AbstractProjectResolverExtension
@@ -78,7 +79,7 @@ class KotlinAndroidMPPGradleProjectResolver : AbstractProjectResolverExtension()
 
         KotlinMPPGradleProjectResolver.initializeModuleData(gradleModule, mainModuleData, projectDataNode, resolverCtx)
 
-        val mppModel = resolverCtx.getExtraProject(gradleModule, KotlinMPPGradleModel::class.java) ?: return
+        val mppModel = resolverCtx.getMppModel(gradleModule) ?: return
 
         val androidSourceSets = mppModel
             .targets

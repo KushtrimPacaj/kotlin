@@ -18,24 +18,50 @@ package org.jetbrains.kotlin.idea.scratch
 
 import com.intellij.lang.Language
 import com.intellij.lang.LanguageExtension
-import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.openapi.project.Project
-import org.jetbrains.kotlin.idea.scratch.output.ScratchOutputHandler
+import com.intellij.openapi.vfs.VirtualFile
+import org.jetbrains.kotlin.idea.scratch.actions.ScratchCompilationSupport
+import org.jetbrains.kotlin.idea.scratch.output.ScratchOutputHandlerAdapter
+import org.jetbrains.kotlin.idea.syncPublisherWithDisposeCheck
 
 abstract class ScratchFileLanguageProvider {
-    abstract fun createFile(project: Project, editor: TextEditor): ScratchFile?
-    abstract fun createReplExecutor(file: ScratchFile): ScratchExecutor?
-    abstract fun createCompilingExecutor(file: ScratchFile): ScratchExecutor?
+    fun newScratchFile(project: Project, file: VirtualFile): ScratchFile? {
+        val scratchFile = createFile(project, file) ?: return null
 
-    abstract fun getOutputHandler(): ScratchOutputHandler
+        scratchFile.replScratchExecutor = createReplExecutor(scratchFile)
+        scratchFile.compilingScratchExecutor = createCompilingExecutor(scratchFile)
+
+        scratchFile.replScratchExecutor?.addOutputHandlers()
+        scratchFile.compilingScratchExecutor?.addOutputHandlers()
+
+        scratchFile.project.syncPublisherWithDisposeCheck(ScratchFileListener.TOPIC).fileCreated(scratchFile)
+
+        return scratchFile
+    }
+
+    private fun ScratchExecutor.addOutputHandlers() {
+        addOutputHandler(object : ScratchOutputHandlerAdapter() {
+            override fun onStart(file: ScratchFile) {
+                ScratchCompilationSupport.start(file, this@addOutputHandlers)
+            }
+
+            override fun onFinish(file: ScratchFile) {
+                ScratchCompilationSupport.stop()
+            }
+        })
+    }
+
+    protected abstract fun createFile(project: Project, file: VirtualFile): ScratchFile?
+    protected abstract fun createReplExecutor(file: ScratchFile): SequentialScratchExecutor?
+    protected abstract fun createCompilingExecutor(file: ScratchFile): ScratchExecutor?
 
     companion object {
         private val EXTENSION = LanguageExtension<ScratchFileLanguageProvider>("org.jetbrains.kotlin.scratchFileLanguageProvider")
 
         fun get(language: Language): ScratchFileLanguageProvider? {
-            return ScratchFileLanguageProvider.EXTENSION.forLanguage(language)
+            return EXTENSION.forLanguage(language)
         }
 
         fun get(fileType: FileType): ScratchFileLanguageProvider? {

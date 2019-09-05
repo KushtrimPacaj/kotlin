@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle
@@ -56,11 +56,10 @@ import org.jetbrains.plugins.gradle.util.GradleConstants
 import org.jetbrains.plugins.groovy.GroovyFileType
 import java.io.File
 import java.io.IOException
-import java.util.*
 
 abstract class AbstractGradleMultiplatformWizardTest : ProjectWizardTestCase<AbstractProjectWizard>() {
 
-    private val pluginVersion = "1.3.21"
+    private val pluginVersion = "1.3.50-dev-796"
 
     override fun createWizard(project: Project?, directory: File): AbstractProjectWizard {
         return NewProjectWizard(project, ModulesProvider.EMPTY_MODULES_PROVIDER, directory.path)
@@ -86,15 +85,6 @@ abstract class AbstractGradleMultiplatformWizardTest : ProjectWizardTestCase<Abs
         performImport: Boolean = true,
         useQualifiedModuleNames: Boolean = false
     ): Project {
-        // TODO: check whether it's necessary to have templates in sources
-        // Temporary workaround for duplicated bundled template
-        class PrintingFactory : Logger.Factory {
-            override fun getLoggerInstance(category: String): Logger {
-                return PrintingLogger(System.out)
-            }
-        }
-        Logger.setFactory(PrintingFactory::class.java)
-
         val project = createProject { step ->
             if (step is ProjectTypeStep) {
                 TestCase.assertTrue(step.setSelectedTemplate("Kotlin", builder.presentableName))
@@ -261,7 +251,7 @@ abstract class AbstractGradleMultiplatformWizardTest : ProjectWizardTestCase<Abs
             addSdk(SimpleJavaSdkType().createJdk("_other", javaHome))
 
             println("ProjectWizardTestCase.configureJdk:")
-            println(Arrays.asList(*ProjectJdkTable.getInstance().allJdks))
+            println(listOf(*ProjectJdkTable.getInstance().allJdks))
 
             FileTypeManager.getInstance().associateExtension(GroovyFileType.GROOVY_FILE_TYPE, "gradle")
         }

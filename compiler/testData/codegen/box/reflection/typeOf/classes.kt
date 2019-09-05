@@ -1,5 +1,5 @@
 // !USE_EXPERIMENTAL: kotlin.ExperimentalStdlibApi
-// IGNORE_BACKEND: JS, JS_IR, NATIVE
+// IGNORE_BACKEND: JS, JS_IR, NATIVE, JVM_IR
 // WITH_REFLECT
 
 package test

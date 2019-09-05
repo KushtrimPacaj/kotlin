@@ -44,13 +44,19 @@ fun encodePluginOptions(options: Map<String, List<String>>): String {
 }
 
 internal fun CompilerPluginOptions.withWrappedKaptOptions(
-    withApClasspath: Iterable<File>, changedFiles: List<File> = emptyList(), compiledSourcesDir: List<File> = emptyList()
+    withApClasspath: Iterable<File>,
+    changedFiles: List<File> = emptyList(),
+    classpathChanges: List<String> = emptyList(),
+    compiledSourcesDir: List<File> = emptyList(),
+    processIncrementally: Boolean = false
 ): CompilerPluginOptions {
     val resultOptionsByPluginId: MutableMap<String, List<SubpluginOption>> =
         subpluginOptionsByPluginId.toMutableMap()
 
     resultOptionsByPluginId.compute(Kapt3KotlinGradleSubplugin.KAPT_SUBPLUGIN_ID) { _, kaptOptions ->
-        val changedFilesOption = FilesSubpluginOption("changedFile", changedFiles).takeIf { changedFiles.isNotEmpty() }
+        val changedFilesOption = changedFiles.map { SubpluginOption("changedFile", it.canonicalPath) }
+        val classpathChangesOption = classpathChanges.map { SubpluginOption("classpathChange", it) }
+        val processIncrementallyOption = SubpluginOption("processIncrementally", processIncrementally.toString())
         val compiledSourcesOption =
             FilesSubpluginOption("compiledSourcesDir", compiledSourcesDir).takeIf { compiledSourcesDir.isNotEmpty() }
 
@@ -58,7 +64,9 @@ internal fun CompilerPluginOptions.withWrappedKaptOptions(
             kaptOptions.orEmpty() +
                     withApClasspath.map { FilesSubpluginOption("apclasspath", listOf(it)) } +
                     changedFilesOption +
-                    compiledSourcesOption
+                    classpathChangesOption +
+                    compiledSourcesOption +
+                    processIncrementallyOption
 
         wrapPluginOptions(kaptOptionsWithClasspath.filterNotNull(), "configuration")
     }

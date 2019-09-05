@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen;
@@ -52,7 +52,7 @@ import java.util.List;
 import static org.jetbrains.kotlin.codegen.AsmUtil.*;
 import static org.jetbrains.kotlin.codegen.JvmCodegenUtil.isConst;
 import static org.jetbrains.kotlin.codegen.binding.CodegenBinding.CLOSURE;
-import static org.jetbrains.kotlin.codegen.inline.InlineCodegenUtils2Kt.initDefaultSourceMappingIfNeeded;
+import static org.jetbrains.kotlin.codegen.inline.InlineCodegenUtilsKt.initDefaultSourceMappingIfNeeded;
 import static org.jetbrains.kotlin.codegen.serialization.JvmSerializationBindings.METHOD_FOR_FUNCTION;
 import static org.jetbrains.kotlin.resolve.jvm.AsmTypes.*;
 import static org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin.NO_ORIGIN;

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.common.lower
@@ -8,13 +8,16 @@ package org.jetbrains.kotlin.backend.common.lower
 import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStringConcatenation
 import org.jetbrains.kotlin.ir.expressions.impl.IrStringConcatenationImpl
-import org.jetbrains.kotlin.ir.types.isString
+import org.jetbrains.kotlin.ir.types.isStringClassType
+import org.jetbrains.kotlin.ir.util.fqNameSafe
+import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
@@ -66,6 +69,13 @@ val flattenStringConcatenationPhase = makeIrFilePhase(
 class FlattenStringConcatenationLowering(val context: CommonBackendContext) : FileLoweringPass, IrElementTransformerVoid() {
 
     companion object {
+        // There are two versions of String.plus in the library. One for nullable and one for non-nullable strings.
+        // The version for nullable strings has FqName kotlin.plus, the version for non-nullable strings
+        // is a member function of kotlin.String (with FqName kotlin.String.plus)
+        private val PARENT_NAMES = setOf(
+            KotlinBuiltIns.BUILT_INS_PACKAGE_FQ_NAME,
+            KotlinBuiltIns.FQ_NAMES.string.toSafe()
+        )
         private val PLUS_NAME = Name.identifier("plus")
 
         /** @return true if the given expression is a [IrStringConcatenation] or [String.plus] [IrCall]. */
@@ -73,12 +83,14 @@ class FlattenStringConcatenationLowering(val context: CommonBackendContext) : Fi
             return when (expression) {
                 is IrStringConcatenation -> true
                 is IrCall -> {
-                    val dispatchReceiver = expression.dispatchReceiver
-                    dispatchReceiver != null &&
-                            dispatchReceiver.type.isString() &&
-                            expression.symbol.owner.name == PLUS_NAME &&
-                            expression.type.isString() &&
-                            expression.valueArgumentsCount == 1
+                    val function = expression.symbol.owner
+                    val receiver = expression.dispatchReceiver ?: expression.extensionReceiver
+                    receiver != null &&
+                            receiver.type.isStringClassType() &&
+                            expression.type.isStringClassType() &&
+                            expression.valueArgumentsCount == 1 &&
+                            function.name == PLUS_NAME &&
+                            function.fqNameWhenAvailable?.parent() in PARENT_NAMES
                 }
                 else -> false
             }

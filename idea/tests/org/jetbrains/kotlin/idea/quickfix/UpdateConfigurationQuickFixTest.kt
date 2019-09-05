@@ -1,12 +1,13 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.quickfix
 
 import com.intellij.facet.FacetManager
 import com.intellij.facet.impl.FacetUtil
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.roots.ModuleRootModificationUtil.updateModel
 import com.intellij.openapi.roots.OrderRootType
 import com.intellij.openapi.roots.ui.configuration.libraryEditor.NewLibraryEditor
@@ -14,10 +15,12 @@ import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.JarFileSystem
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase
-import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
+import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments.Companion.DEFAULT
+import org.jetbrains.kotlin.config.CompilerSettings.Companion.DEFAULT_ADDITIONAL_ARGUMENTS
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.idea.compiler.configuration.KotlinCommonCompilerArgumentsHolder
+import org.jetbrains.kotlin.idea.compiler.configuration.KotlinCompilerSettings
 import org.jetbrains.kotlin.idea.configuration.KotlinJavaModuleConfigurator
 import org.jetbrains.kotlin.idea.facet.KotlinFacetType
 import org.jetbrains.kotlin.idea.facet.getRuntimeLibraryVersion
@@ -26,17 +29,32 @@ import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.idea.test.ConfigLibraryUtil
 import org.jetbrains.kotlin.idea.test.configureKotlinFacet
 import org.jetbrains.kotlin.idea.versions.bundledRuntimeVersion
+import org.jetbrains.kotlin.test.JUnit3WithIdeaConfigurationRunner
+import org.junit.runner.RunWith
 import java.io.File
 
+@RunWith(JUnit3WithIdeaConfigurationRunner::class)
 class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase() {
+
+    val module: Module get() = myModule
+
     fun testDisableInlineClasses() {
         configureRuntime("mockRuntime11")
         resetProjectSettings(LanguageVersion.KOTLIN_1_3)
         myFixture.configureByText("foo.kt", "inline class My(val n: Int)")
 
         assertEquals(LanguageFeature.State.ENABLED_WITH_WARNING, inlineClassesSupport)
-        myFixture.launchAction(myFixture.findSingleIntention("Disable inline classes support in the project"))
-        assertEquals(LanguageFeature.State.DISABLED, inlineClassesSupport)
+        assertTrue(myFixture.availableIntentions.none { it.text == "Disable inline classes support in the project" })
+    }
+
+    fun testEnableInlineClasses() {
+        configureRuntime("mockRuntime11")
+        resetProjectSettings(LanguageVersion.KOTLIN_1_3)
+        myFixture.configureByText("foo.kt", "inline class My(val n: Int)")
+
+        assertEquals(LanguageFeature.State.ENABLED_WITH_WARNING, inlineClassesSupport)
+        myFixture.launchAction(myFixture.findSingleIntention("Enable inline classes support in the project"))
+        assertEquals(LanguageFeature.State.ENABLED, inlineClassesSupport)
     }
 
     fun testEnableCoroutines() {
@@ -44,7 +62,7 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
         resetProjectSettings(LanguageVersion.KOTLIN_1_1)
         myFixture.configureByText("foo.kt", "suspend fun foo()")
 
-        assertEquals(CommonCompilerArguments.WARN, KotlinCommonCompilerArgumentsHolder.getInstance(project).settings.coroutinesState)
+        assertEquals(DEFAULT, KotlinCommonCompilerArgumentsHolder.getInstance(project).settings.coroutinesState)
         assertEquals(LanguageFeature.State.ENABLED_WITH_WARNING, coroutineSupport)
         myFixture.launchAction(myFixture.findSingleIntention("Enable coroutine support in the project"))
         assertEquals(LanguageFeature.State.ENABLED, coroutineSupport)
@@ -55,7 +73,7 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
         resetProjectSettings(LanguageVersion.KOTLIN_1_1)
         myFixture.configureByText("foo.kt", "suspend fun foo()")
 
-        assertEquals(CommonCompilerArguments.WARN, KotlinCommonCompilerArgumentsHolder.getInstance(project).settings.coroutinesState)
+        assertEquals(DEFAULT, KotlinCommonCompilerArgumentsHolder.getInstance(project).settings.coroutinesState)
         assertEquals(LanguageFeature.State.ENABLED_WITH_WARNING, coroutineSupport)
         myFixture.launchAction(myFixture.findSingleIntention("Disable coroutine support in the project"))
         assertEquals(LanguageFeature.State.ENABLED_WITH_ERROR, coroutineSupport)
@@ -63,7 +81,7 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
 
     fun testEnableCoroutinesFacet() {
         configureRuntime("mockRuntime11")
-        val facet = configureKotlinFacet(myModule) {
+        val facet = configureKotlinFacet(module) {
             settings.languageLevel = LanguageVersion.KOTLIN_1_1
         }
         resetProjectSettings(LanguageVersion.KOTLIN_1_1)
@@ -99,15 +117,15 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
     fun testIncreaseLangLevelFacet() {
         configureRuntime("mockRuntime11")
         resetProjectSettings(LanguageVersion.KOTLIN_1_0)
-        configureKotlinFacet(myModule) {
+        configureKotlinFacet(module) {
             settings.languageLevel = LanguageVersion.KOTLIN_1_0
             settings.apiLevel = LanguageVersion.KOTLIN_1_0
         }
         myFixture.configureByText("foo.kt", "val x get() = 1")
 
-        assertEquals(LanguageVersion.KOTLIN_1_0, myModule.languageVersionSettings.languageVersion)
+        assertEquals(LanguageVersion.KOTLIN_1_0, module.languageVersionSettings.languageVersion)
         myFixture.launchAction(myFixture.findSingleIntention("Set module language version to 1.1"))
-        assertEquals(LanguageVersion.KOTLIN_1_1, myModule.languageVersionSettings.languageVersion)
+        assertEquals(LanguageVersion.KOTLIN_1_1, module.languageVersionSettings.languageVersion)
     }
 
     fun testIncreaseLangAndApiLevel() {
@@ -137,29 +155,31 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
     fun testIncreaseLangLevelFacet_10() {
         configureRuntime("mockRuntime106")
         resetProjectSettings(LanguageVersion.KOTLIN_1_0)
-        configureKotlinFacet(myModule) {
+        configureKotlinFacet(module) {
             settings.languageLevel = LanguageVersion.KOTLIN_1_0
             settings.apiLevel = LanguageVersion.KOTLIN_1_0
         }
         myFixture.configureByText("foo.kt", "val x = <caret>\"s\"::length")
 
-        assertEquals(LanguageVersion.KOTLIN_1_0, myModule.languageVersionSettings.languageVersion)
+        assertEquals(LanguageVersion.KOTLIN_1_0, module.languageVersionSettings.languageVersion)
         myFixture.launchAction(myFixture.findSingleIntention("Set module language version to 1.1"))
-        assertEquals(LanguageVersion.KOTLIN_1_1, myModule.languageVersionSettings.languageVersion)
+        assertEquals(LanguageVersion.KOTLIN_1_1, module.languageVersionSettings.languageVersion)
 
         assertEquals(bundledRuntimeVersion(), getRuntimeLibraryVersion(myFixture.module))
     }
 
     fun testAddKotlinReflect() {
         configureRuntime("mockRuntime11")
-        myFixture.configureByText("foo.kt", """class Foo(val prop: Any) {
+        myFixture.configureByText(
+            "foo.kt", """class Foo(val prop: Any) {
                 fun func() {}
             }
 
             fun y01() = Foo::prop.gett<caret>er
-            """)
+            """
+        )
         myFixture.launchAction(myFixture.findSingleIntention("Add kotlin-reflect.jar to the classpath"))
-        val kotlinRuntime = KotlinJavaModuleConfigurator.instance.getKotlinLibrary(myModule)!!
+        val kotlinRuntime = KotlinJavaModuleConfigurator.instance.getKotlinLibrary(module)!!
         val classes = kotlinRuntime.getFiles(OrderRootType.CLASSES).map { it.name }
         assertContainsElements(classes, "kotlin-reflect.jar")
         val sources = kotlinRuntime.getFiles(OrderRootType.SOURCES)
@@ -183,10 +203,13 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
     }
 
     private fun resetProjectSettings(version: LanguageVersion) {
+        KotlinCompilerSettings.getInstance(project).update {
+            additionalArguments = DEFAULT_ADDITIONAL_ARGUMENTS
+        }
         KotlinCommonCompilerArgumentsHolder.getInstance(project).update {
             languageVersion = version.versionString
             apiVersion = version.versionString
-            coroutinesState = CommonCompilerArguments.WARN
+            coroutinesState = DEFAULT
         }
     }
 
@@ -197,10 +220,11 @@ class UpdateConfigurationQuickFixTest : LightPlatformCodeInsightFixtureTestCase(
         get() = project.getLanguageVersionSettings().getFeatureSupport(LanguageFeature.InlineClasses)
 
     override fun tearDown() {
-        FacetManager.getInstance(myModule).getFacetByType(KotlinFacetType.TYPE_ID)?.let {
+        resetProjectSettings(LanguageVersion.KOTLIN_1_3)
+        FacetManager.getInstance(module).getFacetByType(KotlinFacetType.TYPE_ID)?.let {
             FacetUtil.deleteFacet(it)
         }
-        ConfigLibraryUtil.removeLibrary(myModule, "KotlinJavaRuntime")
+        ConfigLibraryUtil.removeLibrary(module, "KotlinJavaRuntime")
         super.tearDown()
     }
 }

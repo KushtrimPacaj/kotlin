@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.backend.jvm.lower
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
+import org.jetbrains.kotlin.backend.jvm.lower.inlineclasses.unboxInlineClass
 import org.jetbrains.kotlin.codegen.intrinsics.Not
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
@@ -15,13 +16,12 @@ import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrBlockImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
+import org.jetbrains.kotlin.ir.types.isBoolean
 import org.jetbrains.kotlin.ir.types.isPrimitiveType
 import org.jetbrains.kotlin.ir.types.toKotlinType
-import org.jetbrains.kotlin.ir.util.coerceToUnitIfNeeded
-import org.jetbrains.kotlin.ir.util.isFalseConst
-import org.jetbrains.kotlin.ir.util.isNullConst
-import org.jetbrains.kotlin.ir.util.isTrueConst
+import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
@@ -50,8 +50,8 @@ class JvmBuiltinOptimizationLowering(val context: JvmBackendContext) : FileLower
             // When used for null checks, it is safe to eliminate constants and local variable loads.
             // Even if a local variable of simple type is updated via the debugger it still cannot
             // be null.
-            return (right.isNullConst() && left.type.isPrimitiveType())
-                    || (left.isNullConst() && right.type.isPrimitiveType())
+            return (right.isNullConst() && left.type.unboxInlineClass().isPrimitiveType())
+                    || (left.isNullConst() && right.type.unboxInlineClass().isPrimitiveType())
         }
         return false
     }
@@ -101,6 +101,45 @@ class JvmBuiltinOptimizationLowering(val context: JvmBackendContext) : FileLower
                 // Remove all branches with constant false condition.
                 expression.branches.removeIf() {
                     it.condition.isFalseConst() && isCompilerGenerated
+                }
+                if (expression.origin == IrStatementOrigin.ANDAND) {
+                    assert(expression.type.isBoolean()
+                            && expression.branches.size == 2
+                            && expression.branches[1].condition.isTrueConst()
+                            && expression.branches[1].result.isFalseConst()) {
+                        "ANDAND condition should have an 'if true then false' body on its second branch. " +
+                                "Failing expression: ${expression.dump()}"
+                    }
+                    // Replace conjunction condition with intrinsic "and" function call
+                    return IrCallImpl(
+                        expression.startOffset,
+                        expression.endOffset,
+                        context.irBuiltIns.booleanType,
+                        context.irBuiltIns.andandSymbol
+                    ).apply {
+                        putValueArgument(0, expression.branches[0].condition)
+                        putValueArgument(1, expression.branches[0].result)
+                    }
+                }
+                if (expression.origin == IrStatementOrigin.OROR) {
+                    assert(
+                        expression.type.isBoolean()
+                                && expression.branches.size == 2
+                                && expression.branches[0].result.isTrueConst()
+                                && expression.branches[1].condition.isTrueConst()) {
+                        "OROR condition should have an 'if a then true' body on its first branch, " +
+                                "and an 'if true then b' body on its second branch. " +
+                                "Failing expression: ${expression.dump()}"
+                    }
+                    return IrCallImpl(
+                        expression.startOffset,
+                        expression.endOffset,
+                        context.irBuiltIns.booleanType,
+                        context.irBuiltIns.ororSymbol
+                    ).apply {
+                        putValueArgument(0, expression.branches[0].condition)
+                        putValueArgument(1, expression.branches[1].result)
+                    }
                 }
                 // If the only condition that is left has a constant true condition remove the
                 // when in favor of the result. If there are no conditions left, remove the when

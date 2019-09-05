@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 // Auto-generated file. DO NOT EDIT!
@@ -316,7 +316,7 @@ public inline fun Long.toULong(): ULong = ULong(this)
 /**
  * Converts this [Float] value to [ULong].
  *
- * The fractional part, if any, is rounded down.
+ * The fractional part, if any, is rounded down towards zero.
  * Returns zero if this `Float` value is negative or `NaN`, [ULong.MAX_VALUE] if it's bigger than `ULong.MAX_VALUE`.
  */
 @SinceKotlin("1.3")
@@ -326,7 +326,7 @@ public inline fun Float.toULong(): ULong = doubleToULong(this.toDouble())
 /**
  * Converts this [Double] value to [ULong].
  *
- * The fractional part, if any, is rounded down.
+ * The fractional part, if any, is rounded down towards zero.
  * Returns zero if this `Double` value is negative or `NaN`, [ULong.MAX_VALUE] if it's bigger than `ULong.MAX_VALUE`.
  */
 @SinceKotlin("1.3")

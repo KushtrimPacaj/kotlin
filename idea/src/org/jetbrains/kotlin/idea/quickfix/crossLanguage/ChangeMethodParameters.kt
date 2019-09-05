@@ -1,13 +1,12 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 package org.jetbrains.kotlin.idea.quickfix.crossLanguage
 
 import com.intellij.codeInsight.daemon.QuickFixBundle
 import com.intellij.lang.jvm.actions.ChangeParametersRequest
 import com.intellij.lang.jvm.actions.ExpectedParameter
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
@@ -26,7 +25,10 @@ import org.jetbrains.kotlin.load.java.NOT_NULL_ANNOTATIONS
 import org.jetbrains.kotlin.load.java.NULLABLE_ANNOTATIONS
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtParameterList
+import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.types.ErrorUtils
 import org.jetbrains.kotlin.types.KotlinType
@@ -123,8 +125,8 @@ internal class ChangeMethodParameters(
                     ValueParameterDescriptorImpl(
                         this, null, index, Annotations.EMPTY,
                         Name.identifier(parameter.name),
-                        parameter.ktType, false,
-                        false, false, null, SourceElement.NO_SOURCE
+                        parameter.ktType, declaresDefaultValue = false,
+                        isCrossinline = false, isNoinline = false, varargElementType = null, source = SourceElement.NO_SOURCE
                     )
                 },
                 functionDescriptor.returnType,

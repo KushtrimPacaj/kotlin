@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir.declarations.impl
@@ -28,11 +28,22 @@ class FirTypeParameterImpl(
         symbol.bind(this)
     }
 
-    override val bounds = mutableListOf<FirTypeRef>()
+    /*
+     * Note that each type parameter have to has at least one upper bound (Any? if there is no other bounds)
+     *   so after initializing FirTypeParameterImpl you should call [addDefaultBoundIfNecessary] to guarantee
+     *   this contract
+     */
+    override val bounds: MutableList<FirTypeRef> = mutableListOf()
 
     override fun <D> transformChildren(transformer: FirTransformer<D>, data: D): FirElement {
         bounds.transformInplace(transformer, data)
 
         return super<FirAbstractNamedAnnotatedDeclaration>.transformChildren(transformer, data)
+    }
+}
+
+fun FirTypeParameterImpl.addDefaultBoundIfNecessary() {
+    if (bounds.isEmpty()) {
+        bounds += session.builtinTypes.nullableAnyType
     }
 }

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections
@@ -11,18 +11,27 @@ import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
+import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiElementVisitor
+import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.SmartPsiElementPointer
+import org.jetbrains.kotlin.idea.core.moveCaret
+import org.jetbrains.kotlin.idea.intentions.branchedTransformations.isOneLiner
 import org.jetbrains.kotlin.idea.intentions.loopToCallChain.countUsages
 import org.jetbrains.kotlin.idea.intentions.loopToCallChain.previousStatement
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.createSmartPointer
+import org.jetbrains.kotlin.psi.psiUtil.siblings
+import org.jetbrains.kotlin.psi.psiUtil.startOffset
 
 class MoveVariableDeclarationIntoWhenInspection : AbstractKotlinInspection(), CleanupLocalInspectionTool {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         whenExpressionVisitor(fun(expression: KtWhenExpression) {
             val subjectExpression = expression.subjectExpression ?: return
             val property = expression.findDeclarationNear() ?: return
+            if (!property.isOneLiner()) return
+
             val action = property.action(expression)
             if (action == Action.NOTHING) return
 
@@ -93,7 +102,25 @@ private class VariableDeclarationIntoWhenFix(
         val property = descriptor.psiElement as? KtProperty ?: return
         val subjectExpression = subjectExpressionPointer.element ?: return
         val newElement = transform(property)?.copy() ?: return
-        subjectExpression.replace(newElement)
+
+        val lastChild = newElement.lastChild
+        if (lastChild is PsiComment && lastChild.node.elementType == KtTokens.EOL_COMMENT) {
+            val leftBrace = subjectExpression.siblings(withItself = false).firstOrNull { it.node.elementType == KtTokens.LBRACE }
+            val whiteSpaceBeforeComment = lastChild.prevSibling?.takeIf { it is PsiWhiteSpace }
+            if (leftBrace != null) {
+                subjectExpression.parent.addAfter(lastChild, leftBrace)
+                if (whiteSpaceBeforeComment != null) {
+                    subjectExpression.parent.addAfter(whiteSpaceBeforeComment, leftBrace)
+                }
+            }
+            whiteSpaceBeforeComment?.delete()
+            lastChild.delete()
+        }
+
+        val resultElement = subjectExpression.replace(newElement)
         property.delete()
+
+        val editor = resultElement.findExistingEditor() ?: return
+        editor.moveCaret((resultElement as? KtProperty)?.nameIdentifier?.startOffset ?: resultElement.startOffset)
     }
 }

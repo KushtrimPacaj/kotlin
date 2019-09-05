@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.base.kapt3
@@ -17,7 +17,7 @@ class KaptOptions(
     val changedFiles: List<File>,
     val compiledSources: List<File>,
     val incrementalCache: File?,
-    val classpathFqNamesHistory: File?,
+    val classpathChanges: List<String>,
 
     val sourcesOutputDir: File,
     val classesOutputDir: File,
@@ -45,7 +45,7 @@ class KaptOptions(
         val changedFiles: MutableList<File> = mutableListOf()
         val compiledSources: MutableList<File> = mutableListOf()
         var incrementalCache: File? = null
-        var classpathFqNamesHistory: File? = null
+        val classpathChanges: MutableList<String> = mutableListOf()
 
         var sourcesOutputDir: File? = null
         var classesOutputDir: File? = null
@@ -73,7 +73,7 @@ class KaptOptions(
 
             return KaptOptions(
                 projectBaseDir, compileClasspath, javaSourceRoots,
-                changedFiles, compiledSources, incrementalCache, classpathFqNamesHistory,
+                changedFiles, compiledSources, incrementalCache, classpathChanges,
                 sourcesOutputDir, classesOutputDir, stubsOutputDir, incrementalDataOutputDir,
                 processingClasspath, processors, processingOptions, javacOptions, KaptFlags.fromSet(flags),
                 mode, detectMemoryLeaks
@@ -104,7 +104,9 @@ enum class KaptFlag(val description: String) {
     CORRECT_ERROR_TYPES("Correct error types"),
     MAP_DIAGNOSTIC_LOCATIONS("Map diagnostic locations"),
     STRICT("Strict mode"),
-    INCLUDE_COMPILE_CLASSPATH("Detect annotation processors in compile classpath");
+    INCLUDE_COMPILE_CLASSPATH("Detect annotation processors in compile classpath"),
+    INCREMENTAL_APT("Incremental annotation processing (apt mode)"),
+    ;
 }
 
 interface KaptSelector {
@@ -169,5 +171,5 @@ fun KaptOptions.logString(additionalInfo: String = "") = buildString {
     appendln("[incremental apt] Changed files: $changedFiles")
     appendln("[incremental apt] Compiled sources directories: ${compiledSources.joinToString()}")
     appendln("[incremental apt] Cache directory for incremental compilation: $incrementalCache")
-    appendln("[incremental apt] Classpath fq names history dir: $classpathFqNamesHistory")
+    appendln("[incremental apt] Changed classpath names: ${classpathChanges.joinToString()}")
 }

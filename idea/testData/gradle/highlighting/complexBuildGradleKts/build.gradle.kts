@@ -113,23 +113,19 @@ extra["compilerModules"] = arrayOf(
     ":compiler:resolution",
     ":compiler:serialization",
     ":compiler:psi",
-    *if (project.findProperty("fir.enabled") == "true") {
-        arrayOf(
-            ":compiler:fir:cones",
-            ":compiler:fir:resolve",
-            ":compiler:fir:tree",
-            ":compiler:fir:psi2fir"
-        )
-    } else {
-        emptyArray()
-    },
+    ":compiler:fir:cones",
+    ":compiler:fir:resolve",
+    ":compiler:fir:tree",
+    ":compiler:fir:psi2fir",
+    ":compiler:fir:fir2ir",
+    ":compiler:fir:java",
     ":compiler:frontend",
     ":compiler:frontend.common",
     ":compiler:frontend.java",
     ":compiler:frontend.script",
     ":compiler:cli-common",
-    ":compiler:daemon-common",
-    ":compiler:daemon",
+    ":daemon-common",
+    ":daemon",
     ":compiler:ir.tree",
     ":compiler:ir.psi2ir",
     ":compiler:ir.backend.common",
@@ -381,7 +377,11 @@ tasks {
         dependsOn(":idea:idea-gradle:test",
                   ":idea:idea-maven:test",
                   ":j2k:test",
-                  ":idea:eval4j:test")
+                  "idea:jvm-debugger:jvm-debugger-util:test",
+                  "idea:jvm-debugger:jvm-debugger-core:test",
+                  "idea:jvm-debugger:jvm-debugger-evaluation:test",
+                  "idea:jvm-debugger:jvm-debugger-sequence:test",
+                  ":idea:jvm-debugger:eval4j:test")
     }
 
     create("idea-plugin-tests") {

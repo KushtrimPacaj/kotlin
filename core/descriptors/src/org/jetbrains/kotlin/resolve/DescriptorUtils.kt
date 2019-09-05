@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.descriptorUtil
@@ -17,6 +17,7 @@ import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.platform.TargetPlatform
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.DescriptorUtils.getContainingClass
 import org.jetbrains.kotlin.resolve.constants.ConstantValue
@@ -28,6 +29,9 @@ import org.jetbrains.kotlin.types.TypeProjection
 import org.jetbrains.kotlin.types.TypeSubstitutor
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner
+import org.jetbrains.kotlin.types.checker.REFINER_CAPABILITY
+import org.jetbrains.kotlin.types.refinement.TypeRefinement
 import org.jetbrains.kotlin.types.typeUtil.isAnyOrNullableAny
 import org.jetbrains.kotlin.types.typeUtil.makeNullable
 import org.jetbrains.kotlin.utils.DFS
@@ -56,6 +60,9 @@ val DeclarationDescriptor.isExtension: Boolean
 
 val DeclarationDescriptor.module: ModuleDescriptor
     get() = DescriptorUtils.getContainingModule(this)
+
+val DeclarationDescriptor.platform: TargetPlatform?
+    get() = module.platform
 
 fun ModuleDescriptor.resolveTopLevelClass(topLevelClassFqName: FqName, location: LookupLocation): ClassDescriptor? {
     assert(!topLevelClassFqName.isRoot)
@@ -437,3 +444,6 @@ fun DeclarationDescriptor.isAnnotationConstructor(): Boolean =
 
 fun DeclarationDescriptor.isPrimaryConstructorOfInlineClass(): Boolean =
     this is ConstructorDescriptor && this.isPrimary && this.constructedClass.isInline
+
+@TypeRefinement
+fun ModuleDescriptor.getKotlinTypeRefiner(): KotlinTypeRefiner = getCapability(REFINER_CAPABILITY)?.value ?: KotlinTypeRefiner.Default

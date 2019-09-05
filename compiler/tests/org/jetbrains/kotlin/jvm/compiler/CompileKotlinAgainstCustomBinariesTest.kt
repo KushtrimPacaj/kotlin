@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jvm.compiler
@@ -77,11 +77,11 @@ class CompileKotlinAgainstCustomBinariesTest : AbstractKotlinCompilerIntegration
     private fun analyzeAndGetAllDescriptors(vararg extraClassPath: File): Collection<DeclarationDescriptor> =
         DescriptorUtils.getAllDescriptors(analyzeFileToPackageView(*extraClassPath).memberScope)
 
-    private fun doTestBrokenLibrary(libraryName: String, vararg pathsToDelete: String) {
+    private fun doTestBrokenLibrary(libraryName: String, vararg pathsToDelete: String, additionalOptions: List<String> = emptyList()) {
         // This function compiles a library, then deletes one class file and attempts to compile a Kotlin source against
         // this broken library. The expected result is an error message from the compiler
         val library = copyJarFileWithoutEntry(compileLibrary(libraryName), *pathsToDelete)
-        compileKotlin("source.kt", tmpdir, listOf(library))
+        compileKotlin("source.kt", tmpdir, listOf(library), additionalOptions = additionalOptions)
     }
 
     private fun doTestKotlinLibraryWithWrongMetadataVersion(
@@ -213,6 +213,10 @@ class CompileKotlinAgainstCustomBinariesTest : AbstractKotlinCompilerIntegration
 
     fun testMissingDependencyNestedAnnotation() {
         doTestBrokenLibrary("library", "a/A\$Anno.class")
+    }
+
+    fun testMissingDependencyNestedAnnotationIr() {
+        doTestBrokenLibrary("library", "a/A\$Anno.class", additionalOptions = listOf("-Xuse-ir"))
     }
 
     fun testMissingDependencyConflictingLibraries() {

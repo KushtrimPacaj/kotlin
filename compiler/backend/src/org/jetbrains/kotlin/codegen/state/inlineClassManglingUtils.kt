@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.state
@@ -49,7 +49,7 @@ private fun getSignatureElementForMangling(type: KotlinType): String = buildStri
     }
 }
 
-private fun md5base64(signatureForMangling: String): String {
+fun md5base64(signatureForMangling: String): String {
     val d = MessageDigest.getInstance("MD5").digest(signatureForMangling.toByteArray()).copyOfRange(0, 5)
     // base64 URL encoder without padding uses exactly the characters allowed in both JVM bytecode and Dalvik bytecode names
     return Base64.getUrlEncoder().withoutPadding().encodeToString(d)

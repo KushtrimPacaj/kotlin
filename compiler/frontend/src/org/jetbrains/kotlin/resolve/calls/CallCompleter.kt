@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls
@@ -135,19 +135,7 @@ class CallCompleter(
         context: BasicCallResolutionContext,
         tracing: TracingStrategy
     ) {
-        context.call.callElement.safeAs<KtExpression>()?.let { callExpression ->
-            if (callExpression.isFirstStatement() && callExpression.isContractDescriptionCallPsiCheck()) {
-                if (resolvedCall?.resultingDescriptor?.isContractCallDescriptor() != true) {
-                    context.scope.ownerDescriptor
-                        .safeAs<FunctionDescriptor>()
-                        ?.getUserData(ContractProviderKey)
-                        ?.safeAs<LazyContractProvider>()
-                        ?.setContractDescription(null)
-                } else {
-                    context.trace.record(BindingContext.IS_CONTRACT_DECLARATION_BLOCK, callExpression, true)
-                }
-            }
-        }
+        disableContractsInsideContractsBlock(context.call, resolvedCall?.resultingDescriptor, context.scope, context.trace)
 
         if (resolvedCall == null || resolvedCall.isCompleted || resolvedCall.constraintSystem == null) {
             completeArguments(context, results)
@@ -439,11 +427,11 @@ class CallCompleter(
         }
 
         var shouldBeMadeNullable = false
-        expressions.asReversed().forEach { expression ->
-            if (!(expression is KtParenthesizedExpression || expression is KtLabeledExpression || expression is KtAnnotatedExpression)) {
-                shouldBeMadeNullable = hasNecessarySafeCall(expression, trace)
+        expressions.asReversed().forEach { ktExpression ->
+            if (!(ktExpression is KtParenthesizedExpression || ktExpression is KtLabeledExpression || ktExpression is KtAnnotatedExpression)) {
+                shouldBeMadeNullable = hasNecessarySafeCall(ktExpression, trace)
             }
-            BindingContextUtils.updateRecordedType(updatedType, expression, trace, shouldBeMadeNullable)
+            BindingContextUtils.updateRecordedType(updatedType, ktExpression, trace, shouldBeMadeNullable)
         }
         return trace.getType(argumentExpression)
     }

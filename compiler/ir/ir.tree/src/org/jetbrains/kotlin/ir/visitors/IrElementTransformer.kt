@@ -49,6 +49,7 @@ interface IrElementTransformer<in D> : IrElementVisitor<IrElement, D> {
     override fun visitVariable(declaration: IrVariable, data: D) = visitDeclaration(declaration, data)
     override fun visitTypeParameter(declaration: IrTypeParameter, data: D) = visitDeclaration(declaration, data)
     override fun visitValueParameter(declaration: IrValueParameter, data: D) = visitDeclaration(declaration, data)
+    override fun visitTypeAlias(declaration: IrTypeAlias, data: D) = visitDeclaration(declaration, data)
 
     override fun visitBody(body: IrBody, data: D): IrBody =
         body.also { it.transformChildren(this, data) }
@@ -87,6 +88,7 @@ interface IrElementTransformer<in D> : IrElementVisitor<IrElement, D> {
     override fun visitMemberAccess(expression: IrMemberAccessExpression, data: D): IrElement = visitExpression(expression, data)
     override fun visitFunctionAccess(expression: IrFunctionAccessExpression, data: D): IrElement = visitMemberAccess(expression, data)
     override fun visitCall(expression: IrCall, data: D) = visitFunctionAccess(expression, data)
+    override fun visitConstructorCall(expression: IrConstructorCall, data: D): IrElement = visitFunctionAccess(expression, data)
     override fun visitDelegatingConstructorCall(expression: IrDelegatingConstructorCall, data: D) = visitFunctionAccess(expression, data)
     override fun visitEnumConstructorCall(expression: IrEnumConstructorCall, data: D) = visitFunctionAccess(expression, data)
     override fun visitGetClass(expression: IrGetClass, data: D) = visitExpression(expression, data)
@@ -96,6 +98,8 @@ interface IrElementTransformer<in D> : IrElementVisitor<IrElement, D> {
     override fun visitPropertyReference(expression: IrPropertyReference, data: D) = visitCallableReference(expression, data)
     override fun visitLocalDelegatedPropertyReference(expression: IrLocalDelegatedPropertyReference, data: D) =
         visitCallableReference(expression, data)
+
+    override fun visitFunctionExpression(expression: IrFunctionExpression, data: D): IrElement = visitExpression(expression, data)
 
     override fun visitClassReference(expression: IrClassReference, data: D) = visitDeclarationReference(expression, data)
 

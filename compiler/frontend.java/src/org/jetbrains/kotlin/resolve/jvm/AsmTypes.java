@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.jvm;
@@ -19,6 +19,7 @@ public class AsmTypes {
     public static final Type JAVA_STRING_TYPE = getType(String.class);
     public static final Type JAVA_THROWABLE_TYPE = getType(Throwable.class);
     public static final Type JAVA_CLASS_TYPE = getType(Class.class);
+    public static final Type JAVA_CLASS_ARRAY_TYPE = Type.getObjectType("[" + JAVA_CLASS_TYPE.getDescriptor());
     public static final Type ENUM_TYPE = getType(Enum.class);
     public static final Type NUMBER_TYPE = getType(Number.class);
     public static final Type BOOLEAN_WRAPPER_TYPE = getType(Boolean.class);

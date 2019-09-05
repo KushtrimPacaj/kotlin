@@ -1,6 +1,6 @@
  /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle.plugin.mpp
@@ -19,11 +19,13 @@ class KotlinCommonCompilation(
     override val compileKotlinTask: KotlinCompileCommon
         get() = super.compileKotlinTask as KotlinCompileCommon
 
-    // TODO once we properly compile metadata for each source set, the default source sets will likely become just the source sets
-    // which are transformed to metadata
-    private val commonSourceSetName = when (compilationName) {
-        KotlinCompilation.MAIN_COMPILATION_NAME -> KotlinSourceSet.COMMON_MAIN_SOURCE_SET_NAME
-        else -> error("Custom metadata compilations are not supported yet")
+    private val commonSourceSetName by lazy {
+        when (compilationName) {
+            // Historically, a metadata target has a main compilation. We keep using it to compile just the commonMain source set:
+            KotlinCompilation.MAIN_COMPILATION_NAME -> KotlinSourceSet.COMMON_MAIN_SOURCE_SET_NAME
+            // All other common source sets are compiled by compilations named according to the source sets:
+            else -> compilationName
+        }
     }
 
     override val defaultSourceSet: KotlinSourceSet

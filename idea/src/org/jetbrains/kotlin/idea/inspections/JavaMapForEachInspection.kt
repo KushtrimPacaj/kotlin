@@ -1,28 +1,27 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections
 
-import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiElement
+import com.intellij.openapi.util.TextRange
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.core.getLastLambdaExpression
 import org.jetbrains.kotlin.idea.inspections.collections.isMap
 import org.jetbrains.kotlin.idea.intentions.callExpression
+import org.jetbrains.kotlin.idea.util.calleeTextRangeInThis
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtLambdaExpression
 import org.jetbrains.kotlin.psi.KtPsiFactory
-import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.calls.callUtil.getType
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
-import org.jetbrains.kotlin.synthetic.SamAdapterExtensionFunctionDescriptor
+import org.jetbrains.kotlin.synthetic.isResolvedWithSamConversions
 
 class JavaMapForEachInspection : AbstractApplicabilityBasedInspection<KtDotQualifiedExpression>(
     KtDotQualifiedExpression::class.java
@@ -37,19 +36,18 @@ class JavaMapForEachInspection : AbstractApplicabilityBasedInspection<KtDotQuali
 
         val context = element.analyze(BodyResolveMode.PARTIAL)
         if (!element.receiverExpression.getType(context).isMap(DefaultBuiltIns.Instance)) return false
-        return callExpression.getResolvedCall(context)?.resultingDescriptor is SamAdapterExtensionFunctionDescriptor
+        val resolvedCall = callExpression.getResolvedCall(context) ?: return false
+        return resolvedCall.isResolvedWithSamConversions()
     }
 
-    override fun inspectionTarget(element: KtDotQualifiedExpression) = element.callExpression?.calleeExpression ?: element
+    override fun inspectionHighlightRangeInElement(element: KtDotQualifiedExpression): TextRange? = element.calleeTextRangeInThis()
 
     override fun inspectionText(element: KtDotQualifiedExpression) = "Java Map.forEach method call should be replaced with Kotlin's forEach"
 
-    override fun inspectionHighlightType(element: KtDotQualifiedExpression) = ProblemHighlightType.GENERIC_ERROR_OR_WARNING
-
     override val defaultFixText = "Replace with Kotlin's forEach"
 
-    override fun applyTo(element: PsiElement, project: Project, editor: Editor?) {
-        val call = element.getStrictParentOfType<KtCallExpression>() ?: return
+    override fun applyTo(element: KtDotQualifiedExpression, project: Project, editor: Editor?) {
+        val call = element.callExpression ?: return
         val lambda = call.lambda() ?: return
         val valueParameters = lambda.valueParameters
         lambda.functionLiteral.valueParameterList?.replace(

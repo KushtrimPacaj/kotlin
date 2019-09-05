@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:kotlin.jvm.JvmMultifileClass
@@ -88,6 +88,8 @@ public fun <K, V> mutableMapOf(vararg pairs: Pair<K, V>): MutableMap<K, V> =
 
 /**
  * Returns an empty new [HashMap].
+ *
+ * @sample samples.collections.Maps.Instantiation.emptyHashMap
  */
 @SinceKotlin("1.1")
 @kotlin.internal.InlineOnly

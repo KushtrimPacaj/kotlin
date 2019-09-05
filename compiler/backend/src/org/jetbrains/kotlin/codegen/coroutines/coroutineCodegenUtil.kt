@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.coroutines
@@ -391,7 +391,7 @@ fun createMethodNodeForSuspendCoroutineUninterceptedOrReturn(
     typeMapper: KotlinTypeMapper,
     languageVersionSettings: LanguageVersionSettings
 ): MethodNode {
-    assert(functionDescriptor.isBuiltInSuspendCoroutineUninterceptedOrReturnInJvm(languageVersionSettings)) {
+    assert(functionDescriptor.isBuiltInSuspendCoroutineUninterceptedOrReturn(languageVersionSettings)) {
         "functionDescriptor must be kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn"
     }
 
@@ -498,8 +498,10 @@ fun InstructionAdapter.invokeInvokeSuspendWithUnit(thisName: String) {
     )
 }
 
+const val SUSPEND_IMPL_NAME_SUFFIX = "\$suspendImpl"
+
 fun Method.getImplForOpenMethod(ownerInternalName: String) =
-    Method("$name\$suspendImpl", returnType, arrayOf(Type.getObjectType(ownerInternalName)) + argumentTypes)
+    Method(name + SUSPEND_IMPL_NAME_SUFFIX, returnType, arrayOf(Type.getObjectType(ownerInternalName)) + argumentTypes)
 
 fun FunctionDescriptor.isSuspendLambdaOrLocalFunction() = this.isSuspend && when (this) {
     is AnonymousFunctionDescriptor -> this.isSuspendLambda

@@ -17,7 +17,6 @@
 package org.jetbrains.kotlin.psi2ir.transformations
 
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
-import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrClass
@@ -27,12 +26,11 @@ import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrTypeOperatorCallImpl
+import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.classifierOrFail
 import org.jetbrains.kotlin.ir.types.impl.originalKotlinType
 import org.jetbrains.kotlin.ir.util.TypeTranslator
 import org.jetbrains.kotlin.ir.util.coerceToUnitIfNeeded
-import org.jetbrains.kotlin.ir.util.render
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.psi2ir.containsNull
 import org.jetbrains.kotlin.psi2ir.generators.GeneratorContext
@@ -107,7 +105,11 @@ open class InsertImplicitCasts(
 
     override fun visitReturn(expression: IrReturn): IrExpression =
         expression.transformPostfix {
-            value = value.cast(expression.returnTarget.returnType)
+            value = if (expression.returnTargetSymbol is IrConstructorSymbol) {
+                value.coerceToUnit()
+            } else {
+                value.cast(expression.returnTarget.returnType)
+            }
         }
 
     override fun visitSetVariable(expression: IrSetVariable): IrExpression =
@@ -175,19 +177,25 @@ open class InsertImplicitCasts(
         }
 
     override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression =
-        if (expression.operator == IrTypeOperator.SAM_CONVERSION)
-            expression.coerceArgumentToFunctionalType()
-        else
-            super.visitTypeOperator(expression)
+        when (expression.operator) {
+            IrTypeOperator.SAM_CONVERSION -> expression.transformPostfix {
+                argument = argument.cast(samConversion.getSubstitutedFunctionTypeForSamType(typeOperand.originalKotlinType!!))
+            }
 
-    private fun IrTypeOperatorCall.coerceArgumentToFunctionalType(): IrExpression {
-        val targetClassDescriptor = typeOperandClassifier.descriptor as? ClassDescriptor
-            ?: throw AssertionError("Target type of $operator should be a class: ${render()}")
+            IrTypeOperator.IMPLICIT_CAST -> {
+                // This branch is required for handling specific ambiguous cases in implicit cast insertion,
+                // such as SAM conversion VS smart cast.
+                // Here IMPLICIT_CAST serves as a type hint.
+                // Replace IrTypeOperatorCall(IMPLICIT_CAST, ...) with an argument cast to the required type
+                // (possibly generating another IrTypeOperatorCall(IMPLICIT_CAST, ...), if required).
 
-        argument = argument.cast(samConversion.getFunctionTypeForSAMClass(targetClassDescriptor))
+                expression.transformChildrenVoid()
+                expression.argument.cast(expression.typeOperand)
+            }
 
-        return this
-    }
+            else ->
+                super.visitTypeOperator(expression)
+        }
 
     override fun visitVararg(expression: IrVararg): IrExpression =
         expression.transformPostfix {
@@ -212,6 +220,8 @@ open class InsertImplicitCasts(
         if (expectedType == null) return this
         if (expectedType.isError) return this
 
+        // TODO here we can have non-denotable KotlinTypes (both in 'this@cast.type' and 'expectedType').
+
         val notNullableExpectedType = expectedType.makeNotNullable()
 
         val valueType = this.type.originalKotlinType!!
@@ -224,7 +234,7 @@ open class InsertImplicitCasts(
                 if (expectedType.isNullableAny())
                     this
                 else
-                    implicitCast(expectedType, IrTypeOperator.IMPLICIT_CAST)
+                    implicitCast(expectedType, IrTypeOperator.IMPLICIT_DYNAMIC_CAST)
 
             valueType.isNullabilityFlexible() && valueType.containsNull() && !expectedType.containsNull() ->
                 implicitNonNull(valueType, expectedType)
@@ -260,7 +270,7 @@ open class InsertImplicitCasts(
             endOffset,
             irType,
             typeOperator,
-            irType, irType.classifierOrFail,
+            irType,
             this
         )
     }

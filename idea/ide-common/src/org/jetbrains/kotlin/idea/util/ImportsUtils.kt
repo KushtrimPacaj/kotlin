@@ -19,16 +19,20 @@
 package org.jetbrains.kotlin.idea.imports
 
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtReferenceExpression
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.psiUtil.getQualifiedElementSelector
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.ImportPath
 import org.jetbrains.kotlin.resolve.bindingContextUtil.getReferenceTargets
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.resolve.descriptorUtil.getImportableDescriptor
+import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.types.KotlinType
-import java.util.*
 
 object ImportPathComparator : Comparator<ImportPath> {
     override fun compare(import1: ImportPath, import2: ImportPath): Int {
@@ -92,3 +96,8 @@ fun KtReferenceExpression.getImportableTargets(bindingContext: BindingContext): 
     return targets.map { it.getImportableDescriptor() }.toSet()
 }
 
+fun KtImportDirective.canResolve(facade: ResolutionFacade): Boolean {
+    return (importedReference?.getQualifiedElementSelector() as? KtSimpleNameExpression)?.let { nameExpression ->
+        nameExpression.getImportableTargets(facade.analyze(nameExpression, BodyResolveMode.PARTIAL)).isNotEmpty()
+    } ?: false
+}

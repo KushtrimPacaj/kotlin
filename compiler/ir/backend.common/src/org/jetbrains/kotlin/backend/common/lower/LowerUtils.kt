@@ -18,10 +18,8 @@ package org.jetbrains.kotlin.backend.common.lower
 
 import org.jetbrains.kotlin.backend.common.BackendContext
 import org.jetbrains.kotlin.backend.common.CommonBackendContext
-import org.jetbrains.kotlin.backend.common.atMostOne
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.impl.ValueParameterDescriptorImpl
-import org.jetbrains.kotlin.incremental.components.LookupLocation
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
@@ -34,16 +32,12 @@ import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.classifierOrFail
-import org.jetbrains.kotlin.ir.types.isAny
 import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
-import org.jetbrains.kotlin.resolve.scopes.MemberScopeImpl
-import org.jetbrains.kotlin.utils.Printer
 
 class IrLoweringContext(backendContext: BackendContext) : IrGeneratorContextBase(backendContext.irBuiltIns)
 
@@ -59,7 +53,7 @@ class DeclarationIrBuilder(
 )
 
 abstract class AbstractVariableRemapper : IrElementTransformerVoid() {
-    protected abstract fun remapVariable(value: IrValueDeclaration): IrValueParameter?
+    protected abstract fun remapVariable(value: IrValueDeclaration): IrValueDeclaration?
 
     override fun visitGetValue(expression: IrGetValue): IrExpression =
         remapVariable(expression.symbol.owner)?.let {
@@ -67,13 +61,13 @@ abstract class AbstractVariableRemapper : IrElementTransformerVoid() {
         } ?: expression
 }
 
-class VariableRemapper(val mapping: Map<IrValueParameter, IrValueParameter>) : AbstractVariableRemapper() {
-    override fun remapVariable(value: IrValueDeclaration): IrValueParameter? =
+open class VariableRemapper(val mapping: Map<IrValueParameter, IrValueDeclaration>) : AbstractVariableRemapper() {
+    override fun remapVariable(value: IrValueDeclaration): IrValueDeclaration? =
         mapping[value]
 }
 
 class VariableRemapperDesc(val mapping: Map<ValueDescriptor, IrValueParameter>) : AbstractVariableRemapper() {
-    override fun remapVariable(value: IrValueDeclaration): IrValueParameter? =
+    override fun remapVariable(value: IrValueDeclaration): IrValueDeclaration? =
         mapping[value.descriptor]
 }
 
@@ -127,7 +121,8 @@ fun IrBuilderWithScope.irCatch(catchParameter: IrVariable) =
 fun IrBuilderWithScope.irImplicitCoercionToUnit(arg: IrExpression) =
     IrTypeOperatorCallImpl(
         startOffset, endOffset, context.irBuiltIns.unitType,
-        IrTypeOperator.IMPLICIT_COERCION_TO_UNIT, context.irBuiltIns.unitType, context.irBuiltIns.unitClass, arg
+        IrTypeOperator.IMPLICIT_COERCION_TO_UNIT, context.irBuiltIns.unitType,
+        arg
     )
 
 open class IrBuildingTransformer(private val context: BackendContext) : IrElementTransformerVoid() {
@@ -164,29 +159,6 @@ open class IrBuildingTransformer(private val context: BackendContext) : IrElemen
             return super.visitAnonymousInitializer(declaration)
         }
     }
-}
-
-class SimpleMemberScope(val members: List<DeclarationDescriptor>) : MemberScopeImpl() {
-
-    override fun getContributedClassifier(name: Name, location: LookupLocation): ClassifierDescriptor? =
-        members.filterIsInstance<ClassifierDescriptor>()
-            .atMostOne { it.name == name }
-
-    override fun getContributedVariables(name: Name, location: LookupLocation): Collection<PropertyDescriptor> =
-        members.filterIsInstance<PropertyDescriptor>()
-            .filter { it.name == name }
-
-    override fun getContributedFunctions(name: Name, location: LookupLocation): Collection<SimpleFunctionDescriptor> =
-        members.filterIsInstance<SimpleFunctionDescriptor>()
-            .filter { it.name == name }
-
-    override fun getContributedDescriptors(
-        kindFilter: DescriptorKindFilter,
-        nameFilter: (Name) -> Boolean
-    ): Collection<DeclarationDescriptor> =
-        members.filter { kindFilter.accepts(it) && nameFilter(it.name) }
-
-    override fun printScopeStructure(p: Printer) = TODO("not implemented")
 }
 
 fun IrConstructor.callsSuper(irBuiltIns: IrBuiltIns): Boolean {

@@ -1,46 +1,44 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.intrinsics
 
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.codegen.Callable
-import org.jetbrains.kotlin.codegen.CallableMethod
-import org.jetbrains.kotlin.codegen.StackValue
+import org.jetbrains.kotlin.backend.jvm.codegen.BlockInfo
+import org.jetbrains.kotlin.backend.jvm.codegen.ExpressionCodegen
+import org.jetbrains.kotlin.backend.jvm.codegen.PromisedValue
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
 import org.jetbrains.kotlin.ir.expressions.IrMemberAccessExpression
-import org.jetbrains.kotlin.ir.types.toKotlinType
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodSignature
 import org.jetbrains.org.objectweb.asm.Type
 import org.jetbrains.org.objectweb.asm.commons.Method
 
-interface ComparisonIntrinsic {
-    fun genStackValue(expression: IrMemberAccessExpression, context: JvmBackendContext): StackValue
-}
-
 abstract class IntrinsicMethod {
-
     open fun toCallable(
-        expression: IrMemberAccessExpression,
+        expression: IrFunctionAccessExpression,
         signature: JvmMethodSignature,
         context: JvmBackendContext
-    ): IrIntrinsicFunction {
-        TODO()
-    }
+    ): IrIntrinsicFunction = TODO("implement toCallable() or invoke() of $this")
 
-    open fun toCallable(method: CallableMethod): Callable {
-        throw UnsupportedOperationException("Not implemented")
-    }
+    open fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo): PromisedValue? =
+        with(codegen) {
+            val descriptor = methodSignatureMapper.mapSignatureSkipGeneric(expression.symbol.owner)
+            val stackValue = toCallable(expression, descriptor, context).invoke(mv, codegen, data)
+            return object : PromisedValue(this, stackValue.type, expression.type) {
+                override fun materialize() = stackValue.put(mv)
+            }
+        }
 
     companion object {
         fun calcReceiverType(call: IrMemberAccessExpression, context: JvmBackendContext): Type {
-            return context.state.typeMapper.mapType((call.dispatchReceiver?.type ?: call.extensionReceiver!!.type).toKotlinType())
+            return context.typeMapper.mapType(call.dispatchReceiver?.type ?: call.extensionReceiver!!.type)
         }
 
         fun expressionType(expression: IrExpression, context: JvmBackendContext): Type {
-            return context.state.typeMapper.mapType(expression.type.toKotlinType())
+            return context.typeMapper.mapType(expression.type)
         }
 
         fun JvmMethodSignature.newReturnType(type: Type): JvmMethodSignature {

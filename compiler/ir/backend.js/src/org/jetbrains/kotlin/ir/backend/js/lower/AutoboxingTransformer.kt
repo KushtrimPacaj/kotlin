@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.lower
@@ -26,9 +26,24 @@ class AutoboxingTransformer(val context: JsIrBackendContext) : AbstractValueUsag
         irFile.patchDeclarationParents()
     }
 
+    private tailrec fun IrExpression.isGetUnit(): Boolean =
+        when(this) {
+            is IrContainerExpression ->
+                when (val lastStmt = this.statements.lastOrNull()) {
+                    is IrExpression -> lastStmt.isGetUnit()
+                    else -> false
+                }
+
+            is IrGetObjectValue ->
+                this.symbol == irBuiltIns.unitClass
+
+            else -> false
+        }
+
     override fun IrExpression.useAs(type: IrType): IrExpression {
 
         val actualType = when (this) {
+            is IrConstructorCall -> symbol.owner.returnType
             is IrCall -> {
                 val function = this.symbol.owner
                 if (function.let { it is IrSimpleFunction && it.isSuspend }) {
@@ -66,6 +81,14 @@ class AutoboxingTransformer(val context: JsIrBackendContext) : AbstractValueUsag
             return this
 
         val expectedType = type
+
+        if (actualType.isUnit() && !expectedType.isUnit()) {
+            // Don't materialize Unit if value is known to be proper Unit on runtime
+            if (!this.isGetUnit()) {
+                val unitValue = JsIrBuilder.buildGetObjectValue(actualType, context.irBuiltIns.unitClass)
+                return JsIrBuilder.buildComposite(actualType, listOf(this, unitValue))
+            }
+        }
 
         val actualInlinedClass = actualType.getInlinedClass()
         val expectedInlinedClass = expectedType.getInlinedClass()
@@ -127,8 +150,9 @@ class AutoboxingTransformer(val context: JsIrBackendContext) : AbstractValueUsag
 
     private val IrFunctionAccessExpression.target: IrFunction
         get() = when (this) {
-            is IrCall -> this.callTarget
+            is IrConstructorCall -> this.symbol.owner
             is IrDelegatingConstructorCall -> this.symbol.owner
+            is IrCall -> this.callTarget
             else -> TODO(this.render())
         }
 

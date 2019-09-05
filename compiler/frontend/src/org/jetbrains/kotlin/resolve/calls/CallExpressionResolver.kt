@@ -20,6 +20,7 @@ import com.intellij.lang.ASTNode
 import com.intellij.openapi.util.ThrowableComputable
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.util.AstLoadingFilter
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.config.LanguageVersionSettings
@@ -59,13 +60,14 @@ import org.jetbrains.kotlin.types.ErrorUtils
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeUtils
 import org.jetbrains.kotlin.types.TypeUtils.NO_EXPECTED_TYPE
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner
 import org.jetbrains.kotlin.types.expressions.DataFlowAnalyzer
 import org.jetbrains.kotlin.types.expressions.ExpressionTypingContext
 import org.jetbrains.kotlin.types.expressions.ExpressionTypingServices
 import org.jetbrains.kotlin.types.expressions.KotlinTypeInfo
 import org.jetbrains.kotlin.types.expressions.typeInfoFactory.createTypeInfo
 import org.jetbrains.kotlin.types.expressions.typeInfoFactory.noTypeInfo
-import org.jetbrains.kotlin.util.AstLoadingFilter
+import org.jetbrains.kotlin.types.refinement.TypeRefinement
 import javax.inject.Inject
 
 class CallExpressionResolver(
@@ -76,7 +78,8 @@ class CallExpressionResolver(
     private val builtIns: KotlinBuiltIns,
     private val qualifiedExpressionResolver: QualifiedExpressionResolver,
     private val languageVersionSettings: LanguageVersionSettings,
-    private val dataFlowValueFactory: DataFlowValueFactory
+    private val dataFlowValueFactory: DataFlowValueFactory,
+    private val kotlinTypeRefiner: KotlinTypeRefiner
 ) {
     private lateinit var expressionTypingServices: ExpressionTypingServices
 
@@ -360,13 +363,20 @@ class CallExpressionResolver(
                 initialDataFlowInfoForArguments = initialDataFlowInfoForArguments.disequate(
                     receiverDataFlowValue, DataFlowValue.nullValue(builtIns), languageVersionSettings
                 )
-            } else if (receiver is ReceiverValue) {
+            } else {
                 reportUnnecessarySafeCall(context.trace, receiver.type, callOperationNode, receiver)
             }
         }
 
         val selector = element.selector
-        var selectorTypeInfo = getUnsafeSelectorTypeInfo(receiver, callOperationNode, selector, context, initialDataFlowInfoForArguments)
+
+        @UseExperimental(TypeRefinement::class)
+        var selectorTypeInfo =
+            getUnsafeSelectorTypeInfo(receiver, callOperationNode, selector, context, initialDataFlowInfoForArguments)
+                .run {
+                    val type = type ?: return@run this
+                    replaceType(kotlinTypeRefiner.refineType(type))
+                }
 
         if (receiver is Qualifier) {
             resolveDeferredReceiverInQualifiedExpression(receiver, selector, context)

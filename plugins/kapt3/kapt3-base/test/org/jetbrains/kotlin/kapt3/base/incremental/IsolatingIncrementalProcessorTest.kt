@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.base.test.org.jetbrains.kotlin.kapt3.base.incremental
@@ -105,6 +105,19 @@ class IsolationgIncrementalProcessorTest {
                 generatedSources.resolve("test/UserGeneratedTwo.java") to File("plugins/kapt3/kapt3-base/testData/runner/incremental/User.java").absoluteFile,
                 generatedSources.resolve("test/AddressGeneratedTwo.java") to File("plugins/kapt3/kapt3-base/testData/runner/incremental/Address.java").absoluteFile
             ), isolating[1].getGeneratedToSources()
+        )
+    }
+
+    @Test
+    fun testIsolatingWithMultipleOriginatingElements() {
+        val srcFiles = listOf("User.java", "Observable.java").map { File(TEST_DATA_DIR, it) }
+        val isolating = listOf(ReportTwoOriginElements().toIsolating())
+        runAnnotationProcessing(srcFiles, isolating, generatedSources)
+
+        assertEquals(
+            mapOf(
+                generatedSources.resolve("test/UserGenerated.java") to File("plugins/kapt3/kapt3-base/testData/runner/incremental/User.java").absoluteFile
+            ), isolating[0].getGeneratedToSources()
         )
     }
 }

@@ -1,4 +1,3 @@
-// IGNORE_BACKEND: JVM_IR
 // WITH_RUNTIME
 
 class A {
@@ -14,3 +13,4 @@ class A {
 // VARIABLE : NAME=l TYPE=J INDEX=1
 // VARIABLE : NAME=$completion TYPE=Lkotlin/coroutines/Continuation; INDEX=3
 // VARIABLE : NAME=$continuation TYPE=Lkotlin/coroutines/Continuation; INDEX=5
+// VARIABLE : NAME=$result TYPE=Ljava/lang/Object; INDEX=4

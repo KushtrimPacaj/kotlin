@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir.scopes
@@ -8,29 +8,30 @@ package org.jetbrains.kotlin.fir.scopes
 import org.jetbrains.kotlin.fir.scopes.ProcessorAction.NEXT
 import org.jetbrains.kotlin.fir.scopes.ProcessorAction.STOP
 import org.jetbrains.kotlin.fir.symbols.ConeClassifierSymbol
-import org.jetbrains.kotlin.fir.symbols.ConeFunctionSymbol
-import org.jetbrains.kotlin.fir.symbols.ConeVariableSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirFunctionSymbol
 import org.jetbrains.kotlin.name.Name
 
-interface FirScope {
+abstract class FirScope {
     @Deprecated(
         "obsolete",
         replaceWith = ReplaceWith("processClassifiersByNameWithAction(name, position) { if (processor()) ProcessorAction.NEXT else ProcessorAction.STOP }.next()")
     )
-    fun processClassifiersByName(
+    open fun processClassifiersByName(
         name: Name,
         position: FirPosition,
         processor: (ConeClassifierSymbol) -> Boolean
     ): Boolean = true
 
-    fun processFunctionsByName(
+    open fun processFunctionsByName(
         name: Name,
-        processor: (ConeFunctionSymbol) -> ProcessorAction
+        processor: (FirFunctionSymbol<*>) -> ProcessorAction
     ): ProcessorAction = NEXT
 
-    fun processPropertiesByName(
+    open fun processPropertiesByName(
         name: Name,
-        processor: (ConeVariableSymbol) -> ProcessorAction
+        // NB: it'd be great to write FirVariableSymbol<*> here, but there is FirAccessorSymbol :(
+        processor: (FirCallableSymbol<*>) -> ProcessorAction
     ): ProcessorAction = NEXT
 }
 
@@ -62,5 +63,6 @@ enum class ProcessorAction {
         }
     }
 
+    fun stop() = this == STOP
     fun next() = this == NEXT
 }

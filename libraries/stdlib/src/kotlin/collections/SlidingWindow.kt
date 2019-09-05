@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.collections
@@ -187,11 +187,4 @@ private class RingBuffer<T>(val capacity: Int) : AbstractList<T>(), RandomAccess
 
     @Suppress("NOTHING_TO_INLINE")
     private inline fun Int.forward(n: Int): Int = (this + n) % capacity
-
-    // TODO: replace with Array.fill from stdlib when available in common
-    private fun <T> Array<T>.fill(element: T, fromIndex: Int = 0, toIndex: Int = size): Unit {
-        for (idx in fromIndex until toIndex) {
-            this[idx] = element
-        }
-    }
 }

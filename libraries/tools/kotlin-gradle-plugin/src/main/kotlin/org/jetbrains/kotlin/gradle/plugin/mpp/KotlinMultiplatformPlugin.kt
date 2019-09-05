@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle.plugin.mpp
@@ -27,9 +27,9 @@ import org.jetbrains.kotlin.gradle.dsl.kotlinExtension
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.*
 import org.jetbrains.kotlin.gradle.plugin.sources.DefaultLanguageSettingsBuilder
-import org.jetbrains.kotlin.gradle.utils.SingleWarningPerBuild
-import org.jetbrains.kotlin.gradle.utils.checkGradleCompatibility
-import org.jetbrains.kotlin.gradle.utils.lowerCamelCaseName
+import org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin
+import org.jetbrains.kotlin.gradle.targets.metadata.isKotlinGranularMetadataEnabled
+import org.jetbrains.kotlin.gradle.utils.*
 import org.jetbrains.kotlin.konan.target.HostManager
 import org.jetbrains.kotlin.konan.target.presetName
 
@@ -89,18 +89,20 @@ class KotlinMultiplatformPlugin(
         // propagate compiler plugin options to the source set language settings
         setupCompilerPluginOptions(project)
 
+        project.pluginManager.apply(ScriptingGradleSubplugin::class.java)
+
         UnusedSourceSetsChecker.checkSourceSets(project)
     }
 
     private fun setupCompilerPluginOptions(project: Project) {
         // common source sets use the compiler options from the metadata compilation:
         val metadataCompilation =
-            project.multiplatformExtension.targets
-                .getByName(METADATA_TARGET_NAME)
-                .compilations.getByName(KotlinCompilation.MAIN_COMPILATION_NAME)
+            project.multiplatformExtension.metadata().compilations.getByName(KotlinCompilation.MAIN_COMPILATION_NAME)
 
         val primaryCompilationsBySourceSet by lazy { // don't evaluate eagerly: Android targets are not created at this point
-            val allCompilationsForSourceSets = compilationsBySourceSet(project)
+            val allCompilationsForSourceSets = CompilationSourceSetUtil.compilationsBySourceSets(project).mapValues { (_, compilations) ->
+                compilations.filter { it.target.platformType != KotlinPlatformType.common }
+            }
 
             allCompilationsForSourceSets.mapValues { (_, compilations) -> // choose one primary compilation
                 when (compilations.size) {
@@ -143,11 +145,14 @@ class KotlinMultiplatformPlugin(
 
     private fun configurePublishingWithMavenPublish(project: Project) = project.pluginManager.withPlugin("maven-publish") { _ ->
 
-        if (project.multiplatformExtension.run { isGradleMetadataAvailable && isGradleMetadataExperimental }) {
-            SingleWarningPerBuild.show(
-                project,
-                GRADLE_METADATA_WARNING
-            )
+        if (isGradleVersionAtLeast(5, 3) &&
+            project.multiplatformExtension.run { isGradleMetadataExperimental && !isGradleMetadataAvailable }
+        ) {
+            SingleWarningPerBuild.show(project, GRADLE_NO_METADATA_WARNING)
+        }
+
+        if (!isGradleVersionAtLeast(4, 8) && project.multiplatformExtension.isGradleMetadataAvailable) {
+            SingleWarningPerBuild.show(project, GRADLE_OLD_METADATA_WARNING)
         }
 
         val targets = project.multiplatformExtension.targets
@@ -172,8 +177,9 @@ class KotlinMultiplatformPlugin(
             targets
                 .withType(AbstractKotlinTarget::class.java).matching { it.publishable && it.name != METADATA_TARGET_NAME }
                 .all {
-                    if (it is KotlinAndroidTarget)
+                    if (it is KotlinAndroidTarget || it is KotlinMetadataTarget)
                         // Android targets have their variants created in afterEvaluate; TODO handle this better?
+                        // Kotlin Metadata targets rely on complete source sets hierearchy and cannot be inspected for publication earlier
                         project.whenEvaluated { it.createMavenPublications(publishing.publications) }
                     else
                         it.createMavenPublications(publishing.publications)
@@ -201,13 +207,34 @@ class KotlinMultiplatformPlugin(
 
                     pom.withXml { xml ->
                         if (PropertiesProvider(project).keepMppDependenciesIntactInPoms != true)
-                            project.rewritePomMppDependenciesToActualTargetModules(xml, kotlinComponent)
+                            project.rewritePomMppDependenciesToActualTargetModules(xml, kotlinComponent) { id ->
+                                filterMetadataDependencies(this@createMavenPublications, id)
+                            }
                     }
                 }
 
                 (kotlinComponent as? KotlinTargetComponentWithPublication)?.publicationDelegate = componentPublication
                 publicationConfigureActions.all { it.execute(componentPublication) }
             }
+    }
+
+    /**
+     * The metadata targets need their POMs to only include the dependencies from the commonMain API configuration.
+     * The actual apiElements configurations of metadata targets now contain dependencies from all source sets, but, as the consumers who
+     * can't read Gradle module metadata won't resolve a dependency on an MPP to the granular metadata variant and won't then choose the
+     * right dependencies for each source set, we put only the dependencies of the legacy common variant into the POM, i.e. commonMain API.
+     */
+    private fun filterMetadataDependencies(target: AbstractKotlinTarget, groupNameVersion: Triple<String?, String, String?>): Boolean {
+        if (target !is KotlinMetadataTarget || !target.project.isKotlinGranularMetadataEnabled) {
+            return true
+        }
+
+        val (group, name, _) = groupNameVersion
+
+        val project = target.project
+        val metadataApiLegacyElements = project.configurations.getByName(COMMON_MAIN_ELEMENTS_CONFIGURATION_NAME)
+
+        return metadataApiLegacyElements.allDependencies.any { it.group == group && it.name == name }
     }
 
     private fun configureSourceSets(project: Project) = with(project.multiplatformExtension) {
@@ -228,12 +255,16 @@ class KotlinMultiplatformPlugin(
     companion object {
         const val METADATA_TARGET_NAME = "metadata"
 
-        const val GRADLE_METADATA_WARNING =
-        // TODO point the user to some MPP docs explaining this in more detail
-            "This build is set up to publish Kotlin multiplatform libraries with experimental Gradle metadata. " +
-                    "Future Gradle versions may fail to resolve dependencies on these publications. " +
-                    "You can disable Gradle metadata usage during publishing and dependencies resolution by removing " +
-                    "`enableFeaturePreview('GRADLE_METADATA')` from the settings.gradle file."
+        internal const val GRADLE_NO_METADATA_WARNING = "This build consumes Gradle module metadata but does not produce " +
+                "it when publishing Kotlin multiplatform libraries. \n" +
+                "To enable Gradle module metadata in publications, add 'enableFeaturePreview(\"GRADLE_METADATA\")' " +
+                "to the settings.gradle file. \n" +
+                "See: https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#experimental-metadata-publishing-mode"
+
+        internal const val GRADLE_OLD_METADATA_WARNING = "This build is set up to publish a Kotlin multiplatform library " +
+                "with an outdated Gradle module metadata format, which newer Gradle versions won't be able to consume. \n" +
+                "Please update the Gradle version to 5.3 or newer. \n" +
+                "See: https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#experimental-metadata-publishing-mode"
     }
 }
 
@@ -258,7 +289,7 @@ internal fun applyUserDefinedAttributes(target: AbstractKotlinTarget) {
         // based on the target's components:
         val outputConfigurationsWithCompilations =
             target.kotlinComponents.filterIsInstance<KotlinVariant>().flatMap { kotlinVariant ->
-                kotlinVariant.usages.filterIsInstance<KotlinUsageContext>().mapNotNull { usageContext ->
+                kotlinVariant.usages.mapNotNull { usageContext ->
                     project.configurations.findByName(usageContext.dependencyConfigurationName)?.let { configuration ->
                         configuration to usageContext.compilation
                     }
@@ -283,19 +314,26 @@ internal fun applyUserDefinedAttributes(target: AbstractKotlinTarget) {
     }
 }
 
-internal fun sourcesJarTask(compilation: KotlinCompilation<*>, componentName: String?, artifactNameAppendix: String): Jar {
-    val project = compilation.target.project
+internal fun sourcesJarTask(compilation: KotlinCompilation<*>, componentName: String?, artifactNameAppendix: String): Jar =
+    sourcesJarTask(compilation.target.project, lazy { compilation.allKotlinSourceSets }, componentName, artifactNameAppendix)
+
+internal fun sourcesJarTask(
+    project: Project,
+    sourceSets: Lazy<Set<KotlinSourceSet>>,
+    componentName: String?,
+    artifactNameAppendix: String
+): Jar {
     val taskName = lowerCamelCaseName(componentName, "sourcesJar")
 
     (project.tasks.findByName(taskName) as? Jar)?.let { return it }
 
     val result = project.tasks.create(taskName, Jar::class.java) { sourcesJar ->
-        sourcesJar.appendix = artifactNameAppendix
-        sourcesJar.classifier = "sources"
+        sourcesJar.setArchiveAppendixCompatible { artifactNameAppendix }
+        sourcesJar.setArchiveClassifierCompatible { "sources" }
     }
 
     project.whenEvaluated {
-        compilation.allKotlinSourceSets.forEach { sourceSet ->
+        sourceSets.value.forEach { sourceSet ->
             result.from(sourceSet.kotlin) { copySpec ->
                 copySpec.into(sourceSet.name)
             }
@@ -304,14 +342,3 @@ internal fun sourcesJarTask(compilation: KotlinCompilation<*>, componentName: St
 
     return result
 }
-
-internal fun compilationsBySourceSet(project: Project): Map<KotlinSourceSet, Set<KotlinCompilation<*>>> =
-    HashMap<KotlinSourceSet, MutableSet<KotlinCompilation<*>>>().also { result ->
-        for (target in project.multiplatformExtension.targets) {
-            for (compilation in target.compilations) {
-                for (sourceSet in compilation.allKotlinSourceSets) {
-                    result.getOrPut(sourceSet) { mutableSetOf() }.add(compilation)
-                }
-            }
-        }
-    }

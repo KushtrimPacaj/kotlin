@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.builtins.functions
@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.resolve.DescriptorUtils.COROUTINES_PACKAGE_FQ_NAME_R
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.storage.StorageManager
 import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner
 import java.util.*
 
 /**
@@ -82,7 +83,7 @@ class FunctionClassDescriptor(
 
     override fun getTypeConstructor(): TypeConstructor = typeConstructor
 
-    override fun getUnsubstitutedMemberScope() = memberScope
+    override fun getUnsubstitutedMemberScope(kotlinTypeRefiner: KotlinTypeRefiner) = memberScope
 
     override fun getCompanionObjectDescriptor() = null
     override fun getConstructors() = emptyList<ClassConstructorDescriptor>()

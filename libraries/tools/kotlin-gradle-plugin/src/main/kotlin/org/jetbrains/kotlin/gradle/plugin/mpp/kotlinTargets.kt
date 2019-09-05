@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 package org.jetbrains.kotlin.gradle.plugin.mpp
 
@@ -118,12 +118,13 @@ abstract class AbstractKotlinTarget(
                             configuration.dependencyConstraints.addAll(kotlinUsageContext.dependencyConstraints)
                             configuration.artifacts.addAll(kotlinUsageContext.artifacts)
 
-                            kotlinUsageContext.attributes.keySet().forEach {
+                            val attributes = kotlinUsageContext.attributes
+                            attributes.keySet().forEach {
                                 // capture type parameter T
                                 fun <T> copyAttribute(key: Attribute<T>, from: AttributeContainer, to: AttributeContainer) {
                                     to.attribute(key, from.getAttribute(key)!!)
                                 }
-                                copyAttribute(it, kotlinUsageContext.attributes, configuration.attributes)
+                                copyAttribute(it, attributes, configuration.attributes)
                             }
                         }
 

@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.inline
@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.codegen.ASSERTIONS_DISABLED_FIELD_NAME
 import org.jetbrains.kotlin.codegen.AsmUtil
 import org.jetbrains.kotlin.codegen.BaseExpressionCodegen
+import org.jetbrains.kotlin.codegen.MemberCodegen
 import org.jetbrains.kotlin.codegen.SamWrapperCodegen.SAM_WRAPPER_SUFFIX
 import org.jetbrains.kotlin.codegen.`when`.WhenByEnumsMapping
 import org.jetbrains.kotlin.codegen.binding.CodegenBinding
@@ -46,6 +47,8 @@ import org.jetbrains.org.objectweb.asm.util.Textifier
 import org.jetbrains.org.objectweb.asm.util.TraceMethodVisitor
 import java.io.PrintWriter
 import java.io.StringWriter
+import kotlin.math.max
+import kotlin.math.min
 
 const val GENERATE_SMAP = true
 const val NUMBERED_FUNCTION_PREFIX = "kotlin/jvm/functions/Function"
@@ -120,8 +123,8 @@ internal fun getMethodNode(
             return object : MethodNode(Opcodes.API_VERSION, access, name, desc, signature, exceptions) {
                 override fun visitLineNumber(line: Int, start: Label) {
                     super.visitLineNumber(line, start)
-                    lines[0] = Math.min(lines[0], line)
-                    lines[1] = Math.max(lines[1], line)
+                    lines[0] = min(lines[0], line)
+                    lines[1] = max(lines[1], line)
                 }
             }.also {
                 node = it
@@ -267,7 +270,7 @@ internal fun getMarkedReturnLabelOrNull(returnInsn: AbstractInsnNode): String? {
     return null
 }
 
-internal fun generateGlobalReturnFlag(iv: InstructionAdapter, labelName: String) {
+fun generateGlobalReturnFlag(iv: InstructionAdapter, labelName: String) {
     iv.invokestatic(NON_LOCAL_RETURN, labelName, "()V", false)
 }
 
@@ -282,7 +285,7 @@ internal fun getReturnType(opcode: Int): Type {
     }
 }
 
-internal fun insertNodeBefore(from: MethodNode, to: MethodNode, beforeNode: AbstractInsnNode) {
+fun insertNodeBefore(from: MethodNode, to: MethodNode, beforeNode: AbstractInsnNode) {
     val iterator = from.instructions.iterator()
     while (iterator.hasNext()) {
         val next = iterator.next()
@@ -290,7 +293,7 @@ internal fun insertNodeBefore(from: MethodNode, to: MethodNode, beforeNode: Abst
     }
 }
 
-internal fun createEmptyMethodNode() = MethodNode(Opcodes.API_VERSION, 0, "fake", "()V", null, null)
+fun createEmptyMethodNode() = MethodNode(Opcodes.API_VERSION, 0, "fake", "()V", null, null)
 
 internal fun createFakeContinuationMethodNodeForInline(): MethodNode {
     val methodNode = createEmptyMethodNode()
@@ -346,16 +349,16 @@ internal fun buildClassReaderByInternalName(state: GenerationState, internalName
     return ClassReader(file.contentsToByteArray())
 }
 
-internal fun generateFinallyMarker(v: InstructionAdapter, depth: Int, start: Boolean) {
+fun generateFinallyMarker(v: InstructionAdapter, depth: Int, start: Boolean) {
     v.iconst(depth)
     v.invokestatic(INLINE_MARKER_CLASS_NAME, if (start) INLINE_MARKER_FINALLY_START else INLINE_MARKER_FINALLY_END, "(I)V", false)
 }
 
-internal fun isFinallyEnd(node: AbstractInsnNode) = isFinallyMarker(node, INLINE_MARKER_FINALLY_END)
+fun isFinallyEnd(node: AbstractInsnNode) = isFinallyMarker(node, INLINE_MARKER_FINALLY_END)
 
-internal fun isFinallyStart(node: AbstractInsnNode) = isFinallyMarker(node, INLINE_MARKER_FINALLY_START)
+fun isFinallyStart(node: AbstractInsnNode) = isFinallyMarker(node, INLINE_MARKER_FINALLY_START)
 
-internal fun isFinallyMarker(node: AbstractInsnNode?): Boolean = node != null && (isFinallyStart(node) || isFinallyEnd(node))
+fun isFinallyMarker(node: AbstractInsnNode?): Boolean = node != null && (isFinallyStart(node) || isFinallyEnd(node))
 
 private fun isFinallyMarker(node: AbstractInsnNode, name: String): Boolean {
     if (node !is MethodInsnNode) return false
@@ -364,7 +367,7 @@ private fun isFinallyMarker(node: AbstractInsnNode, name: String): Boolean {
 
 internal fun isFinallyMarkerRequired(context: MethodContext) = context.isInlineMethodContext || context is InlineLambdaContext
 
-internal fun getConstant(ins: AbstractInsnNode): Int {
+fun getConstant(ins: AbstractInsnNode): Int {
     val opcode = ins.opcode
     return when (opcode) {
         in Opcodes.ICONST_0..Opcodes.ICONST_5 -> opcode - Opcodes.ICONST_0
@@ -392,7 +395,7 @@ internal fun removeFinallyMarkers(intoNode: MethodNode) {
     }
 }
 
-internal fun addInlineMarker(v: InstructionAdapter, isStartNotEnd: Boolean) {
+fun addInlineMarker(v: InstructionAdapter, isStartNotEnd: Boolean) {
     v.visitMethodInsn(
         Opcodes.INVOKESTATIC, INLINE_MARKER_CLASS_NAME,
         if (isStartNotEnd) INLINE_MARKER_BEFORE_METHOD_NAME else INLINE_MARKER_AFTER_METHOD_NAME,
@@ -400,36 +403,12 @@ internal fun addInlineMarker(v: InstructionAdapter, isStartNotEnd: Boolean) {
     )
 }
 
-internal fun addReturnsUnitMarkerIfNecessary(v: InstructionAdapter, resolvedCall: ResolvedCall<*>) {
-    val wrapperDescriptor = resolvedCall.candidateDescriptor.safeAs<FunctionDescriptor>() ?: return
-    val unsubstitutedDescriptor = wrapperDescriptor.unwrapInitialDescriptorForSuspendFunction()
-
-    val typeSubstitutor = TypeSubstitutor.create(
-        unsubstitutedDescriptor.typeParameters
-            .withIndex()
-            .associateBy({ it.value.typeConstructor }) {
-                TypeProjectionImpl(resolvedCall.typeArguments[wrapperDescriptor.typeParameters[it.index]] ?: return)
-            }
-    )
-
-    val substitutedDescriptor = unsubstitutedDescriptor.substitute(typeSubstitutor) ?: return
-    val returnType = substitutedDescriptor.returnType ?: return
-
-    if (KotlinBuiltIns.isUnit(returnType)) {
-        addReturnsUnitMarker(v)
-    }
-}
-
-internal fun addSuspendMarker(v: InstructionAdapter, isStartNotEnd: Boolean) {
+fun addSuspendMarker(v: InstructionAdapter, isStartNotEnd: Boolean) {
     v.emitInlineMarker(if (isStartNotEnd) INLINE_MARKER_BEFORE_SUSPEND_ID else INLINE_MARKER_AFTER_SUSPEND_ID)
 }
 
 internal fun addFakeContinuationConstructorCallMarker(v: InstructionAdapter, isStartNotEnd: Boolean) {
     v.emitInlineMarker(if (isStartNotEnd) INLINE_MARKER_BEFORE_FAKE_CONTINUATION_CONSTRUCTOR_CALL else INLINE_MARKER_AFTER_FAKE_CONTINUATION_CONSTRUCTOR_CALL)
-}
-
-private fun addReturnsUnitMarker(v: InstructionAdapter) {
-    v.emitInlineMarker(INLINE_MARKER_RETURNS_UNIT)
 }
 
 /* There are contexts when the continuation does not yet exist, for example, in inline lambdas, which are going to
@@ -508,7 +487,7 @@ private fun getIndexAfterLastMarker(node: MethodNode): Int {
     var result = -1
     for (variable in node.localVariables) {
         if (isFakeLocalVariableForInline(variable.name)) {
-            result = Math.max(result, variable.index + 1)
+            result = max(result, variable.index + 1)
         }
     }
     return result
@@ -530,5 +509,21 @@ class InlineOnlySmapSkipper(codegen: BaseExpressionCodegen) {
             mv.visitLabel(label)
             mv.visitLineNumber(callLineNumber, label)
         }
+    }
+}
+
+fun initDefaultSourceMappingIfNeeded(
+    context: CodegenContext<*>, codegen: MemberCodegen<*>, state: GenerationState
+) {
+    if (state.isInlineDisabled) return
+
+    var parentContext: CodegenContext<*>? = context.parentContext
+    while (parentContext != null) {
+        if (parentContext.isInlineMethodContext) {
+            //just init default one to one mapping
+            codegen.orCreateSourceMapper
+            break
+        }
+        parentContext = parentContext.parentContext
     }
 }

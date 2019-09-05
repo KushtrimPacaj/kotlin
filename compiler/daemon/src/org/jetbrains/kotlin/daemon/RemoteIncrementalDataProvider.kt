@@ -1,18 +1,23 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.daemon
 
 import org.jetbrains.kotlin.daemon.common.CompilerCallbackServicesFacade
 import org.jetbrains.kotlin.daemon.common.Profiler
+import org.jetbrains.kotlin.daemon.common.withMeasure
 import org.jetbrains.kotlin.incremental.js.IncrementalDataProvider
+import org.jetbrains.kotlin.incremental.js.IrTranslationResultValue
 import org.jetbrains.kotlin.incremental.js.TranslationResultValue
 import java.io.File
 
 class RemoteIncrementalDataProvider(val facade: CompilerCallbackServicesFacade, val rpcProfiler: Profiler) :
     IncrementalDataProvider {
+    override val serializedIrFiles: Map<File, IrTranslationResultValue>
+        get() = TODO("not implemented") //To change initializer of created properties use File | Settings | File Templates.
+
     override val headerMetadata: ByteArray
         get() = rpcProfiler.withMeasure(this) {
             facade.incrementalDataProvider_getHeaderMetadata()
@@ -31,5 +36,15 @@ class RemoteIncrementalDataProvider(val facade: CompilerCallbackServicesFacade, 
     override val metadataVersion: IntArray
         get() = rpcProfiler.withMeasure(this) {
             facade.incrementalDataProvider_getMetadataVersion()
+        }
+
+    override val packageMetadata: Map<String, ByteArray>
+        get() = rpcProfiler.withMeasure(this) {
+            val result = mutableMapOf<String, ByteArray>()
+            facade.incrementalDataProvider_getPackageMetadata().forEach {
+                val prev = result.put(it.packageName, it.metadata)
+                check(prev == null) { "packageMetadata: duplicated entry for package `${it.packageName}`" }
+            }
+            result
         }
 }

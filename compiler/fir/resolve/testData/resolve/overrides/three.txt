@@ -1,32 +1,38 @@
 FILE: three.kt
     public abstract class A : R|kotlin/Any| {
-        public constructor(): super<R|kotlin/Any|>()
+        public constructor(): R|A| {
+            super<R|kotlin/Any|>()
+        }
 
         public final fun foo(): R|kotlin/Unit| {
         }
 
     }
-    public abstract interface Y {
+    public abstract interface Y : R|kotlin/Any| {
         public open fun baz(): R|kotlin/Unit| {
         }
 
     }
     public open class B : R|A|, R|Y| {
-        public constructor(): super<R|A|>()
+        public constructor(): R|B| {
+            super<R|A|>()
+        }
 
         public final fun bar(): R|kotlin/Unit| {
-            R|/A.foo|()
-            R|/Y.baz|()
+            this@R|/A|.R|/A.foo|()
+            this@R|/Y|.R|/Y.baz|()
         }
 
     }
     public final class C : R|B| {
-        public constructor(): super<R|B|>()
+        public constructor(): R|C| {
+            super<R|B|>()
+        }
 
         public final fun test(): R|kotlin/Unit| {
-            R|/A.foo|()
-            R|/B.bar|()
-            R|/Y.baz|()
+            this@R|/A|.R|/A.foo|()
+            this@R|/B|.R|/B.bar|()
+            this@R|/Y|.R|/Y.baz|()
         }
 
     }

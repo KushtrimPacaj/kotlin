@@ -34,8 +34,8 @@ public class PathManager {
         return getAndroidSdkRoot() + "/platforms";
     }
 
-    public String getAndroidEmulatorRoot() {
-        String androidEmulatorRoot = getAndroidSdkRoot() + "/emulator";
+    public String getAndroidAvdRoot() {
+        String androidEmulatorRoot = getAndroidSdkRoot() + "/emulatoravd";
         new File(androidEmulatorRoot).mkdirs();
         return androidEmulatorRoot;
     }
@@ -48,16 +48,16 @@ public class PathManager {
         return getAndroidSdkRoot() + "/tools";
     }
 
+    public String getEmulatorFolderInAndroidSdk() {
+        return getAndroidSdkRoot() + "/emulator";
+    }
+
     public String getBuildToolsFolderInAndroidSdk() {
         return getAndroidSdkRoot() + "/build-tools";
     }
 
     public String getOutputForCompiledFiles(int index) {
         return tmpFolder + "/libs/libtest" + index;
-    }
-
-    public String getLibsFolderInAndroidTestedModuleTmpFolder() {
-        return tmpFolder + "/tested-module/libs";
     }
 
     public String getLibsFolderInAndroidTmpFolder() {

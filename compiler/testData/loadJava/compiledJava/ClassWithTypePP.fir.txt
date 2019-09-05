@@ -1,2 +1,4 @@
-<P, Q> public final class ClassWithTypePP : R|java/lang/Object| {
+public final class ClassWithTypePP<P, Q : R|P|, R|P|> : R|kotlin/Any| {
+    public constructor<P, Q : R|P|, R|P|>(): R|test/ClassWithTypePP<P, Q>|
+
 }

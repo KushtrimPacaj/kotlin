@@ -7,6 +7,7 @@ plugins {
 }
 
 val robolectricClasspath by configurations.creating
+val androidExtensionsRuntimeForTests by configurations.creating
 
 dependencies {
     testCompileOnly(intellijCoreDep()) { includeJars("intellij-core") }
@@ -34,7 +35,9 @@ dependencies {
     robolectricClasspath("org.robolectric:android-all:4.4_r1-robolectric-1")
     robolectricClasspath(project(":kotlin-android-extensions-runtime")) { isTransitive = false }
 
-    embeddedComponents(project(":kotlin-android-extensions-runtime")) { isTransitive = false }
+    embedded(project(":kotlin-android-extensions-runtime")) { isTransitive = false }
+
+    androidExtensionsRuntimeForTests(project(":kotlin-android-extensions-runtime"))  { isTransitive = false }
 }
 
 sourceSets {
@@ -42,24 +45,17 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-runtimeJar {
-    fromEmbeddedComponents()
-}
+runtimeJar()
 
-dist()
-
-ideaPlugin()
-
-testsJar {}
-
-evaluationDependsOn(":kotlin-android-extensions-runtime")
+testsJar()
 
 projectTest {
-    environment("ANDROID_EXTENSIONS_RUNTIME_CLASSES", getSourceSetsFrom(":kotlin-android-extensions-runtime")["main"].output.classesDirs.asPath)
+    dependsOn(androidExtensionsRuntimeForTests)
     dependsOn(":dist")
     workingDir = rootDir
     useAndroidJar()
     doFirst {
+        systemProperty("androidExtensionsRuntime.classpath", androidExtensionsRuntimeForTests.asPath)
         val androidPluginPath = File(intellijRootDir(), "plugins/android").canonicalPath
         systemProperty("ideaSdk.androidPlugin.path", androidPluginPath)
         systemProperty("robolectric.classpath", robolectricClasspath.asPath)

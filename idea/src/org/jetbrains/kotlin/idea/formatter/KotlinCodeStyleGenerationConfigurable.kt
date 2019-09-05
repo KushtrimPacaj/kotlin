@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.formatter
@@ -9,6 +9,7 @@ import com.intellij.application.options.codeStyle.CommenterForm
 import com.intellij.openapi.application.ApplicationBundle
 import com.intellij.psi.codeStyle.CodeStyleConfigurable
 import com.intellij.psi.codeStyle.CodeStyleSettings
+import com.intellij.psi.codeStyle.CodeStyleSettingsProvider
 import com.intellij.psi.codeStyle.DisplayPriority
 import com.intellij.ui.IdeBorderFactory
 import com.intellij.util.ui.JBInsets
@@ -17,7 +18,7 @@ import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 
-class KotlinGenerationSettingsProvider : CodeStyleSettingsProviderCompat() {
+class KotlinGenerationSettingsProvider : CodeStyleSettingsProvider() {
     override fun createConfigurable(settings: CodeStyleSettings, modelSettings: CodeStyleSettings): CodeStyleConfigurable {
         return KotlinCodeStyleGenerationConfigurable(settings)
     }

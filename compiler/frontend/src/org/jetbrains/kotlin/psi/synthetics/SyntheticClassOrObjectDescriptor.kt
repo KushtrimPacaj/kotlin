@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.psi.synthetics
@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.storage.StorageManager
 import org.jetbrains.kotlin.types.AbstractClassTypeConstructor
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeConstructor
+import org.jetbrains.kotlin.types.checker.KotlinTypeRefiner
 
 /*
  * This class introduces all attributes that are needed for synthetic classes/object so far.
@@ -44,6 +45,7 @@ class SyntheticClassOrObjectDescriptor(
     outerScope: LexicalScope,
     private val modality: Modality,
     private val visibility: Visibility,
+    override val annotations: Annotations,
     constructorVisibility: Visibility,
     private val kind: ClassKind,
     private val isCompanionObject: Boolean
@@ -71,8 +73,6 @@ class SyntheticClassOrObjectDescriptor(
         this.typeParameters = typeParameters
     }
 
-    override val annotations: Annotations get() = Annotations.EMPTY
-
     override fun getModality() = modality
     override fun getVisibility() = visibility
     override fun getKind() = kind
@@ -89,7 +89,7 @@ class SyntheticClassOrObjectDescriptor(
     override fun getConstructors() = listOf(_unsubstitutedPrimaryConstructor()) + secondaryConstructors
     override fun getDeclaredTypeParameters() = typeParameters
     override fun getStaticScope() = MemberScope.Empty
-    override fun getUnsubstitutedMemberScope() = unsubstitutedMemberScope
+    override fun getUnsubstitutedMemberScope(kotlinTypeRefiner: KotlinTypeRefiner) = unsubstitutedMemberScope
     override fun getSealedSubclasses() = emptyList<ClassDescriptor>()
 
     init {
@@ -166,6 +166,7 @@ class SyntheticClassOrObjectDescriptor(
 
         override fun getPsiOrParent() = _parent.psiOrParent
         override fun getParent() = _parent.psiOrParent
+        @Suppress("USELESS_ELVIS")
         override fun getContainingKtFile() =
         // in theory `containingKtFile` is `@NotNull` but in practice EA-114080
             _parent.containingKtFile ?: throw IllegalStateException("containingKtFile was null for $_parent of ${_parent.javaClass}")

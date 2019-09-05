@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.quickfix
@@ -31,10 +31,10 @@ abstract class AbstractQuickFixMultiModuleTest : AbstractMultiModuleTest(), Quic
 
     fun doTest(dirPath: String) {
         setupMppProjectFromDirStructure(File(dirPath))
-        doQuickFixTest()
+        doQuickFixTest(dirPath)
     }
 
-    private fun doQuickFixTest() {
+    private fun doQuickFixTest(dirPath: String) {
         val actionFile = project.findFileWithCaret()
         val virtualFile = actionFile.virtualFile!!
         configureByExistingFile(virtualFile)
@@ -44,28 +44,43 @@ abstract class AbstractQuickFixMultiModuleTest : AbstractMultiModuleTest(), Quic
         enableInspectionTools(*inspections)
 
         CommandProcessor.getInstance().executeCommand(project, {
-            var expectedErrorMessage: String = ""
+            var expectedErrorMessage = ""
             try {
                 val actionHint = ActionHint.parse(actionFile, actionFileText)
                 val text = actionHint.expectedText
 
                 val actionShouldBeAvailable = actionHint.shouldPresent()
 
+                expectedErrorMessage = InTextDirectivesUtils.findListWithPrefixes(actionFileText, "// SHOULD_FAIL_WITH: ")
+                    .joinToString(separator = "\n")
+
+                TypeAccessibilityChecker.testLog = StringBuilder()
+                val log = try {
+                    AbstractQuickFixMultiFileTest.doAction(
+                        text, file, editor, actionShouldBeAvailable, actionFileName, this::availableActions, this::doHighlighting,
+                        InTextDirectivesUtils.isDirectiveDefined(actionFile.text, "// SHOULD_BE_AVAILABLE_AFTER_EXECUTION")
+                    )
+                    TypeAccessibilityChecker.testLog.toString()
+                } finally {
+                    TypeAccessibilityChecker.testLog = null
+                }
+
                 if (actionFile is KtFile) {
                     DirectiveBasedActionUtils.checkForUnexpectedErrors(actionFile)
                 }
 
-                expectedErrorMessage = InTextDirectivesUtils.findStringWithPrefixes(actionFileText, "// SHOULD_FAIL_WITH: ") ?: ""
-
-                AbstractQuickFixMultiFileTest.doAction(
-                    text, file, editor, actionShouldBeAvailable, actionFileName, this::availableActions, this::doHighlighting,
-                    InTextDirectivesUtils.isDirectiveDefined(actionFile.text, "// SHOULD_BE_AVAILABLE_AFTER_EXECUTION")
-                )
-
                 if (actionShouldBeAvailable) {
-                    compareToExpected()
+                    compareToExpected(dirPath)
                 }
+
                 UsefulTestCase.assertEmpty(expectedErrorMessage)
+                val logFile = File("${dirPath}log.log")
+                if (log.isNotEmpty()) {
+                    KotlinTestUtils.assertEqualsToFile(logFile, log)
+                } else {
+                    TestCase.assertFalse(logFile.exists())
+                }
+
             } catch (e: ComparisonFailure) {
                 throw e
             } catch (e: AssertionError) {
@@ -81,13 +96,13 @@ abstract class AbstractQuickFixMultiModuleTest : AbstractMultiModuleTest(), Quic
         }, "", "")
     }
 
-    private fun compareToExpected() {
-        val projectDirectory = File("$testDataPath${getTestName(true)}")
+    private fun compareToExpected(directory: String) {
+        val projectDirectory = File("${KotlinTestUtils.getHomeDirectory()}/$directory")
         val afterFiles = projectDirectory.walkTopDown().filter { it.path.endsWith(".after") }.toList()
 
         for (editedFile in project.allKotlinFiles()) {
             val afterFileInTmpProject = editedFile.containingDirectory?.findFile(editedFile.name + ".after") ?: continue
-            val afterFileInTestData = afterFiles.filter { it.name == afterFileInTmpProject.name } .single {
+            val afterFileInTestData = afterFiles.filter { it.name == afterFileInTmpProject.name }.single {
                 it.readText() == File(afterFileInTmpProject.virtualFile.path).readText()
             }
 

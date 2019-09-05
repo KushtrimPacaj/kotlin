@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.ir;
@@ -442,9 +442,24 @@ public class IrBlackBoxAgainstJavaCodegenTestGenerated extends AbstractIrBlackBo
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/boxAgainstJava/notNullAssertions"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.JVM_IR, true);
         }
 
+        @TestMetadata("callAssertions.kt")
+        public void testCallAssertions() throws Exception {
+            runTest("compiler/testData/codegen/boxAgainstJava/notNullAssertions/callAssertions.kt");
+        }
+
         @TestMetadata("delegation.kt")
         public void testDelegation() throws Exception {
             runTest("compiler/testData/codegen/boxAgainstJava/notNullAssertions/delegation.kt");
+        }
+
+        @TestMetadata("doGenerateParamAssertions.kt")
+        public void testDoGenerateParamAssertions() throws Exception {
+            runTest("compiler/testData/codegen/boxAgainstJava/notNullAssertions/doGenerateParamAssertions.kt");
+        }
+
+        @TestMetadata("noCallAssertions.kt")
+        public void testNoCallAssertions() throws Exception {
+            runTest("compiler/testData/codegen/boxAgainstJava/notNullAssertions/noCallAssertions.kt");
         }
 
         @TestMetadata("rightElvisOperand.kt")

@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.idea.debugger
 
+import com.intellij.debugger.engine.AsyncStackTraceProvider
 import com.intellij.debugger.engine.JavaValue
 import com.intellij.debugger.memory.utils.StackFrameItem
 import com.intellij.execution.process.ProcessOutputTypes
@@ -31,9 +32,7 @@ import java.lang.reflect.Modifier
 abstract class AbstractAsyncStackTraceTest : KotlinDebuggerTestBase() {
     private companion object {
         const val MARGIN = "    "
-
-        // Absent in 182, should be AsyncStackTraceProvider.EP.name
-        const val ASYNC_STACKTRACE_EP_NAME = "com.intellij.debugger.asyncStackTraceProvider"
+        val ASYNC_STACKTRACE_EP_NAME = AsyncStackTraceProvider.EP.name
     }
 
     protected fun doTest(path: String) {
@@ -62,7 +61,7 @@ abstract class AbstractAsyncStackTraceTest : KotlinDebuggerTestBase() {
             val frameProxy = this.frameProxy
             if (frameProxy != null) {
                 try {
-                    val stackTrace = asyncStackTraceProvider.getAsyncStackTrace(frameProxy, this)
+                    val stackTrace = asyncStackTraceProvider.getAsyncStackTraceSafe(frameProxy, this)
                     if (stackTrace != null && stackTrace.isNotEmpty()) {
                         print(renderAsyncStackTrace(stackTrace), ProcessOutputTypes.SYSTEM)
                     } else {
@@ -94,7 +93,7 @@ abstract class AbstractAsyncStackTraceTest : KotlinDebuggerTestBase() {
 
             @Suppress("UNCHECKED_CAST")
             val variablesField = item.javaClass.declaredFields.first { !Modifier.isStatic(it.modifiers) && it.type == List::class.java }
-            val variables = variablesField.getSafe(item) as? List<JavaValue>
+            @Suppress("UNCHECKED_CAST") val variables = variablesField.getSafe(item) as? List<JavaValue>
             if (variables != null) {
                 for (variable in variables) {
                     val descriptor = variable.descriptor

@@ -36,12 +36,16 @@ import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.getResolutionFacade
 import org.jetbrains.kotlin.idea.completion.smart.SmartCompletion
 import org.jetbrains.kotlin.idea.completion.smart.SmartCompletionSession
+import org.jetbrains.kotlin.idea.statistics.CompletionFUSCollector.completionStatsData
+import org.jetbrains.kotlin.idea.statistics.CompletionTypeStats
+import org.jetbrains.kotlin.idea.statistics.FileTypeStats
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.*
 import org.jetbrains.kotlin.resolve.bindingContextUtil.getReferenceTargets
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
+import kotlin.math.max
 
 var KtFile.doNotComplete: Boolean? by UserDataProperty(Key.create("DO_NOT_COMPLETE"))
 
@@ -71,7 +75,7 @@ class KotlinCompletionContributor : CompletionContributor() {
         context.replacementOffset = context.replacementOffset
 
         val offset = context.startOffset
-        val tokenBefore = psiFile.findElementAt(Math.max(0, offset - 1))
+        val tokenBefore = psiFile.findElementAt(max(0, offset - 1))
 
         if (offset > 0 && tokenBefore!!.node.elementType == KtTokens.REGULAR_STRING_PART && tokenBefore.text.startsWith(".")) {
             val prev = tokenBefore.parent.prevSibling
@@ -104,7 +108,7 @@ class KotlinCompletionContributor : CompletionContributor() {
                     ?: DEFAULT_DUMMY_IDENTIFIER
         }
 
-        val tokenAt = psiFile.findElementAt(Math.max(0, offset))
+        val tokenAt = psiFile.findElementAt(max(0, offset))
         if (tokenAt != null) {
             if (context.completionType == CompletionType.SMART && !isAtEndOfLine(offset, context.editor.document) /* do not use parent expression if we are at the end of line - it's probably parsed incorrectly */) {
                 var parent = tokenAt.parent
@@ -265,6 +269,20 @@ class KotlinCompletionContributor : CompletionContributor() {
             result: CompletionResultSet,
             lookupElementPostProcessor: ((LookupElement) -> LookupElement)? = null
     ) {
+        val name = parameters.originalFile.virtualFile?.name ?: "default.kts"
+        completionStatsData = completionStatsData?.copy(
+            completionType = when (parameters.completionType) {
+                CompletionType.BASIC -> CompletionTypeStats.BASIC
+                CompletionType.CLASS_NAME -> CompletionTypeStats.BASIC //there is no class name anymore actually
+                CompletionType.SMART -> CompletionTypeStats.SMART
+            },
+            fileType = when {
+                name.endsWith(".kt") -> FileTypeStats.KT
+                name.endsWith(".gradle.kts") -> FileTypeStats.GRADLEKTS
+                else -> FileTypeStats.KTS
+            },
+            invocationCount = parameters.invocationCount
+        )
         val position = parameters.position
         if (position.getNonStrictParentOfType<PsiComment>() != null) {
             // don't stop here, allow other contributors to run

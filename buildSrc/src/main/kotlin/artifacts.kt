@@ -3,20 +3,17 @@
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.Task
-import org.gradle.api.UnknownDomainObjectException
 import org.gradle.api.artifacts.ConfigurablePublishArtifact
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.file.DuplicatesStrategy
-import org.gradle.api.internal.artifacts.publish.ArchivePublishArtifact
 import org.gradle.api.plugins.BasePluginConvention
-import org.gradle.api.tasks.AbstractCopyTask
-import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.Upload
 import org.gradle.api.tasks.javadoc.Javadoc
 import org.gradle.jvm.tasks.Jar
 import org.gradle.kotlin.dsl.*
-import java.io.File
 
 
 private const val MAGIC_DO_NOT_CHANGE_TEST_JAR_TASK_NAME = "testJar"
@@ -50,11 +47,11 @@ fun Project.removeArtifacts(configuration: Configuration, task: Task) {
 }
 
 fun Project.noDefaultJar() {
-    tasks.findByName("jar")?.let { defaultJarTask ->
-        defaultJarTask.enabled = false
-        defaultJarTask.actions = emptyList()
+    tasks.named("jar").configure {
+        enabled = false
+        actions = emptyList()
         configurations.forEach { cfg ->
-            removeArtifacts(cfg, defaultJarTask)
+            removeArtifacts(cfg, this)
         }
     }
 }
@@ -67,39 +64,54 @@ fun Project.runtimeJarArtifactBy(task: Task, artifactRef: Any, body: Configurabl
     }
 }
 
-fun <T : Jar> Project.runtimeJar(task: T, body: T.() -> Unit = {}): T {
-    extra["runtimeJarTask"] = task
-    tasks.findByName("jar")?.let { defaultJarTask ->
-        removeArtifacts(configurations.getOrCreate("archives"), defaultJarTask)
+fun <T : Jar> Project.runtimeJar(task: TaskProvider<T>, body: T.() -> Unit = {}): TaskProvider<T> {
+    tasks.named<Jar>("jar").configure {
+        removeArtifacts(configurations.getOrCreate("archives"), this)
     }
-    return task.apply {
+    task.configure {
+        configurations.findByName("embedded")?.let { embedded ->
+            dependsOn(embedded)
+            from {
+                embedded.map(::zipTree)
+            }
+        }
         setupPublicJar(project.the<BasePluginConvention>().archivesBaseName)
         setDuplicatesStrategy(DuplicatesStrategy.EXCLUDE)
         body()
         project.runtimeJarArtifactBy(this, this)
     }
+    return task
 }
 
-fun Project.runtimeJar(body: Jar.() -> Unit = {}): Jar = runtimeJar(getOrCreateTask("jar", body), { })
+fun Project.runtimeJar(body: Jar.() -> Unit = {}): TaskProvider<Jar> = runtimeJar(getOrCreateTask("jar", body), { })
 
-fun Project.sourcesJar(sourceSet: String? = "main", body: Jar.() -> Unit = {}): Jar =
-    getOrCreateTask("sourcesJar") {
-        setDuplicatesStrategy(DuplicatesStrategy.EXCLUDE)
-        classifier = "sources"
-        try {
-            if (sourceSet != null) {
-                project.pluginManager.withPlugin("java-base") {
-                    from(project.javaPluginConvention().sourceSets[sourceSet].allSource)
-                }
-            }
-        } catch (e: UnknownDomainObjectException) {
-            // skip default sources location
+fun Project.sourcesJar(body: Jar.() -> Unit = {}): TaskProvider<Jar> {
+    val task = tasks.register<Jar>("sourcesJar") {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        archiveClassifier.set("sources")
+
+        from(project.mainSourceSet.allSource)
+
+        project.configurations.findByName("embedded")?.let { embedded ->
+            from(provider {
+                embedded.resolvedConfiguration
+                    .resolvedArtifacts
+                    .map { it.id.componentIdentifier }
+                    .filterIsInstance<ProjectComponentIdentifier>()
+                    .map { project(it.projectPath).mainSourceSet.allSource }
+            })
         }
+
         body()
-        project.addArtifact("archives", this, this)
     }
 
-fun Project.javadocJar(body: Jar.() -> Unit = {}): Jar = getOrCreateTask("javadocJar") {
+    addArtifact("archives", task)
+    addArtifact("sources", task)
+
+    return task
+}
+
+fun Project.javadocJar(body: Jar.() -> Unit = {}): TaskProvider<Jar> = getOrCreateTask("javadocJar") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     classifier = "javadoc"
     tasks.findByName("javadoc")?.let { it as Javadoc }?.takeIf { it.enabled }?.let {
@@ -134,57 +146,6 @@ fun Project.publish(body: Upload.() -> Unit = {}): Upload {
     }
 }
 
-fun Project.ideaPlugin(subdir: String = "lib", body: AbstractCopyTask.() -> Unit): Copy {
-    val thisProject = this
-    val pluginTask = task<Copy>("ideaPlugin") {
-        body()
-        into(File(rootProject.extra["ideaPluginDir"].toString(), subdir).path)
-        rename("-${java.util.regex.Pattern.quote(thisProject.version.toString())}", "")
-    }
-
-    task("idea-plugin") {
-        dependsOn(pluginTask)
-    }
-
-    return pluginTask
-}
-
-fun Project.ideaPlugin(subdir: String = "lib"): Copy = ideaPlugin(subdir) {
-    runtimeJarTaskIfExists()?.let {
-        from(it)
-    }
-}
-
-fun Project.dist(
-    targetDir: File? = null,
-    targetName: String? = null,
-    fromTask: Task? = null,
-    body: AbstractCopyTask.() -> Unit = {}
-): AbstractCopyTask {
-    val distJarCfg = configurations.getOrCreate("distJar")
-    val distLibDir: File by rootProject.extra
-    val distJarName = targetName ?: (the<BasePluginConvention>().archivesBaseName + ".jar")
-    val thisProject = this
-
-    return task<Copy>("dist") {
-        body()
-        (fromTask ?: runtimeJarTaskIfExists())?.let {
-            from(it)
-            if (targetName != null) {
-                rename(it.outputs.files.singleFile.name, targetName)
-            }
-        }
-        rename("-${java.util.regex.Pattern.quote(thisProject.version.toString())}", "")
-        into(targetDir ?: distLibDir)
-        project.addArtifact(distJarCfg, this, File(targetDir ?: distLibDir, distJarName))
-    }
-}
-
-private fun Project.runtimeJarTaskIfExists(): Task? =
-    if (extra.has("runtimeJarTask")) extra["runtimeJarTask"] as Task
-    else tasks.findByName("jar")
-
-
 fun ConfigurationContainer.getOrCreate(name: String): Configuration = findByName(name) ?: create(name)
 
 fun Jar.setupPublicJar(baseName: String, classifier: String = "") {
@@ -208,6 +169,11 @@ fun Project.addArtifact(configuration: Configuration, task: Task, artifactRef: A
 
 fun Project.addArtifact(configurationName: String, task: Task, artifactRef: Any, body: ConfigurablePublishArtifact.() -> Unit = {}) =
     addArtifact(configurations.getOrCreate(configurationName), task, artifactRef, body)
+
+fun <T : Task> Project.addArtifact(configurationName: String, task: TaskProvider<T>, body: ConfigurablePublishArtifact.() -> Unit = {}) {
+    configurations.maybeCreate(configurationName)
+    artifacts.add(configurationName, task, body)
+}
 
 fun Project.cleanArtifacts() {
     configurations["archives"].artifacts.let { artifacts ->

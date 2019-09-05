@@ -8,45 +8,34 @@ plugins {
     id("jps-compatible")
 }
 
-// You can run Gradle with "-Pkotlin.build.proguard=true" to enable ProGuard run on the jar (on TeamCity, ProGuard always runs)
-val shrink =
-    findProperty("kotlin.build.proguard")?.toString()?.toBoolean()
-        ?: hasProperty("teamcity")
-
 val jarBaseName = property("archivesBaseName") as String
 
-val fatJarContents by configurations.creating
 val proguardLibraryJars by configurations.creating
-val fatJar by configurations.creating
-val default by configurations
-val runtimeJar by configurations.creating
-
-default.apply {
-    extendsFrom(runtimeJar)
-}
-
-val projectsDependencies = listOf(
-    ":kotlin-scripting-common",
-    ":kotlin-scripting-jvm",
-    ":kotlin-script-util",
-    ":kotlin-script-runtime")
 
 dependencies {
-    projectsDependencies.forEach {
-        compileOnly(project(it))
-        fatJarContents(project(it)) { isTransitive = false }
-        testCompile(project(it))
-    }
     compileOnly("org.apache.ivy:ivy:2.4.0")
-    runtime(project(":kotlin-compiler"))
+    compileOnly(project(":compiler:cli-common"))
+    compileOnly(project(":kotlin-scripting-jvm-host"))
+    compileOnly(project(":kotlin-script-util"))
+    testCompile(project(":kotlin-scripting-jvm-host"))
+    testCompile(project(":kotlin-script-util"))
+    runtime(project(":kotlin-compiler-embeddable"))
+    runtime(project(":kotlin-scripting-compiler-embeddable"))
+    runtime(project(":kotlin-scripting-jvm-host-embeddable"))
     runtime(project(":kotlin-reflect"))
-    fatJarContents("org.apache.ivy:ivy:2.4.0")
-    fatJarContents(commonDep("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
+    embedded(project(":kotlin-scripting-common")) { isTransitive = false }
+    embedded(project(":kotlin-scripting-jvm")) { isTransitive = false }
+    embedded(project(":kotlin-scripting-jvm-host")) { isTransitive = false }
+    embedded(project(":kotlin-script-util")) { isTransitive = false }
+    embedded(project(":kotlin-script-runtime")) { isTransitive = false }
+    embedded("org.apache.ivy:ivy:2.4.0")
+    embedded(commonDep("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
     proguardLibraryJars(files(firstFromJavaHomeThatExists("jre/lib/rt.jar", "../Classes/classes.jar"),
                               firstFromJavaHomeThatExists("jre/lib/jsse.jar", "../Classes/jsse.jar"),
                               toolsJar()))
     proguardLibraryJars(kotlinStdlib())
     proguardLibraryJars(project(":kotlin-reflect"))
+    proguardLibraryJars(project(":kotlin-compiler"))
 }
 
 sourceSets {
@@ -62,17 +51,21 @@ val mainKtsRootPackage = "org.jetbrains.kotlin.mainKts"
 val mainKtsRelocatedDepsRootPackage = "$mainKtsRootPackage.relocatedDeps"
 
 val packJar by task<ShadowJar> {
-    configurations = listOf(fatJar)
+    configurations = emptyList()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    destinationDir = File(buildDir, "libs")
-
-    setupPublicJar(project.the<BasePluginConvention>().archivesBaseName, "before-proguard")
+    destinationDirectory.set(File(buildDir, "libs"))
+    archiveClassifier.set("before-proguard")
 
     from(mainSourceSet.output)
-    from(fatJarContents)
+    from(project.configurations.embedded)
 
-    packagesToRelocate.forEach {
-        relocate(it, "$mainKtsRelocatedDepsRootPackage.$it")
+    // don't add this files to resources classpath to avoid IDE exceptions on kotlin project
+    from("jar-resources")
+
+    if (kotlinBuildProperties.relocation) {
+        packagesToRelocate.forEach {
+            relocate(it, "$mainKtsRelocatedDepsRootPackage.$it")
+        }
     }
 }
 
@@ -80,29 +73,30 @@ val proguard by task<ProGuardTask> {
     dependsOn(packJar)
     configuration("main-kts.pro")
 
-    injars(mapOf("filter" to "!META-INF/versions/**"), packJar.outputs.files)
+    injars(mapOf("filter" to "!META-INF/versions/**"), packJar.get().outputs.files)
 
     val outputJar = fileFrom(buildDir, "libs", "$jarBaseName-$version-after-proguard.jar")
 
     outjars(outputJar)
 
-    inputs.files(packJar.outputs.files.singleFile)
+    inputs.files(packJar.get().outputs.files.singleFile)
     outputs.file(outputJar)
 
     libraryjars(mapOf("filter" to "!META-INF/versions/**"), proguardLibraryJars)
 }
 
-val pack = if (shrink) proguard else packJar
-
-runtimeJarArtifactBy(pack, pack.outputs.files.singleFile) {
-    name = jarBaseName
-    classifier = ""
+val resultJar by task<Jar> {
+    val pack = if (kotlinBuildProperties.proguard) proguard else packJar
+    dependsOn(pack)
+    setupPublicJar(jarBaseName)
+    from {
+        zipTree(pack.get().outputs.files.singleFile)
+    }
 }
 
-dist(
-    targetName = "$name.jar",
-    fromTask = pack
-)
+addArtifact("runtime", resultJar)
+addArtifact("archives", resultJar)
 
 sourcesJar()
+
 javadocJar()

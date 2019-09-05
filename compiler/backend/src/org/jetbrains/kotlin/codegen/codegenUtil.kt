@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen
@@ -8,21 +8,22 @@ package org.jetbrains.kotlin.codegen
 import com.intellij.psi.PsiElement
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
-import org.jetbrains.kotlin.codegen.binding.CodegenBinding
 import org.jetbrains.kotlin.builtins.UnsignedTypes
+import org.jetbrains.kotlin.codegen.binding.CodegenBinding
 import org.jetbrains.kotlin.codegen.context.CodegenContext
 import org.jetbrains.kotlin.codegen.context.FieldOwnerContext
 import org.jetbrains.kotlin.codegen.context.MultifileClassFacadeContext
-import org.jetbrains.kotlin.codegen.context.PackageContext
 import org.jetbrains.kotlin.codegen.coroutines.continuationAsmType
 import org.jetbrains.kotlin.codegen.coroutines.unwrapInitialDescriptorForSuspendFunction
 import org.jetbrains.kotlin.codegen.inline.NUMBERED_FUNCTION_PREFIX
 import org.jetbrains.kotlin.codegen.inline.ReificationArgument
 import org.jetbrains.kotlin.codegen.intrinsics.TypeIntrinsics
 import org.jetbrains.kotlin.codegen.optimization.common.asSequence
-import org.jetbrains.kotlin.codegen.signature.JvmSignatureWriter
 import org.jetbrains.kotlin.codegen.state.GenerationState
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper
+import org.jetbrains.kotlin.config.ApiVersion
+import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.config.isReleaseCoroutines
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.deserialization.PLATFORM_DEPENDENT_ANNOTATION_FQ_NAME
 import org.jetbrains.kotlin.descriptors.impl.ValueParameterDescriptorImpl
@@ -100,16 +101,16 @@ fun generateAsCast(
     kotlinType: KotlinType,
     asmType: Type,
     isSafe: Boolean,
-    isReleaseCoroutines: Boolean
+    languageVersionSettings: LanguageVersionSettings
 ) {
     if (!isSafe) {
         if (!TypeUtils.isNullableType(kotlinType)) {
-            generateNullCheckForNonSafeAs(v, kotlinType)
+            generateNullCheckForNonSafeAs(v, kotlinType, languageVersionSettings)
         }
     } else {
         with(v) {
             dup()
-            TypeIntrinsics.instanceOf(v, kotlinType, asmType, isReleaseCoroutines)
+            TypeIntrinsics.instanceOf(v, kotlinType, asmType, languageVersionSettings.isReleaseCoroutines())
             val ok = Label()
             ifne(ok)
             pop()
@@ -123,15 +124,19 @@ fun generateAsCast(
 
 private fun generateNullCheckForNonSafeAs(
     v: InstructionAdapter,
-    type: KotlinType
+    type: KotlinType,
+    languageVersionSettings: LanguageVersionSettings
 ) {
     with(v) {
         dup()
         val nonnull = Label()
         ifnonnull(nonnull)
+        val exceptionClass =
+            if (languageVersionSettings.apiVersion >= ApiVersion.KOTLIN_1_4) "java/lang/NullPointerException"
+            else "kotlin/TypeCastException"
         AsmUtil.genThrow(
             v,
-            "kotlin/TypeCastException",
+            exceptionClass,
             "null cannot be cast to non-null type " + DescriptorRenderer.FQ_NAMES_IN_TYPES.renderType(type)
         )
         mark(nonnull)
@@ -170,13 +175,13 @@ fun populateCompanionBackingFieldNamesToOuterContextIfNeeded(
 // so that we'd generate the necessary accessor for its constructor afterwards
 fun sortTopLevelClassesAndPrepareContextForSealedClasses(
     classOrObjects: List<KtClassOrObject>,
-    packagePartContext: PackageContext,
+    context: CodegenContext<*>,
     state: GenerationState
 ): List<KtClassOrObject> {
     fun prepareContextIfNeeded(descriptor: ClassDescriptor?) {
         if (DescriptorUtils.isSealedClass(descriptor)) {
             // save context for sealed class
-            packagePartContext.intoClass(descriptor!!, OwnerKind.IMPLEMENTATION, state)
+            context.intoClass(descriptor!!, OwnerKind.IMPLEMENTATION, state)
         }
     }
 
@@ -315,15 +320,16 @@ fun MemberDescriptor.isToArrayFromCollection(): Boolean {
 fun FqName.topLevelClassInternalName() = JvmClassName.byClassId(ClassId(parent(), shortName())).internalName
 fun FqName.topLevelClassAsmType(): Type = Type.getObjectType(topLevelClassInternalName())
 
-fun initializeVariablesForDestructuredLambdaParameters(codegen: ExpressionCodegen, valueParameters: List<ValueParameterDescriptor>) {
+fun initializeVariablesForDestructuredLambdaParameters(codegen: ExpressionCodegen, valueParameters: List<ValueParameterDescriptor>, endLabel: Label? = null) {
     // Do not write line numbers until destructuring happens
     // (otherwise destructuring variables will be uninitialized in the beginning of lambda)
     codegen.runWithShouldMarkLineNumbers(false) {
         for (parameterDescriptor in valueParameters) {
             if (parameterDescriptor !is ValueParameterDescriptorImpl.WithDestructuringDeclaration) continue
 
-            for (entry in parameterDescriptor.destructuringVariables.filterOutDescriptorsWithSpecialNames()) {
-                codegen.myFrameMap.enter(entry, codegen.typeMapper.mapType(entry.type))
+            val variables = parameterDescriptor.destructuringVariables.filterOutDescriptorsWithSpecialNames()
+            val indices = variables.map {
+                codegen.myFrameMap.enter(it, codegen.typeMapper.mapType(it.type))
             }
 
             val destructuringDeclaration =
@@ -335,6 +341,21 @@ fun initializeVariablesForDestructuredLambdaParameters(codegen: ExpressionCodege
                 TransientReceiver(parameterDescriptor.type),
                 codegen.findLocalOrCapturedValue(parameterDescriptor) ?: error("Local var not found for parameter $parameterDescriptor")
             )
+
+            if (endLabel != null) {
+                val label = Label()
+                codegen.v.mark(label)
+                for ((index, entry) in indices.zip(variables)) {
+                    codegen.v.visitLocalVariable(
+                        entry.name.asString(),
+                        codegen.typeMapper.mapType(entry.type).descriptor,
+                        null,
+                        label,
+                        endLabel,
+                        index
+                    )
+                }
+            }
         }
     }
 }

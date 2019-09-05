@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.fir.resolve.transformers
@@ -13,7 +13,7 @@ import org.jetbrains.kotlin.fir.resolve.FirSymbolProvider
 import org.jetbrains.kotlin.fir.resolve.lookupSuperTypes
 import org.jetbrains.kotlin.fir.scopes.FirPosition
 import org.jetbrains.kotlin.fir.scopes.addImportingScopes
-import org.jetbrains.kotlin.fir.scopes.impl.*
+import org.jetbrains.kotlin.fir.scopes.impl.FirNestedClassifierScope
 import org.jetbrains.kotlin.fir.types.ConeClassLikeType
 import org.jetbrains.kotlin.fir.types.FirResolvedTypeRef
 import org.jetbrains.kotlin.fir.types.FirTypeRef
@@ -23,13 +23,15 @@ import org.jetbrains.kotlin.fir.visitors.CompositeTransformResult
 import org.jetbrains.kotlin.fir.visitors.compose
 import org.jetbrains.kotlin.name.ClassId
 
-class FirSupertypeResolverTransformer : FirAbstractTreeTransformer() {
-    private lateinit var firSession: FirSession
+class FirSupertypeResolverTransformer : FirAbstractTreeTransformer(phase = FirResolvePhase.SUPER_TYPES) {
+    override lateinit var session: FirSession
     private val currentlyComputing: MutableSet<ClassId> = mutableSetOf()
     private val fullyComputed: MutableSet<ClassId> = mutableSetOf()
+    private lateinit var file: FirFile
 
     override fun transformFile(file: FirFile, data: Nothing?): CompositeTransformResult<FirFile> {
-        firSession = file.fileSession
+        session = file.fileSession
+        this.file = file
         return super.transformFile(file, data)
     }
 
@@ -42,7 +44,8 @@ class FirSupertypeResolverTransformer : FirAbstractTreeTransformer() {
 
 
     override fun transformTypeAlias(typeAlias: FirTypeAlias, data: Nothing?): CompositeTransformResult<FirDeclaration> {
-        return resolveSupertypesOrExpansions(typeAlias).compose()
+        val result = resolveSupertypesOrExpansions(typeAlias)
+        return result.compose()
     }
 
     // This and transformProperty functions are required to forbid supertype resolving for local classes
@@ -57,26 +60,25 @@ class FirSupertypeResolverTransformer : FirAbstractTreeTransformer() {
         return property.compose()
     }
 
-    private fun resolveSupertypesOrExpansions(classLikeDeclaration: FirClassLikeDeclaration): FirDeclaration {
+    private fun resolveSupertypesOrExpansions(classLikeDeclaration: FirClassLikeDeclaration<*>): FirDeclaration {
         val classId = classLikeDeclaration.symbol.classId
 
         if (classId in fullyComputed) return classLikeDeclaration
 
-        val firFile = firSession.getService(FirProvider::class).getFirClassifierContainerFile(classId)
-
-        val visitor = ResolveSuperTypesTask(firSession, classId, firFile, currentlyComputing, fullyComputed)
-        firFile.accept(visitor, null).single
+        val visitor = ResolveSuperTypesTask(session, classId, file, currentlyComputing, fullyComputed, classLikeDeclaration)
+        file.accept(visitor, null).single
 
         return visitor.resultingClass
     }
 
     private class ResolveSuperTypesTask(
-        private val session: FirSession,
+        override val session: FirSession,
         private val requestedClassId: ClassId,
         file: FirFile,
         private val currentlyComputing: MutableSet<ClassId>,
-        private val fullyComputed: MutableSet<ClassId>
-    ) : FirAbstractTreeTransformerWithSuperTypes(reversedScopePriority = true) {
+        private val fullyComputed: MutableSet<ClassId>,
+        private val knownFirClassLikeDeclaration: FirClassLikeDeclaration<*>? = null
+    ) : FirAbstractTreeTransformerWithSuperTypes(phase = FirResolvePhase.SUPER_TYPES, reversedScopePriority = true) {
 
         lateinit var resultingClass: FirDeclaration
 
@@ -99,7 +101,7 @@ class FirSupertypeResolverTransformer : FirAbstractTreeTransformer() {
                 regularClass.replaceSupertypes(resultingTypeRefs)
             }
 
-            if (classId == requestedClassId) {
+            if (regularClass.matchesRequestedDeclaration()) {
                 resultingClass = transformedClass
                 return transformedClass.compose()
             }
@@ -107,10 +109,15 @@ class FirSupertypeResolverTransformer : FirAbstractTreeTransformer() {
             return resolveNestedClassesSupertypes(transformedClass, data)
         }
 
+        private fun FirClassLikeDeclaration<*>.matchesRequestedDeclaration(): Boolean {
+            if (knownFirClassLikeDeclaration != null) return knownFirClassLikeDeclaration == this
+            return symbol.classId == requestedClassId
+        }
+
         override fun transformTypeAlias(typeAlias: FirTypeAlias, data: Nothing?): CompositeTransformResult<FirDeclaration> {
             val classId = typeAlias.symbol.classId
             // nested type aliases
-            if (requestedClassId != classId || classId in fullyComputed) return typeAlias.compose()
+            if (classId in fullyComputed || !typeAlias.matchesRequestedDeclaration()) return typeAlias.compose()
 
             return withScopeCleanup {
                 typeAlias.addTypeParametersScope()
@@ -138,23 +145,26 @@ class FirSupertypeResolverTransformer : FirAbstractTreeTransformer() {
 
                 if (superTypeClassId.outerClasses().any(currentlyComputing::contains)) {
                     resultingTypeRefs.add(
-                        FirErrorTypeRefImpl(session, superTypeRef.psi, "Recursion detected: ${superTypeRef.render()}")
+                        FirErrorTypeRefImpl(superTypeRef.psi, "Recursion detected: ${superTypeRef.render()}")
                     )
 
                     continue
                 }
 
                 val sessionForSupertype = session.getService(FirSymbolProvider::class).getSessionForClass(superTypeClassId) ?: continue
-                val provider = sessionForSupertype.getService(FirProvider::class)
 
                 val firClassForSupertype =
                     sessionForSupertype
                         .getService(FirSymbolProvider::class)
                         .getClassLikeSymbolByFqName(superTypeClassId)
-                        ?.toFirClassLike() as? FirClass
+                        ?.toFirClassLike()
 
                 // TODO: this if is a temporary hack for built-in types (because we can't load file for them)
-                if (firClassForSupertype == null || firClassForSupertype.superTypeRefs.any { it !is FirResolvedTypeRef }) {
+                if (firClassForSupertype == null ||
+                    (firClassForSupertype is FirClass &&
+                            firClassForSupertype.superTypeRefs.any { it !is FirResolvedTypeRef })
+                ) {
+                    val provider = sessionForSupertype.getService(FirProvider::class)
                     val firForSuperClassFile = provider.getFirClassifierContainerFile(superTypeClassId)
 
                     ResolveSuperTypesTask(

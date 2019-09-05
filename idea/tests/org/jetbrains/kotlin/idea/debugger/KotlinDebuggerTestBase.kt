@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.debugger
@@ -42,9 +42,7 @@ import com.intellij.xdebugger.breakpoints.XLineBreakpointType
 import com.sun.jdi.request.StepRequest
 import org.jetbrains.java.debugger.breakpoints.properties.JavaBreakpointProperties
 import org.jetbrains.java.debugger.breakpoints.properties.JavaLineBreakpointProperties
-import org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinFieldBreakpoint
-import org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinFieldBreakpointType
-import org.jetbrains.kotlin.idea.debugger.breakpoints.KotlinLineBreakpointType
+import org.jetbrains.kotlin.idea.debugger.breakpoints.*
 import org.jetbrains.kotlin.idea.debugger.stepping.*
 import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
@@ -326,6 +324,9 @@ abstract class KotlinDebuggerTestBase : KotlinDebuggerTestCase() {
                     val condition = getPropertyFromComment(comment, "condition")
                     createLineBreakpoint(breakpointManager, file, lineIndex, ordinal, condition)
                 }
+                else if (comment.startsWith("//FunctionBreakpoint!")) {
+                    createFunctionBreakpoint(breakpointManager, file, lineIndex)
+                }
                 else {
                     throw AssertionError("Cannot create breakpoint at line ${lineIndex + 1}")
                 }
@@ -351,6 +352,14 @@ abstract class KotlinDebuggerTestBase : KotlinDebuggerTestCase() {
             }
         }
         return null
+    }
+
+    private fun createFunctionBreakpoint(breakpointManager: XBreakpointManager, file: PsiFile, lineIndex: Int) {
+        val breakpointType = findBreakpointType(KotlinFunctionBreakpointType::class.java)
+        val breakpoint = createBreakpointOfType(breakpointManager, breakpointType, lineIndex, file.virtualFile)
+        if (breakpoint is KotlinFunctionBreakpoint) {
+            println("FunctionBreakpoint created at ${file.virtualFile.name}:${lineIndex + 1}", ProcessOutputTypes.SYSTEM)
+        }
     }
 
     private fun createLineBreakpoint(

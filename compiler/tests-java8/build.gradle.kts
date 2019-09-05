@@ -6,11 +6,15 @@ plugins {
 }
 
 dependencies {
+    testCompile(project(":kotlin-scripting-compiler"))
     testCompile(projectTests(":compiler:tests-common"))
     testCompileOnly(intellijCoreDep()) { includeJars("intellij-core") }
     testCompile(projectTests(":generators:test-generator"))
     testRuntime(project(":kotlin-reflect"))
     testRuntime(intellijDep())
+    Platform[192].orHigher {
+        testRuntimeOnly(intellijPluginDep("java"))
+    }
 }
 
 sourceSets {
@@ -23,7 +27,7 @@ tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "1.8"
 }
 
-projectTest {
+projectTest(parallel = true) {
     executable = "${rootProject.extra["JDK_18"]!!}/bin/java"
     dependsOn(":dist")
     workingDir = rootDir

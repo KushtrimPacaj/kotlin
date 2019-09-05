@@ -1,13 +1,12 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.ClassLoweringPass
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
-import org.jetbrains.kotlin.backend.common.deepCopyWithWrappedDescriptors
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedClassConstructorDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedSimpleFunctionDescriptor
 import org.jetbrains.kotlin.backend.common.ir.copyTo
@@ -18,12 +17,10 @@ import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrConstructorImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrDelegatingConstructorCallImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrExpressionBodyImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrGetValueImpl
+import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
+import org.jetbrains.kotlin.ir.util.deepCopyWithSymbols
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_OVERLOADS_FQ_NAME
 
@@ -59,7 +56,7 @@ private class JvmOverloadsAnnotationLowering(val context: JvmBackendContext) : C
         val wrapperIrFunction = generateWrapperHeader(target, numDefaultParametersToExpect)
 
         val call = if (target is IrConstructor)
-            IrDelegatingConstructorCallImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, target.returnType, target.symbol, target.descriptor)
+            IrDelegatingConstructorCallImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.unitType, target.symbol, target.descriptor)
         else
             IrCallImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, target.returnType, target.symbol)
         call.dispatchReceiver = wrapperIrFunction.dispatchReceiverParameter?.let { dispatchReceiver ->
@@ -103,9 +100,13 @@ private class JvmOverloadsAnnotationLowering(val context: JvmBackendContext) : C
 
         }
 
-        wrapperIrFunction.body = IrExpressionBodyImpl(
-            UNDEFINED_OFFSET, UNDEFINED_OFFSET, call
-        )
+        wrapperIrFunction.body = if (target is IrConstructor) {
+            IrBlockBodyImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, listOf(call))
+        } else {
+            IrExpressionBodyImpl(
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET, call
+            )
+        }
 
         return wrapperIrFunction
     }
@@ -115,7 +116,7 @@ private class JvmOverloadsAnnotationLowering(val context: JvmBackendContext) : C
             is IrConstructor -> {
                 val descriptor = WrappedClassConstructorDescriptor(oldFunction.descriptor.annotations)
                 IrConstructorImpl(
-                    oldFunction.startOffset, oldFunction.endOffset,
+                    UNDEFINED_OFFSET, UNDEFINED_OFFSET,
                     JvmLoweredDeclarationOrigin.JVM_OVERLOADS_WRAPPER,
                     IrConstructorSymbolImpl(descriptor),
                     oldFunction.name,
@@ -131,7 +132,7 @@ private class JvmOverloadsAnnotationLowering(val context: JvmBackendContext) : C
             is IrSimpleFunction -> {
                 val descriptor = WrappedSimpleFunctionDescriptor(oldFunction.descriptor.annotations)
                 IrFunctionImpl(
-                    oldFunction.startOffset, oldFunction.endOffset,
+                    UNDEFINED_OFFSET, UNDEFINED_OFFSET,
                     JvmLoweredDeclarationOrigin.JVM_OVERLOADS_WRAPPER,
                     IrSimpleFunctionSymbolImpl(descriptor),
                     oldFunction.name,
@@ -150,7 +151,7 @@ private class JvmOverloadsAnnotationLowering(val context: JvmBackendContext) : C
         }
 
         res.parent = oldFunction.parent
-        res.annotations.addAll(oldFunction.annotations.map { it.deepCopyWithWrappedDescriptors(res) })
+        res.annotations.addAll(oldFunction.annotations.map { it.deepCopyWithSymbols(res) })
         res.copyTypeParametersFrom(oldFunction)
         res.dispatchReceiverParameter = oldFunction.dispatchReceiverParameter?.copyTo(res)
         res.extensionReceiverParameter = oldFunction.extensionReceiverParameter?.copyTo(res)

@@ -1,3 +1,4 @@
+// DONT_TARGET_EXACT_BACKEND: JS_IR
 // EXPECTED_REACHABLE_NODES: 1291
 
 class A {
@@ -11,6 +12,7 @@ class A {
         }
 }
 
+@JsExport
 val A.z: Int
     @JsName("getZ_") get() = 42
 

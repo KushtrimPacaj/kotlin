@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
@@ -8,14 +8,16 @@ package org.jetbrains.kotlin.backend.jvm.lower
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrConst
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrStringConcatenation
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrStringConcatenationImpl
 import org.jetbrains.kotlin.ir.types.*
+import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.resolve.constants.evaluate.evaluateBinary
@@ -46,18 +48,14 @@ class FoldConstantLowering(private val context: JvmBackendContext) : IrElementTr
         val operatorName: String
     )
 
+    @Suppress("unused")
     private data class PrimitiveType<T>(val name: String)
 
     companion object {
-        private val BYTE = PrimitiveType<Byte>("Byte")
-        private val SHORT = PrimitiveType<Short>("Short")
         private val INT = PrimitiveType<Int>("Int")
         private val LONG = PrimitiveType<Long>("Long")
         private val DOUBLE = PrimitiveType<Double>("Double")
         private val FLOAT = PrimitiveType<Float>("Float")
-        private val CHAR = PrimitiveType<Char>("Char")
-        private val BOOLEAN = PrimitiveType<Boolean>("Boolean")
-        private val STRING = PrimitiveType<String>("String")
 
         private val BINARY_OP_TO_EVALUATOR = HashMap<BinaryOp, Function2<Any?, Any?, Any>>()
 
@@ -146,7 +144,7 @@ class FoldConstantLowering(private val context: JvmBackendContext) : IrElementTr
 
     private fun tryFoldingBuiltinBinaryOps(call: IrCall): IrExpression {
         // Make sure that this is a IrBuiltIn
-        if (call.symbol.owner.origin != IrDeclarationOrigin.IR_BUILTINS_STUB)
+        if (call.symbol.owner.fqNameWhenAvailable?.parent() != IrBuiltIns.KOTLIN_INTERNAL_IR_FQN)
             return call
 
         val lhs = call.getValueArgument(0) as? IrConst<*> ?: return call
@@ -175,6 +173,26 @@ class FoldConstantLowering(private val context: JvmBackendContext) : IrElementTr
                     expression.dispatchReceiver == null && expression.valueArgumentsCount == 2 -> tryFoldingBuiltinBinaryOps(expression)
                     else -> expression
                 }
+            }
+
+            override fun visitStringConcatenation(expression: IrStringConcatenation): IrExpression {
+                expression.transformChildrenVoid(this)
+                val folded = mutableListOf<IrExpression>()
+                for (next in expression.arguments) {
+                    val last = folded.lastOrNull()
+                    when {
+                        next !is IrConst<*> -> folded += next
+                        last !is IrConst<*> -> folded += IrConstImpl.string(
+                            next.startOffset, next.endOffset, context.irBuiltIns.stringType, next.value.toString()
+                        )
+                        else -> folded[folded.size - 1] = IrConstImpl.string(
+                            last.startOffset, next.endOffset, context.irBuiltIns.stringType,
+                            last.value.toString() + next.value.toString()
+                        )
+                    }
+                }
+                return folded.singleOrNull() as? IrConst<*>
+                    ?: IrStringConcatenationImpl(expression.startOffset, expression.endOffset, expression.type, folded)
             }
         })
     }

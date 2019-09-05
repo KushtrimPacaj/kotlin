@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2017 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.types.expressions;
@@ -181,6 +181,16 @@ public abstract class ExpressionTypingVisitorDispatcher extends KtVisitor<Kotlin
                     if (result.getType() instanceof DeferredType) {
                         result = result.replaceType(((DeferredType) result.getType()).getDelegate());
                     }
+
+                    KotlinType refinedType =
+                            result.getType() != null
+                            ? components.kotlinTypeChecker.getKotlinTypeRefiner().refineType(result.getType())
+                            : null;
+
+                    if (refinedType != result.getType()) {
+                        result = result.replaceType(refinedType);
+                    }
+
                     context.trace.record(BindingContext.EXPRESSION_TYPE_INFO, expression, result);
                 }
                 catch (ReenteringLazyValueComputationException e) {

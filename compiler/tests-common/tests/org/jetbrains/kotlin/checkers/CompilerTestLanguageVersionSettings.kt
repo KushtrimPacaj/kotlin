@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.checkers
@@ -23,18 +23,19 @@ const val SKIP_METADATA_VERSION_CHECK = "SKIP_METADATA_VERSION_CHECK"
 const val ALLOW_RESULT_RETURN_TYPE = "ALLOW_RESULT_RETURN_TYPE"
 const val INHERIT_MULTIFILE_PARTS = "INHERIT_MULTIFILE_PARTS"
 const val SANITIZE_PARENTHESES = "SANITIZE_PARENTHESES"
+const val CONSTRAINT_SYSTEM_FOR_OVERLOAD_RESOLUTION = "CONSTRAINT_SYSTEM_FOR_OVERLOAD_RESOLUTION"
 
 data class CompilerTestLanguageVersionSettings(
         private val initialLanguageFeatures: Map<LanguageFeature, LanguageFeature.State>,
         override val apiVersion: ApiVersion,
         override val languageVersion: LanguageVersion,
-        private val analysisFlags: Map<AnalysisFlag<*>, Any?> = emptyMap()
+        val analysisFlags: Map<AnalysisFlag<*>, Any?> = emptyMap()
 ) : LanguageVersionSettings {
-    private val languageFeatures = specificFeaturesForTests() + initialLanguageFeatures
-    private val delegate = LanguageVersionSettingsImpl(languageVersion, apiVersion, emptyMap(), languageFeatures)
+    val extraLanguageFeatures = specificFeaturesForTests() + initialLanguageFeatures
+    private val delegate = LanguageVersionSettingsImpl(languageVersion, apiVersion, emptyMap(), extraLanguageFeatures)
 
     override fun getFeatureSupport(feature: LanguageFeature): LanguageFeature.State =
-            languageFeatures[feature] ?: delegate.getFeatureSupport(feature)
+            extraLanguageFeatures[feature] ?: delegate.getFeatureSupport(feature)
 
     override fun isPreRelease(): Boolean = KotlinCompilerVersion.isPreRelease()
 
@@ -64,15 +65,22 @@ fun parseLanguageVersionSettings(directives: Map<String, String>): CompilerTestL
         analysisFlag(AnalysisFlags.skipMetadataVersionCheck, if (SKIP_METADATA_VERSION_CHECK in directives) true else null),
         analysisFlag(AnalysisFlags.allowResultReturnType, if (ALLOW_RESULT_RETURN_TYPE in directives) true else null),
         analysisFlag(JvmAnalysisFlags.inheritMultifileParts, if (INHERIT_MULTIFILE_PARTS in directives) true else null),
-        analysisFlag(JvmAnalysisFlags.sanitizeParentheses, if (SANITIZE_PARENTHESES in directives) true else null)
+        analysisFlag(JvmAnalysisFlags.sanitizeParentheses, if (SANITIZE_PARENTHESES in directives) true else null),
+        analysisFlag(AnalysisFlags.constraintSystemForOverloadResolution, directives[CONSTRAINT_SYSTEM_FOR_OVERLOAD_RESOLUTION]?.let {
+            ConstraintSystemForOverloadResolutionMode.valueOf(it)
+        }),
+        analysisFlag(AnalysisFlags.explicitApiVersion, if (apiVersionString != null) true else null)
     )
 
     if (apiVersionString == null && languageFeaturesString == null && analysisFlags.isEmpty()) {
         return null
     }
 
-    val apiVersion = (if (apiVersionString != null) ApiVersion.parse(apiVersionString) else ApiVersion.LATEST_STABLE)
-        ?: error("Unknown API version: $apiVersionString")
+    val apiVersion = when (apiVersionString) {
+        null -> ApiVersion.LATEST_STABLE
+        "LATEST" -> ApiVersion.LATEST
+        else -> ApiVersion.parse(apiVersionString) ?: error("Unknown API version: $apiVersionString")
+    }
 
     val languageVersion = maxOf(LanguageVersion.LATEST_STABLE, LanguageVersion.fromVersionString(apiVersion.versionString)!!)
 

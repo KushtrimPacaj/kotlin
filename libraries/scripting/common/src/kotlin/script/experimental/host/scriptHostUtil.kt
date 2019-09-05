@@ -1,13 +1,12 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.script.experimental.host
 
 import java.io.File
-import java.io.IOError
-import java.io.IOException
+import java.io.Serializable
 import java.net.URL
 import kotlin.script.experimental.api.*
 
@@ -41,10 +40,14 @@ fun getMergedScriptText(script: SourceCode, configuration: ScriptCompilationConf
     }
 }
 
+abstract class FileBasedScriptSource() : ExternalSourceCode {
+    abstract val file: File
+}
+
 /**
  * The implementation of the SourceCode for a script located in a file
  */
-open class FileScriptSource(val file: File, private val preloadedText: String? = null) : ExternalSourceCode {
+open class FileScriptSource(override val file: File, private val preloadedText: String? = null) : FileBasedScriptSource(), Serializable {
     override val externalLocation: URL get() = file.toURI().toURL()
     override val text: String by lazy { preloadedText ?: file.readText() }
     override val name: String? get() = file.name
@@ -54,12 +57,17 @@ open class FileScriptSource(val file: File, private val preloadedText: String? =
         this === other || (other as? FileScriptSource)?.let { file.absolutePath == it.file.absolutePath && textSafe == it.textSafe } == true
 
     override fun hashCode(): Int = file.absolutePath.hashCode() + textSafe.hashCode() * 23
+
+    companion object {
+        @JvmStatic
+        private val serialVersionUID = 0L
+    }
 }
 
 /**
  * The implementation of the SourceCode for a script location pointed by the URL
  */
-open class UrlScriptSource(override val externalLocation: URL) : ExternalSourceCode {
+open class UrlScriptSource(override val externalLocation: URL) : ExternalSourceCode, Serializable {
     override val text: String by lazy { externalLocation.readText() }
     override val name: String? get() = externalLocation.file
     override val locationId: String? get() = externalLocation.toString()
@@ -68,6 +76,11 @@ open class UrlScriptSource(override val externalLocation: URL) : ExternalSourceC
         this === other || (other as? UrlScriptSource)?.let { externalLocation == it.externalLocation && textSafe == it.textSafe } == true
 
     override fun hashCode(): Int = externalLocation.hashCode() + textSafe.hashCode() * 17
+
+    companion object {
+        @JvmStatic
+        private val serialVersionUID = 0L
+    }
 }
 
 /**
@@ -78,7 +91,7 @@ fun File.toScriptSource(): SourceCode = FileScriptSource(this)
 /**
  * The implementation of the ScriptSource for a script in a String
  */
-open class StringScriptSource(val source: String, override val name: String? = null) : SourceCode {
+open class StringScriptSource(val source: String, override val name: String? = null) : SourceCode, Serializable {
 
     override val text: String get() = source
 
@@ -88,6 +101,11 @@ open class StringScriptSource(val source: String, override val name: String? = n
         this === other || (other as? StringScriptSource)?.let { text == it.text && name == it.name && locationId == it.locationId } == true
 
     override fun hashCode(): Int = text.hashCode() + name.hashCode() * 17 + locationId.hashCode() * 23
+
+    companion object {
+        @JvmStatic
+        private val serialVersionUID = 0L
+    }
 }
 
 /**

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.codeInsight;
@@ -49,9 +49,19 @@ public class MultiFileInspectionTestGenerated extends AbstractMultiFileInspectio
         runTest("idea/testData/multiFileInspections/mainInTwoModules/mainInTwoModules.test");
     }
 
+    @TestMetadata("mismatchedPackageDirectoryWithEmptyKts/mismatchedPackageDirectoryWithEmptyKts.test")
+    public void testMismatchedPackageDirectoryWithEmptyKts_MismatchedPackageDirectoryWithEmptyKts() throws Exception {
+        runTest("idea/testData/multiFileInspections/mismatchedPackageDirectoryWithEmptyKts/mismatchedPackageDirectoryWithEmptyKts.test");
+    }
+
     @TestMetadata("mismatchedProjectAndDirectory/mismatchedProjectAndDirectory.test")
     public void testMismatchedProjectAndDirectory_MismatchedProjectAndDirectory() throws Exception {
         runTest("idea/testData/multiFileInspections/mismatchedProjectAndDirectory/mismatchedProjectAndDirectory.test");
+    }
+
+    @TestMetadata("mismatchedProjectAndDirectoryRoot/mismatchedProjectAndDirectoryRoot.test")
+    public void testMismatchedProjectAndDirectoryRoot_MismatchedProjectAndDirectoryRoot() throws Exception {
+        runTest("idea/testData/multiFileInspections/mismatchedProjectAndDirectoryRoot/mismatchedProjectAndDirectoryRoot.test");
     }
 
     @TestMetadata("platformExtensionReceiverOfInline/platformExtensionReceiverOfInline.test")

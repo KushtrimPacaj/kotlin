@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls
@@ -45,6 +45,7 @@ import org.jetbrains.kotlin.types.expressions.DoubleColonExpressionResolver
 import org.jetbrains.kotlin.types.typeUtil.containsTypeProjectionsInTopLevelArguments
 import org.jetbrains.kotlin.types.typeUtil.makeNotNullable
 import java.util.*
+import kotlin.math.min
 
 class CandidateResolver(
     private val argumentTypeResolver: ArgumentTypeResolver,
@@ -361,7 +362,7 @@ class CandidateResolver(
                 if (type == null || (type.isError && !type.isFunctionPlaceholder)) {
                     matchStatus = ArgumentMatchStatus.ARGUMENT_HAS_NO_TYPE
                 } else if (!noExpectedType(expectedType)) {
-                    if (!ArgumentTypeResolver.isSubtypeOfForArgumentType(type, expectedType)) {
+                    if (!argumentTypeResolver.isSubtypeOfForArgumentType(type, expectedType)) {
                         val smartCast = smartCastValueArgumentTypeIfPossible(expression, newContext.expectedType, type, newContext)
                         if (smartCast == null) {
                             resultStatus = tryNotNullableArgument(type, expectedType) ?: OTHER_ERROR
@@ -376,7 +377,7 @@ class CandidateResolver(
                     val spreadElement = argument.getSpreadElement()
                     if (spreadElement != null && !type.isFlexible() && type.isMarkedNullable) {
                         val dataFlowValue = dataFlowValueFactory.createDataFlowValue(expression, type, context)
-                        val smartCastResult = SmartCastManager.checkAndRecordPossibleCast(
+                        val smartCastResult = smartCastManager.checkAndRecordPossibleCast(
                             dataFlowValue, expectedType, expression, context,
                             call = null, recordExpressionType = false
                         )
@@ -409,7 +410,7 @@ class CandidateResolver(
         if (!argumentType.isMarkedNullable || parameterType.isMarkedNullable) return null
 
         val notNullableArgumentType = argumentType.makeNotNullable()
-        val isApplicable = ArgumentTypeResolver.isSubtypeOfForArgumentType(notNullableArgumentType, parameterType)
+        val isApplicable = argumentTypeResolver.isSubtypeOfForArgumentType(notNullableArgumentType, parameterType)
         return if (isApplicable) NULLABLE_ARGUMENT_TYPE_MISMATCH else null
     }
 
@@ -543,11 +544,10 @@ class CandidateResolver(
         } else if (!nullableImplicitInvokeReceiver && smartCastNeeded) {
             // Look if smart cast has some useful nullability info
 
-            val smartCastResult = SmartCastManager.checkAndRecordPossibleCast(
+            val smartCastResult = smartCastManager.checkAndRecordPossibleCast(
                 dataFlowValue, expectedReceiverParameterType,
-                { possibleSmartCast -> isCandidateVisibleOrExtensionReceiver(receiverArgument, possibleSmartCast, isDispatchReceiver) },
                 expression, this, candidateCall.call, recordExpressionType = true
-            )
+            ) { possibleSmartCast -> isCandidateVisibleOrExtensionReceiver(receiverArgument, possibleSmartCast, isDispatchReceiver) }
 
             if (smartCastResult == null) {
                 if (notNullReceiverExpected) {
@@ -591,7 +591,7 @@ class CandidateResolver(
         }
 
         val typeParameters = functionDescriptor.typeParameters
-        for (i in 0..Math.min(typeParameters.size, ktTypeArguments.size) - 1) {
+        for (i in 0..min(typeParameters.size, ktTypeArguments.size) - 1) {
             val typeParameterDescriptor = typeParameters[i]
             val typeArgument = typeArguments[i]
             val typeReference = ktTypeArguments[i].typeReference
@@ -686,14 +686,14 @@ class CandidateResolver(
         // TODO do not perform substitution for type arguments multiple times
         val substitutedTypeArguments = typeAliasParametersSubstitutor.safeSubstitute(unsubstitutedType, Variance.INVARIANT).arguments
 
-        for (i in 0..Math.min(typeParameters.size, substitutedTypeArguments.size) - 1) {
+        for (i in 0..min(typeParameters.size, substitutedTypeArguments.size) - 1) {
             val substitutedTypeProjection = substitutedTypeArguments[i]
             if (substitutedTypeProjection.isStarProjection) continue
 
             val typeParameter = typeParameters[i]
             val substitutedTypeArgument = substitutedTypeProjection.type
             val unsubstitutedTypeArgument = unsubstitutedType.arguments[i].type
-            DescriptorResolver.checkBoundsInTypeAlias(
+            TypeAliasExpander.checkBoundsInTypeAlias(
                 reportStrategy,
                 unsubstitutedTypeArgument,
                 substitutedTypeArgument,

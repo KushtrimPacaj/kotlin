@@ -1,11 +1,10 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.core.script.dependencies
 
-import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
@@ -13,25 +12,34 @@ import com.intellij.openapi.progress.util.BackgroundTaskUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.coroutines.Runnable
-import kotlinx.coroutines.runBlocking
+import org.jetbrains.kotlin.idea.core.script.ScriptsCompilationConfigurationUpdater
 import org.jetbrains.kotlin.idea.core.script.settings.KotlinScriptingSettings
-import org.jetbrains.kotlin.script.KotlinScriptDefinition
-import org.jetbrains.kotlin.script.LegacyResolverWrapper
-import org.jetbrains.kotlin.script.asResolveFailure
-import org.jetbrains.kotlin.scripting.shared.definitions.findScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.ScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.findScriptDefinition
+import org.jetbrains.kotlin.scripting.resolve.VirtualFileScriptSource
+import org.jetbrains.kotlin.scripting.resolve.refineScriptCompilationConfiguration
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.write
-import kotlin.script.experimental.dependencies.AsyncDependenciesResolver
-import kotlin.script.experimental.dependencies.DependenciesResolver
 
+// TODO: rename and provide alias for compatibility - this is not only about dependencies anymore
 class AsyncScriptDependenciesLoader internal constructor(project: Project) : ScriptDependenciesLoader(project) {
     private val lock = ReentrantReadWriteLock()
 
     private var notifyRootChange: Boolean = false
     private var backgroundTasksQueue: LoaderBackgroundTask? = null
 
-    override fun loadDependencies(file: VirtualFile, scriptDef: KotlinScriptDefinition) {
+    override fun isApplicable(
+        file: VirtualFile,
+        scriptDefinition: ScriptDefinition
+    ): Boolean {
+        return ScriptsCompilationConfigurationUpdater.getInstance(project).isAsyncDependencyResolver(scriptDefinition)
+    }
+
+    override fun loadDependencies(
+        file: VirtualFile,
+        scriptDefinition: ScriptDefinition
+    ) {
         lock.write {
             if (backgroundTasksQueue == null) {
                 backgroundTasksQueue = LoaderBackgroundTask()
@@ -50,8 +58,7 @@ class AsyncScriptDependenciesLoader internal constructor(project: Project) : Scr
             if (notifyRootChange) return false
 
             if (backgroundTasksQueue == null) {
-                submitMakeRootsChange()
-                return true
+                return submitMakeRootsChange()
             }
 
             notifyRootChange = true
@@ -68,30 +75,15 @@ class AsyncScriptDependenciesLoader internal constructor(project: Project) : Scr
     }
 
     private fun runDependenciesUpdate(file: VirtualFile) {
-        val scriptDef = runReadAction { file.findScriptDefinition(project) } ?: return
-        // runBlocking is using there to avoid loading dependencies asynchronously
-        // because it leads to starting more than one gradle daemon in case of resolving dependencies in build.gradle.kts
-        // It is more efficient to use one hot daemon consistently than multiple daemon in parallel
-        val result = runBlocking {
-            try {
-                resolveDependencies(file, scriptDef)
-            } catch (t: Throwable) {
-                t.asResolveFailure(scriptDef)
-            }
-        }
-        processResult(result, file, scriptDef)
-    }
+        val scriptDef = file.findScriptDefinition(project) ?: return
 
-    private suspend fun resolveDependencies(file: VirtualFile, scriptDef: KotlinScriptDefinition): DependenciesResolver.ResolveResult {
-        val dependenciesResolver = scriptDef.dependencyResolver
-        val scriptContents = contentLoader.getScriptContents(scriptDef, file)
-        val environment = contentLoader.getEnvironment(scriptDef)
-        return if (dependenciesResolver is AsyncDependenciesResolver) {
-            dependenciesResolver.resolveAsync(scriptContents, environment)
-        } else {
-            assert(dependenciesResolver is LegacyResolverWrapper)
-            dependenciesResolver.resolve(scriptContents, environment)
-        }
+        debug(file) { "start async dependencies loading" }
+
+        val result = refineScriptCompilationConfiguration(VirtualFileScriptSource(file), scriptDef, project)
+
+        debug(file) { "finish async dependencies loading" }
+
+        processRefinedConfiguration(result, file)
     }
 
     private inner class LoaderBackgroundTask {
@@ -134,6 +126,8 @@ class AsyncScriptDependenciesLoader internal constructor(project: Project) : Scr
 
         fun addTask(file: VirtualFile) {
             if (sequenceOfFiles.contains(file)) return
+
+            debug(file) { "added to update queue" }
 
             sequenceOfFiles.add(file)
 

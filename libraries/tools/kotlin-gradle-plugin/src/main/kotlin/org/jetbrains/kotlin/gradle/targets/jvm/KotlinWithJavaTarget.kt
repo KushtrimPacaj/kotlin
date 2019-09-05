@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:Suppress("PackageDirectoryMismatch") // Old package for compatibility
@@ -10,8 +10,11 @@ import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.plugins.JavaPlugin
+import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import org.jetbrains.kotlin.gradle.tasks.KOTLIN_BUILD_DIR_NAME
+import java.io.File
 
 open class KotlinWithJavaTarget<KotlinOptionsType : KotlinCommonOptions>(
     project: Project,
@@ -39,4 +42,12 @@ open class KotlinWithJavaTarget<KotlinOptionsType : KotlinCommonOptions>(
             KotlinWithJavaCompilation::class.java as Class<KotlinWithJavaCompilation<KotlinOptionsType>>,
             KotlinWithJavaCompilationFactory(project, this)
         )
+
+    internal val defaultArtifactClassesListFile: File
+        get() {
+            val jarTask = project.tasks.getByName(artifactsTaskName) as Jar
+            return File(File(project.buildDir, KOTLIN_BUILD_DIR_NAME), "${sanitizeFileName(jarTask.archiveName)}-classes.txt")
+        }
 }
+
+private fun sanitizeFileName(candidate: String): String = candidate.filter { it.isLetterOrDigit() }

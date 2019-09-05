@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.configuration
@@ -9,6 +9,8 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.ProjectKeys
 import com.intellij.openapi.externalSystem.model.project.LibraryData
+import com.intellij.openapi.externalSystem.model.project.LibraryDependencyData
+import com.intellij.openapi.externalSystem.model.project.LibraryLevel
 import com.intellij.openapi.externalSystem.model.project.ProjectData
 import com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider
 import com.intellij.openapi.externalSystem.service.project.IdeUIModifiableModelsProvider
@@ -26,19 +28,23 @@ import org.jetbrains.kotlin.gradle.KotlinMPPGradleModel
 import org.jetbrains.kotlin.idea.configuration.DependencySubstitute.NoSubstitute
 import org.jetbrains.kotlin.idea.configuration.DependencySubstitute.YesSubstitute
 import org.jetbrains.kotlin.idea.inspections.gradle.findKotlinPluginVersion
-import org.jetbrains.kotlin.konan.library.lite.LiteKonanLibraryInfoProvider
+import org.jetbrains.kotlin.idea.versions.bundledRuntimeVersion
+import org.jetbrains.kotlin.konan.library.KONAN_STDLIB_NAME
+import org.jetbrains.kotlin.konan.library.lite.LiteKonanLibraryFacade
 import org.jetbrains.plugins.gradle.ExternalDependencyId
-import org.jetbrains.plugins.gradle.model.DefaultExternalLibraryDependency
+import org.jetbrains.plugins.gradle.model.DefaultExternalMultiLibraryDependency
 import org.jetbrains.plugins.gradle.model.ExternalDependency
 import org.jetbrains.plugins.gradle.model.ExternalLibraryDependency
+import org.jetbrains.plugins.gradle.model.ExternalMultiLibraryDependency
 import org.jetbrains.plugins.gradle.model.FileCollectionDependency
 import org.jetbrains.plugins.gradle.model.data.GradleSourceSetData
+import org.jetbrains.plugins.gradle.service.project.GradleProjectResolverUtil
 import org.jetbrains.plugins.gradle.service.project.ProjectResolverContext
 import java.io.File
 
 // KT-30490. This `ProjectDataService` must be executed immediately after
 // `com.intellij.openapi.externalSystem.service.project.manage.LibraryDataService` to clean-up KLIBs before any other actions taken on them.
-@Order(ExternalSystemConstants.BUILTIN_LIBRARY_DATA_SERVICE_ORDER + 1) // force
+@Order(ExternalSystemConstants.BUILTIN_LIBRARY_DATA_SERVICE_ORDER + 1) // force order
 class KotlinNativeLibraryDataService : AbstractProjectDataService<LibraryData, Library>() {
     override fun getTargetDataKey() = ProjectKeys.LIBRARY
 
@@ -81,11 +87,10 @@ class KotlinNativeLibraryDataService : AbstractProjectDataService<LibraryData, L
 
 // KT-29613, KT-29783
 internal class KotlinNativeLibrariesDependencySubstitutor(
-    private val mppModel: KotlinMPPGradleModel,
+    mppModel: KotlinMPPGradleModel,
     private val gradleModule: IdeaModule,
     private val resolverCtx: ProjectResolverContext
 ) {
-
     // Substitutes `ExternalDependency` entries that represent KLIBs with new dependency entries with proper type and name:
     // - every `FileCollectionDependency` is checked whether it points to an existing KLIB, and substituted if it is
     // - similarly for every `ExternalLibraryDependency` with `groupId == "Kotlin/Native"` (legacy KLIB provided by Gradle plugin <= 1.3.20)
@@ -103,13 +108,14 @@ internal class KotlinNativeLibrariesDependencySubstitutor(
             result[i] = newDependency
         }
         return result
-
     }
 
     private val ProjectResolverContext.dependencySubstitutionCache
         get() = getUserData(KLIB_DEPENDENCY_SUBSTITUTION_CACHE) ?: putUserDataIfAbsent(KLIB_DEPENDENCY_SUBSTITUTION_CACHE, HashMap())
 
-    private val libraryInfoProvider by lazy { LiteKonanLibraryInfoProvider(mppModel.kotlinNativeHome) }
+    private val libraryProvider = LiteKonanLibraryFacade.getDistributionLibraryProvider(
+        mppModel.kotlinNativeHome.takeIf { it != KotlinMPPGradleModel.NO_KOTLIN_NATIVE_HOME }?.let { File(it) }
+    )
 
     private val kotlinVersion: String? by lazy {
         val classpathData = buildClasspathData(gradleModule, resolverCtx)
@@ -125,7 +131,7 @@ internal class KotlinNativeLibrariesDependencySubstitutor(
                     Example:
 
                     plugins {
-                        kotlin("multiplatform") version "1.3.30"
+                        kotlin("multiplatform") version "${bundledRuntimeVersion()}"
                     }
                 """.trimIndent()
             )
@@ -147,18 +153,20 @@ internal class KotlinNativeLibrariesDependencySubstitutor(
         }
 
     private fun buildSubstituteIfNecessary(libraryFile: File): DependencySubstitute {
-        // need to check whether `libraryFile` points to a real KLIB,
+        // need to check whether `library` points to a real KLIB,
         // and if answer is yes then build a new dependency that will substitute original one
-        val libraryInfo = libraryInfoProvider.getDistributionLibraryInfo(libraryFile.toPath()) ?: return NoSubstitute
+        val library = libraryProvider.getLibrary(libraryFile) ?: return NoSubstitute
         val nonNullKotlinVersion = kotlinVersion ?: return NoSubstitute
 
-        val platformNamePart = libraryInfo.platform?.let { " [$it]" }.orEmpty()
-        val newLibraryName = "$KOTLIN_NATIVE_LIBRARY_PREFIX_PLUS_SPACE$nonNullKotlinVersion - ${libraryInfo.name}$platformNamePart"
+        val platformNamePart = library.platform?.let { " [$it]" }.orEmpty()
+        val newLibraryName = "$KOTLIN_NATIVE_LIBRARY_PREFIX_PLUS_SPACE$nonNullKotlinVersion - ${library.name}$platformNamePart"
 
-        val substitute = DefaultExternalLibraryDependency().apply {
+        val substitute = DefaultExternalMultiLibraryDependency().apply {
+            classpathOrder = if (library.name == KONAN_STDLIB_NAME) -1 else 0 // keep stdlib upper
             name = newLibraryName
             packaging = DEFAULT_PACKAGING
-            file = libraryFile
+            files += library.path
+            sources += library.sourcePaths
             scope = DependencyScope.PROVIDED.name
         }
 
@@ -175,29 +183,67 @@ internal class KotlinNativeLibrariesDependencySubstitutor(
     }
 }
 
-internal object KotlinNativeLibrariesNameFixer {
+/**
+ * Gradle IDE plugin creates [LibraryData] nodes with internal name consisting of two parts:
+ * - mandatory "Gradle: " prefix
+ * - and library name
+ * Then internal name is propagated to IDE [Library] object, and is displayed in IDE as "Gradle: <LIBRARY_NAME>".
+ * [KotlinNativeLibrariesFixer] removes "Gradle: " prefix from all [LibraryData] items representing KLIBs to make them
+ * look more friendly.
+ *
+ * Also, [KotlinNativeLibrariesFixer] makes sure that all KLIBs from Kotlin/Native distribution are added to IDE project model
+ * as project-level libraries. This is necessary until the appropriate fix in IDEA will be implemented (for details see IDEA-211451).
+ */
+internal object KotlinNativeLibrariesFixer {
+    fun applyTo(ownerNode: DataNode<GradleSourceSetData>, ideProject: DataNode<ProjectData>) {
+        for (libraryDependencyNode in ExternalSystemApiUtil.findAll(ownerNode, ProjectKeys.LIBRARY_DEPENDENCY)) {
+            val libraryData = libraryDependencyNode.data.target
 
-    // Gradle IDE plugin creates `LibraryData` nodes with internal name consisting of two parts:
-    // - mandatory "Gradle: " prefix
-    // - and library name
-    // Then internal name is propagated to IDE `Library` object, and is displayed in IDE as "Gradle: <LIBRARY_NAME>".
-    // KotlinNativeLibrariesNameFixer removes "Gradle: " prefix from all `LibraryData` nodes representing KLIBs.
-    fun applyTo(ownerNode: DataNode<GradleSourceSetData>) {
-        for (libraryDependency in ExternalSystemApiUtil.findAll(ownerNode, ProjectKeys.LIBRARY_DEPENDENCY)) {
-            val libraryData = libraryDependency.data.target
+            // Only KLIBs from Kotlin/Native distribution can have such prefix:
             if (libraryData.internalName.startsWith("$GRADLE_LIBRARY_PREFIX$KOTLIN_NATIVE_LIBRARY_PREFIX")) {
-                libraryData.internalName = libraryData.internalName.substringAfter(GRADLE_LIBRARY_PREFIX)
+                fixLibraryName(libraryData)
+                addLibraryToProjectModel(libraryData, ideProject)
+                fixLibraryDependencyLevel(libraryDependencyNode)
             }
         }
+    }
+
+    private fun fixLibraryName(libraryData: LibraryData) {
+        libraryData.internalName = libraryData.internalName.substringAfter(GRADLE_LIBRARY_PREFIX)
+    }
+
+    private fun addLibraryToProjectModel(libraryData: LibraryData, ideProject: DataNode<ProjectData>) {
+        GradleProjectResolverUtil.linkProjectLibrary(ideProject, libraryData)
+    }
+
+    private fun fixLibraryDependencyLevel(oldDependencyNode: DataNode<LibraryDependencyData>) {
+        val oldDependency = oldDependencyNode.data
+        if (oldDependency.level == LibraryLevel.PROJECT) return // nothing to do
+
+        val newDependency = LibraryDependencyData(oldDependency.ownerModule, oldDependency.target, LibraryLevel.PROJECT).apply {
+            scope = oldDependency.scope
+            order = oldDependency.order
+            isExported = oldDependency.isExported
+        }
+
+        val parentNode = oldDependencyNode.parent ?: return
+        val childNodes = oldDependencyNode.children
+
+        val newDependencyNode = parentNode.createChild(oldDependencyNode.key, newDependency)
+        for (child in childNodes) {
+            newDependencyNode.addChild(child)
+        }
+
+        oldDependencyNode.clear(true)
     }
 }
 
 private sealed class DependencySubstitute {
     object NoSubstitute : DependencySubstitute()
-    class YesSubstitute(val substitute: ExternalLibraryDependency) : DependencySubstitute()
+    class YesSubstitute(val substitute: ExternalMultiLibraryDependency) : DependencySubstitute()
 }
 
-private const val KOTLIN_NATIVE_LIBRARY_PREFIX = "Kotlin/Native"
+internal const val KOTLIN_NATIVE_LIBRARY_PREFIX = "Kotlin/Native"
 private const val KOTLIN_NATIVE_LIBRARY_PREFIX_PLUS_SPACE = "$KOTLIN_NATIVE_LIBRARY_PREFIX "
 private const val KOTLIN_NATIVE_LEGACY_GROUP_ID = KOTLIN_NATIVE_LIBRARY_PREFIX
 private const val GRADLE_LIBRARY_PREFIX = "Gradle: "

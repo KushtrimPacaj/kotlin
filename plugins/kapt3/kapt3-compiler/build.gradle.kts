@@ -11,8 +11,10 @@ dependencies {
     testRuntime(intellijDep())
     testCompileOnly(intellijDep()) { includeJars("idea", "idea_rt", "openapi") }
 
-    Platform[181].orHigher {
-        testCompileOnly(intellijDep()) { includeJars("platform-api", "platform-impl") }
+    testCompileOnly(intellijDep()) { includeJars("platform-api", "platform-impl") }
+
+    Platform[192].orHigher {
+        testRuntime(intellijPluginDep("java"))
     }
 
     compile(project(":compiler:util"))
@@ -33,9 +35,9 @@ dependencies {
     testCompile(commonDep("junit:junit"))
     testCompile(project(":kotlin-annotation-processing-runtime"))
 
-    embeddedComponents(project(":kotlin-annotation-processing-runtime")) { isTransitive = false }
-    embeddedComponents(project(":kotlin-annotation-processing-cli")) { isTransitive = false }
-    embeddedComponents(project(":kotlin-annotation-processing-base")) { isTransitive = false }
+    embedded(project(":kotlin-annotation-processing-runtime")) { isTransitive = false }
+    embedded(project(":kotlin-annotation-processing-cli")) { isTransitive = false }
+    embedded(project(":kotlin-annotation-processing-base")) { isTransitive = false }
 }
 
 sourceSets {
@@ -45,18 +47,14 @@ sourceSets {
 
 testsJar {}
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
     dependsOn(":dist")
 }
 
 publish()
 
-runtimeJar {
-    fromEmbeddedComponents()
-}
+runtimeJar()
 
 sourcesJar()
 javadocJar()
-
-dist()

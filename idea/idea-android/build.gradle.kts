@@ -1,6 +1,3 @@
-
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     kotlin("jvm")
     id("jps-compatible")
@@ -55,9 +52,7 @@ dependencies {
 
     testRuntime(intellijPluginDep("android"))
 
-    if (Platform[181].orHigher()) {
-        testRuntime(intellijPluginDep("smali"))
-    }
+    testRuntime(intellijPluginDep("smali"))
 
     testRuntime(intellijPluginDep("copyright"))
     testRuntime(intellijPluginDep("coverage"))
@@ -73,27 +68,28 @@ dependencies {
     }
 
     testRuntime(intellijPluginDep("testng"))
-}
 
-sourceSets {
-    if (Ide.AS33.orHigher() || Ide.IJ191.orHigher()) {
-        "main" { }
-        "test" { }
-    } else {
-        "main" { projectDefault() }
-        "test" { projectDefault() }
+    if (Ide.AS36.orHigher()) {
+        testRuntime(intellijPluginDep("android-layoutlib"))
+        testRuntime(intellijPluginDep("android-wizardTemplate-plugin"))
     }
 }
 
-projectTest {
+sourceSets {
+    if (Ide.IJ183()) {
+        "main" { projectDefault() }
+        "test" { projectDefault() }
+    } else {
+        "main" { }
+        "test" { }
+    }
+}
+
+projectTest(parallel = true) {
     workingDir = rootDir
     useAndroidSdk()
 }
 
-testsJar {}
+testsJar()
 
-runtimeJar {
-    archiveName = "android-ide.jar"
-}
-
-ideaPlugin()
+runtimeJar()

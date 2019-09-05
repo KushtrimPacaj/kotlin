@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.test;
@@ -28,6 +28,7 @@ import com.intellij.testFramework.TestDataFile;
 import com.intellij.util.PathUtil;
 import com.intellij.util.containers.ContainerUtil;
 import junit.framework.TestCase;
+import kotlin.Unit;
 import kotlin.collections.CollectionsKt;
 import kotlin.collections.SetsKt;
 import kotlin.jvm.functions.Function1;
@@ -90,6 +91,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.intellij.openapi.application.PathManager.PROPERTY_CONFIG_PATH;
+import static com.intellij.openapi.application.PathManager.PROPERTY_SYSTEM_PATH;
 import static org.jetbrains.kotlin.test.InTextDirectivesUtils.*;
 
 public class KotlinTestUtils {
@@ -426,6 +429,11 @@ public class KotlinTestUtils {
         return normalizeFile(FileUtil.createTempDirectory(name, "", false));
     }
 
+    @NotNull
+    public static File tmpDirForReusableFolder(String name) throws IOException {
+        return normalizeFile(FileUtil.createTempDirectory(new File(System.getProperty("java.io.tmpdir")), name, "", true));
+    }
+
     private static File normalizeFile(File file) throws IOException {
         // Get canonical file to be sure that it's the same as inside the compiler,
         // for example, on Windows, if a canonical path contains any space from FileUtil.createTempDirectory we will get
@@ -433,18 +441,23 @@ public class KotlinTestUtils {
         return file.getCanonicalFile();
     }
 
+    private static void deleteOnShutdown(File file) {
+        if (filesToDelete.isEmpty()) {
+            ShutDownTracker.getInstance().registerShutdownTask(() -> {
+                for (File victim : filesToDelete) {
+                    FileUtil.delete(victim);
+                }
+            });
+        }
+
+        filesToDelete.add(file);
+    }
+
     @NotNull
     public static KtFile createFile(@NotNull @NonNls String name, @NotNull String text, @NotNull Project project) {
         String shortName = name.substring(name.lastIndexOf('/') + 1);
         shortName = shortName.substring(shortName.lastIndexOf('\\') + 1);
-        LightVirtualFile virtualFile = new LightVirtualFile(shortName, KotlinLanguage.INSTANCE, StringUtilRt.convertLineSeparators(text)) {
-            @NotNull
-            @Override
-            public String getPath() {
-                //TODO: patch LightVirtualFile
-                return "/" + name;
-            }
-        };
+        LightVirtualFile virtualFile = new LightVirtualFile(shortName, KotlinLanguage.INSTANCE, StringUtilRt.convertLineSeparators(text));
 
         virtualFile.setCharset(CharsetToolkit.UTF8_CHARSET);
         PsiFileFactoryImpl factory = (PsiFileFactoryImpl) PsiFileFactory.getInstance(project);
@@ -677,9 +690,23 @@ public class KotlinTestUtils {
             @NotNull Disposable disposable,
             @Nullable File javaErrorFile
     ) throws IOException {
+        return compileKotlinWithJava(javaFiles, ktFiles, outDir, disposable, javaErrorFile, null);
+    }
+
+    public static boolean compileKotlinWithJava(
+            @NotNull List<File> javaFiles,
+            @NotNull List<File> ktFiles,
+            @NotNull File outDir,
+            @NotNull Disposable disposable,
+            @Nullable File javaErrorFile,
+            @Nullable Function1<CompilerConfiguration, Unit> updateConfiguration
+    ) throws IOException {
         if (!ktFiles.isEmpty()) {
             KotlinCoreEnvironment environment = createEnvironmentWithFullJdkAndIdeaAnnotations(disposable);
             CompilerTestLanguageVersionSettingsKt.setupLanguageVersionSettingsForMultifileCompilerTests(ktFiles, environment);
+            if (updateConfiguration != null) {
+                updateConfiguration.invoke(environment.getConfiguration());
+            }
             LoadDescriptorUtil.compileKotlinToDirAndGetModule(ktFiles, outDir, environment);
         }
         else {
@@ -790,12 +817,15 @@ public class KotlinTestUtils {
                     !isDirectiveDefined(expectedText, "!LANGUAGE: -ReleaseCoroutines");
 
             boolean checkStateMachine = isDirectiveDefined(expectedText, "CHECK_STATE_MACHINE");
+            boolean checkTailCallOptimization = isDirectiveDefined(expectedText, "CHECK_TAIL_CALL_OPTIMIZATION");
 
-            testFiles.add(factory.createFile(supportModule,
-                                             "CoroutineUtil.kt",
-                                             CoroutineTestUtilKt.createTextForHelpers(isReleaseCoroutines, checkStateMachine),
-                                             directives
-            ));
+            testFiles.add(
+                    factory.createFile(
+                            supportModule,
+                            "CoroutineUtil.kt",
+                            CoroutineTestUtilKt.createTextForHelpers(isReleaseCoroutines, checkStateMachine, checkTailCallOptimization),
+                            directives
+                    ));
         }
 
         return testFiles;

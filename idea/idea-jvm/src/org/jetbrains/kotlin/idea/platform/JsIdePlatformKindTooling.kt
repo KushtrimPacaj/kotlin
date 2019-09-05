@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.core.platform.impl
@@ -24,7 +24,7 @@ import org.jetbrains.kotlin.idea.js.KotlinJSRunConfigurationDataProvider
 import org.jetbrains.kotlin.idea.platform.IdePlatformKindTooling
 import org.jetbrains.kotlin.idea.run.multiplatform.KotlinMultiplatformRunLocationsProvider
 import org.jetbrains.kotlin.idea.util.string.joinWithEscape
-import org.jetbrains.kotlin.js.resolve.JsAnalyzerFacade
+import org.jetbrains.kotlin.js.resolve.JsResolverForModuleFactory
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.platform.impl.JsIdePlatformKind
 import org.jetbrains.kotlin.psi.KtClassOrObject
@@ -48,8 +48,6 @@ class JsIdePlatformKindTooling : IdePlatformKindTooling() {
     override val kind = JsIdePlatformKind
 
     override fun compilerArgumentsForProject(project: Project) = Kotlin2JsCompilerArgumentsHolder.getInstance(project).settings
-
-    override val resolverForModuleFactory = JsAnalyzerFacade
 
     override val mavenLibraryIds = listOf(PathUtil.JS_LIB_NAME, MAVEN_OLD_JS_STDLIB_ID)
     override val gradlePluginId = "kotlin-platform-js"

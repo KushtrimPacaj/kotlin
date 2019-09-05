@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.declarations.lazy
@@ -35,7 +35,7 @@ class IrLazyProperty(
     override val isLateinit: Boolean,
     override val isDelegated: Boolean,
     override val isExternal: Boolean,
-    private val stubGenerator: DeclarationStubGenerator,
+    stubGenerator: DeclarationStubGenerator,
     typeTranslator: TypeTranslator,
     private val bindingContext: BindingContext? = null
 ) :
@@ -57,7 +57,7 @@ class IrLazyProperty(
         isVar = symbol.descriptor.isVar,
         isConst = symbol.descriptor.isConst,
         isLateinit = symbol.descriptor.isLateInit,
-        isDelegated = symbol.descriptor.isDelegated,
+        isDelegated = @Suppress("DEPRECATION") symbol.descriptor.isDelegated,
         isExternal = symbol.descriptor.isEffectivelyExternal(),
         stubGenerator = stubGenerator,
         typeTranslator = typeTranslator,
@@ -74,18 +74,18 @@ class IrLazyProperty(
     override var backingField: IrField? by lazyVar {
         if (descriptor.hasBackingField(bindingContext)) {
             stubGenerator.generateFieldStub(descriptor).apply {
-                correspondingProperty = this@IrLazyProperty
+                correspondingPropertySymbol = this@IrLazyProperty.symbol
             }
         } else null
     }
     override var getter: IrSimpleFunction? by lazyVar {
         descriptor.getter?.let { stubGenerator.generateFunctionStub(it, createPropertyIfNeeded = false) }?.apply {
-            correspondingProperty = this@IrLazyProperty
+            correspondingPropertySymbol = this@IrLazyProperty.symbol
         }
     }
     override var setter: IrSimpleFunction? by lazyVar {
         descriptor.setter?.let { stubGenerator.generateFunctionStub(it, createPropertyIfNeeded = false) }?.apply {
-            correspondingProperty = this@IrLazyProperty
+            correspondingPropertySymbol = this@IrLazyProperty.symbol
         }
     }
 

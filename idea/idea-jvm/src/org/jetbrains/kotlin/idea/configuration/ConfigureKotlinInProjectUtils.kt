@@ -1,15 +1,13 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.configuration
 
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.extensions.Extensions
 import com.intellij.openapi.module.Module
-import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.projectRoots.JavaSdkVersion
 import com.intellij.openapi.roots.DependencyScope
@@ -25,7 +23,7 @@ import com.intellij.psi.search.FileTypeIndex
 import com.intellij.psi.search.GlobalSearchScope
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.idea.KotlinFileType
-import org.jetbrains.kotlin.idea.configuration.ui.notifications.ConfigureKotlinNotification
+import org.jetbrains.kotlin.idea.core.util.getKotlinJvmRuntimeMarkerClass
 import org.jetbrains.kotlin.idea.framework.JSLibraryKind
 import org.jetbrains.kotlin.idea.framework.effectiveKind
 import org.jetbrains.kotlin.idea.quickfix.KotlinAddRequiredModuleFix
@@ -37,9 +35,8 @@ import org.jetbrains.kotlin.idea.util.projectStructure.allModules
 import org.jetbrains.kotlin.idea.util.projectStructure.sdk
 import org.jetbrains.kotlin.idea.util.projectStructure.version
 import org.jetbrains.kotlin.idea.versions.SuppressNotificationState
-import org.jetbrains.kotlin.idea.versions.getKotlinJvmRuntimeMarkerClass
 import org.jetbrains.kotlin.idea.versions.hasKotlinJsKjsmFile
-import org.jetbrains.kotlin.idea.versions.isSnapshot
+import org.jetbrains.kotlin.idea.util.isSnapshot
 import org.jetbrains.kotlin.idea.vfilefinder.IDEVirtualFileFinder
 import org.jetbrains.kotlin.resolve.jvm.modules.KOTLIN_STDLIB_MODULE_NAME
 import org.jetbrains.kotlin.utils.ifEmpty
@@ -90,12 +87,12 @@ fun isRepositoryConfigured(repositoriesBlockText: String): Boolean =
     repositoriesBlockText.contains(MAVEN_CENTRAL) || repositoriesBlockText.contains(JCENTER)
 
 fun DependencyScope.toGradleCompileScope(isAndroidModule: Boolean) = when (this) {
-    DependencyScope.COMPILE -> "compile"
+    DependencyScope.COMPILE -> "implementation"
     // TODO: We should add testCompile or androidTestCompile
-    DependencyScope.TEST -> if (isAndroidModule) "compile" else "testCompile"
+    DependencyScope.TEST -> if (isAndroidModule) "implementation" else "testImplementation"
     DependencyScope.RUNTIME -> "runtime"
-    DependencyScope.PROVIDED -> "compile"
-    else -> "compile"
+    DependencyScope.PROVIDED -> "implementation"
+    else -> "implementation"
 }
 
 fun RepositoryDescription.toGroovyRepositorySnippet() = "maven { url '$url' }"
@@ -152,18 +149,6 @@ fun showConfigureKotlinNotificationIfNeeded(module: Module) {
     if (!isNotConfiguredNotificationRequired(moduleGroup)) return
 
     ConfigureKotlinNotificationManager.notify(module.project)
-}
-
-fun showConfigureKotlinNotificationIfNeeded(project: Project, excludeModules: List<Module> = emptyList()) {
-    val notificationState = DumbService.getInstance(project).runReadActionInSmartMode(Computable {
-        ConfigureKotlinNotification.getNotificationState(project, excludeModules)
-    })
-
-    if (notificationState != null) {
-        ApplicationManager.getApplication().invokeLater {
-            ConfigureKotlinNotificationManager.notify(project, ConfigureKotlinNotification(project, excludeModules, notificationState))
-        }
-    }
 }
 
 fun isNotConfiguredNotificationRequired(moduleGroup: ModuleSourceRootGroup): Boolean {
@@ -233,8 +218,7 @@ fun getConfigurationPossibilitiesForConfigureNotification(
         var moduleAlreadyConfigured = false
         for (configurator in configurators) {
             if (moduleCanBeConfigured && configurator in runnableConfigurators) continue
-            val status = configurator.getStatus(moduleSourceRootGroup)
-            when (status) {
+            when (configurator.getStatus(moduleSourceRootGroup)) {
                 ConfigureKotlinStatus.CAN_BE_CONFIGURED -> {
                     moduleCanBeConfigured = true
                     runnableConfigurators.add(configurator)
@@ -283,14 +267,6 @@ fun hasKotlinJsRuntimeInScope(module: Module): Boolean {
 
 fun hasKotlinCommonRuntimeInScope(scope: GlobalSearchScope): Boolean {
     return IDEVirtualFileFinder(scope).hasMetadataPackage(KotlinBuiltIns.BUILT_INS_PACKAGE_FQ_NAME)
-}
-
-fun hasKotlinFilesOnlyInTests(module: Module): Boolean {
-    return !hasKotlinFilesInSources(module) && FileTypeIndex.containsFileOfType(KotlinFileType.INSTANCE, module.getModuleScope(true))
-}
-
-fun hasKotlinFilesInSources(module: Module): Boolean {
-    return FileTypeIndex.containsFileOfType(KotlinFileType.INSTANCE, module.getModuleScope(false))
 }
 
 class LibraryKindSearchScope(

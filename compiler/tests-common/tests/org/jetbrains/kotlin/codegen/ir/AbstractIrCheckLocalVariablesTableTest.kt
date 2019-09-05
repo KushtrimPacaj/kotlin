@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen.ir
@@ -9,7 +9,7 @@ import com.intellij.openapi.util.Comparing
 import org.jetbrains.kotlin.codegen.AbstractCheckLocalVariablesTableTest
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.JVMConfigurationKeys
-import org.jetbrains.kotlin.test.ConfigurationKind
+import org.jetbrains.kotlin.test.TargetBackend
 import org.junit.ComparisonFailure
 import java.io.File
 
@@ -17,10 +17,6 @@ abstract class AbstractIrCheckLocalVariablesTableTest : AbstractCheckLocalVariab
 
     override fun updateConfiguration(configuration: CompilerConfiguration) {
         configuration.put(JVMConfigurationKeys.IR, true)
-    }
-
-    override fun extractConfigurationKind(files: MutableList<TestFile>): ConfigurationKind {
-        return ConfigurationKind.ALL
     }
 
     override fun doCompare(
@@ -52,4 +48,6 @@ abstract class AbstractIrCheckLocalVariablesTableTest : AbstractCheckLocalVariab
             .map { line -> line.replaceFirst("INDEX=\\d+".toRegex(), "INDEX=*") } // Ignore index
             .sorted()
     }
+
+    override fun getBackend() = TargetBackend.JVM_IR
 }

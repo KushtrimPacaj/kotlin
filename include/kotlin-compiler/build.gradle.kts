@@ -15,7 +15,7 @@ dependencies {
         compile(project(module)) { isTransitive = false }
     }
 
-    fatJarContents(project(":core:builtins"))
+    fatJarContents(kotlinBuiltins())
     fatJarContents(commonDep("javax.inject"))
     fatJarContents(commonDep("org.jline", "jline"))
     fatJarContents(commonDep("org.fusesource.jansi", "jansi"))
@@ -34,10 +34,10 @@ dependencies {
 val jar: Jar by tasks
 jar.apply {
     dependsOn(fatJarContents)
-    from(compile.filter { it.extension == "jar" }.map { zipTree(it) })
-    from(fatJarContents.map { zipTree(it) })
-    from(fatJarContentsStripServices.map { zipTree(it) }) { exclude("META-INF/services/**") }
-    from(fatJarContentsStripMetadata.map { zipTree(it) }) { exclude("META-INF/jb/** META-INF/LICENSE") }
+    from { compile.filter { it.extension == "jar" }.map { zipTree(it) } }
+    from { fatJarContents.map { zipTree(it) } }
+    from { fatJarContentsStripServices.map { zipTree(it).matching { exclude("META-INF/services/**") } } }
+    from { fatJarContentsStripMetadata.map { zipTree(it).matching { exclude("META-INF/jb/** META-INF/LICENSE") } } }
 
     manifest.attributes["Class-Path"] = compilerManifestClassPath
     manifest.attributes["Main-Class"] = "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler"

@@ -252,6 +252,7 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
         private Modality modality = getModality();
         private Visibility visibility = getVisibility();
         private PropertyDescriptor original = null;
+        private boolean preserveSourceElement = false;
         private Kind kind = getKind();
         private TypeSubstitution substitution = TypeSubstitution.EMPTY;
         private boolean copyOverrides = true;
@@ -270,6 +271,13 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
         @Override
         public CopyConfiguration setOriginal(@Nullable CallableMemberDescriptor original) {
             this.original = (PropertyDescriptor) original;
+            return this;
+        }
+
+        @NotNull
+        @Override
+        public CopyConfiguration setPreserveSourceElement() {
+            preserveSourceElement = true;
             return this;
         }
 
@@ -334,6 +342,16 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
         public PropertyDescriptor build() {
             return doSubstitute(this);
         }
+
+        PropertyGetterDescriptor getOriginalGetter() {
+            if (original == null) return null;
+            return original.getGetter();
+        }
+
+        PropertySetterDescriptor getOriginalSetter() {
+            if (original == null) return null;
+            return original.getSetter();
+        }
     }
 
     @NotNull
@@ -342,11 +360,19 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
         return new CopyConfiguration();
     }
 
+    @NotNull
+    private SourceElement getSourceToUseForCopy(boolean preserveSource, @Nullable PropertyDescriptor original) {
+        return preserveSource
+               ? (original != null ? original : getOriginal()).getSource()
+               : SourceElement.NO_SOURCE;
+    }
+
     @Nullable
     protected PropertyDescriptor doSubstitute(@NotNull CopyConfiguration copyConfiguration) {
         PropertyDescriptorImpl substitutedDescriptor = createSubstitutedCopy(
                 copyConfiguration.owner, copyConfiguration.modality, copyConfiguration.visibility,
-                copyConfiguration.original, copyConfiguration.kind, copyConfiguration.name);
+                copyConfiguration.original, copyConfiguration.kind, copyConfiguration.name,
+                getSourceToUseForCopy(copyConfiguration.preserveSourceElement, copyConfiguration.original));
 
         List<TypeParameterDescriptor> originalTypeParameters =
                 copyConfiguration.newTypeParameters == null ? getTypeParameters() : copyConfiguration.newTypeParameters;
@@ -389,7 +415,8 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
 
         PropertyGetterDescriptorImpl newGetter = getter == null ? null : new PropertyGetterDescriptorImpl(
                 substitutedDescriptor, getter.getAnnotations(), copyConfiguration.modality, normalizeVisibility(getter.getVisibility(), copyConfiguration.kind),
-                getter.isDefault(), getter.isExternal(), getter.isInline(), copyConfiguration.kind, copyConfiguration.original == null ? null : copyConfiguration.original.getGetter(),
+                getter.isDefault(), getter.isExternal(), getter.isInline(), copyConfiguration.kind,
+                copyConfiguration.getOriginalGetter(),
                 SourceElement.NO_SOURCE
         );
         if (newGetter != null) {
@@ -399,7 +426,8 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
         }
         PropertySetterDescriptorImpl newSetter = setter == null ? null : new PropertySetterDescriptorImpl(
                 substitutedDescriptor, setter.getAnnotations(), copyConfiguration.modality, normalizeVisibility(setter.getVisibility(), copyConfiguration.kind),
-                setter.isDefault(), setter.isExternal(), setter.isInline(), copyConfiguration.kind, copyConfiguration.original == null ? null : copyConfiguration.original.getSetter(),
+                setter.isDefault(), setter.isExternal(), setter.isInline(), copyConfiguration.kind,
+                copyConfiguration.getOriginalSetter(),
                 SourceElement.NO_SOURCE
         );
         if (newSetter != null) {
@@ -474,10 +502,11 @@ public class PropertyDescriptorImpl extends VariableDescriptorWithInitializerImp
             @NotNull Visibility newVisibility,
             @Nullable PropertyDescriptor original,
             @NotNull Kind kind,
-            @NotNull Name newName
+            @NotNull Name newName,
+            @NotNull SourceElement source
     ) {
         return new PropertyDescriptorImpl(
-                newOwner, original, getAnnotations(), newModality, newVisibility, isVar(), newName, kind, SourceElement.NO_SOURCE,
+                newOwner, original, getAnnotations(), newModality, newVisibility, isVar(), newName, kind, source,
                 isLateInit(), isConst(), isExpect(), isActual(), isExternal(), isDelegated()
         );
     }

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.collections
@@ -13,6 +13,8 @@ package kotlin.collections
 import kotlin.js.*
 import primitiveArrayConcat
 import withType
+import kotlin.ranges.contains
+import kotlin.ranges.reversed
 
 /**
  * Returns an element at the given [index] or throws an [IndexOutOfBoundsException] if the [index] is out of bounds of this array.
@@ -1052,6 +1054,150 @@ public actual fun CharArray.copyOfRange(fromIndex: Int, toIndex: Int): CharArray
 }
 
 /**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun <T> Array<T>.fill(element: T, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun ByteArray.fill(element: Byte, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun ShortArray.fill(element: Short, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun IntArray.fill(element: Int, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun LongArray.fill(element: Long, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun FloatArray.fill(element: Float, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun DoubleArray.fill(element: Double, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun BooleanArray.fill(element: Boolean, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
+ * Fills this array or its subrange with the specified [element] value.
+ * 
+ * @param fromIndex the start of the range (inclusive), 0 by default.
+ * @param toIndex the end of the range (exclusive), size of this array by default.
+ * 
+ * @throws IndexOutOfBoundsException if [fromIndex] is less than zero or [toIndex] is greater than the size of this array.
+ * @throws IllegalArgumentException if [fromIndex] is greater than [toIndex].
+ */
+@SinceKotlin("1.3")
+@Suppress("ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS")
+public actual fun CharArray.fill(element: Char, fromIndex: Int = 0, toIndex: Int = size): Unit {
+    AbstractList.checkRangeIndexes(fromIndex, toIndex, size)
+    this.asDynamic().fill(element, fromIndex, toIndex);
+}
+
+/**
  * Returns an array containing all elements of the original array and then the given [element].
  */
 @Suppress("ACTUAL_WITHOUT_EXPECT", "NOTHING_TO_INLINE")
@@ -1269,6 +1415,8 @@ public actual inline fun <T> Array<out T>.plusElement(element: T): Array<T> {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @library("primitiveArraySort")
 public actual fun IntArray.sort(): Unit {
@@ -1277,6 +1425,8 @@ public actual fun IntArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 public actual fun LongArray.sort(): Unit {
     if (size > 1) sort { a: Long, b: Long -> a.compareTo(b) }
@@ -1284,6 +1434,8 @@ public actual fun LongArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @library("primitiveArraySort")
 public actual fun ByteArray.sort(): Unit {
@@ -1292,6 +1444,8 @@ public actual fun ByteArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @library("primitiveArraySort")
 public actual fun ShortArray.sort(): Unit {
@@ -1300,6 +1454,8 @@ public actual fun ShortArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @library("primitiveArraySort")
 public actual fun DoubleArray.sort(): Unit {
@@ -1308,6 +1464,8 @@ public actual fun DoubleArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @library("primitiveArraySort")
 public actual fun FloatArray.sort(): Unit {
@@ -1316,6 +1474,8 @@ public actual fun FloatArray.sort(): Unit {
 
 /**
  * Sorts the array in-place.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArray
  */
 @library("primitiveArraySort")
 public actual fun CharArray.sort(): Unit {
@@ -1326,6 +1486,8 @@ public actual fun CharArray.sort(): Unit {
  * Sorts the array in-place according to the natural order of its elements.
  * 
  * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
+ * 
+ * @sample samples.collections.Arrays.Sorting.sortArrayOfComparable
  */
 public actual fun <T : Comparable<T>> Array<out T>.sort(): Unit {
     if (size > 1) sortArray(this)

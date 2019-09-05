@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
@@ -10,41 +10,36 @@ import org.jetbrains.kotlin.backend.common.bridges.FunctionHandle
 import org.jetbrains.kotlin.backend.common.bridges.findAllReachableDeclarations
 import org.jetbrains.kotlin.backend.common.bridges.findConcreteSuperDeclaration
 import org.jetbrains.kotlin.backend.common.bridges.generateBridges
+import org.jetbrains.kotlin.backend.common.descriptors.WrappedReceiverParameterDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedSimpleFunctionDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedValueParameterDescriptor
 import org.jetbrains.kotlin.backend.common.ir.*
+import org.jetbrains.kotlin.backend.common.lower.SpecialBridgeMethods
+import org.jetbrains.kotlin.backend.common.lower.allOverridden
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.irNot
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
+import org.jetbrains.kotlin.backend.jvm.ir.eraseTypeParameters
+import org.jetbrains.kotlin.backend.jvm.ir.hasJvmDefault
 import org.jetbrains.kotlin.descriptors.Modality
+import org.jetbrains.kotlin.descriptors.ReceiverParameterDescriptor
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrValueParameterImpl
-import org.jetbrains.kotlin.ir.expressions.IrConstKind
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrGetValueImpl
-import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
-import org.jetbrains.kotlin.ir.types.IrErrorType
-import org.jetbrains.kotlin.ir.types.IrSimpleType
-import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
-import org.jetbrains.kotlin.ir.types.impl.IrStarProjectionImpl
 import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
 import org.jetbrains.kotlin.ir.util.isInterface
 import org.jetbrains.kotlin.ir.util.parentAsClass
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import org.jetbrains.org.objectweb.asm.commons.Method
@@ -56,19 +51,18 @@ internal val bridgePhase = makeIrFilePhase(
 )
 
 private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass {
+    private val methodSignatureMapper = context.methodSignatureMapper
 
-    private val state = context.state
-
-    private val typeMapper = state.typeMapper
+    private val specialBridgeMethods = SpecialBridgeMethods(context)
 
     override fun lower(irClass: IrClass) {
-        // TODO: Bridges should be generated for @JvmDefaults, so the interface check is too optimistic.
-        if (irClass.isInterface || irClass.origin == JvmLoweredDeclarationOrigin.DEFAULT_IMPLS) {
+        if (irClass.origin == JvmLoweredDeclarationOrigin.DEFAULT_IMPLS) {
             return
         }
 
         for (member in irClass.declarations.filterIsInstance<IrSimpleFunction>()) {
-            createBridges(member)
+            if (!irClass.isInterface || member.hasJvmDefault())
+                createBridges(member)
         }
     }
 
@@ -78,7 +72,13 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         if (irFunction.isMethodOfAny()) return
 
         if (irFunction.origin === IrDeclarationOrigin.FAKE_OVERRIDE &&
-            irFunction.overriddenSymbols.all { it.owner.modality !== Modality.ABSTRACT && !it.owner.comesFromJava() }
+            irFunction.overriddenSymbols.all {
+                !it.owner.comesFromJava() &&
+                        if ((it.owner.parent as? IrClass)?.isInterface == true)
+                            it.owner.hasJvmDefault() // TODO: Remove this after modality is corrected in InterfaceLowering.
+                        else
+                            it.owner.modality !== Modality.ABSTRACT
+            }
         ) {
             // All needed bridges will be generated where functions are implemented.
             return
@@ -90,7 +90,7 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         val ourMethodName = ourSignature.name
 
         val (specialOverride, specialOverrideValueGenerator) =
-            findSpecialWithOverride(irFunction) ?: Pair(null, null)
+            specialBridgeMethods.findSpecialWithOverride(irFunction) ?: Pair(null, null)
         val specialOverrideSignature = specialOverride?.getJvmSignature()
 
 
@@ -167,7 +167,7 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
             addBridge(
                 irClass, targetForCommonBridges, method, signaturesToSkip,
                 defaultValueGenerator = null,
-                isSpecial = false
+                isSpecial = targetForCommonBridges.isCollectionStub()
             )
         }
     }
@@ -186,6 +186,7 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         val bridge = createBridgeHeader(irClass, target, method, isSpecial = isSpecial, isSynthetic = !isSpecial)
         bridge.createBridgeBody(target, defaultValueGenerator, isSpecial)
         irClass.declarations.add(bridge)
+        target.overriddenSymbols.remove(method.symbol)
         signaturesToSkip.add(signature)
     }
 
@@ -213,7 +214,7 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         isSpecial: Boolean,
         isSynthetic: Boolean
     ): IrSimpleFunction {
-        val modality = if (isSpecial) Modality.FINAL else Modality.OPEN
+        val modality = if (isSpecial && !target.isCollectionStub()) Modality.FINAL else Modality.OPEN
         val origin = if (isSynthetic) IrDeclarationOrigin.BRIDGE else IrDeclarationOrigin.BRIDGE_SPECIAL
 
         val visibility = if (signatureFunction.visibility === Visibilities.INTERNAL) Visibilities.PUBLIC else signatureFunction.visibility
@@ -233,6 +234,7 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         ).apply {
             descriptor.bind(this)
             parent = irClass
+            copyTypeParametersFrom(target)
 
             // Have to specify type explicitly to prevent an attempt to remap it.
             dispatchReceiverParameter = irClass.thisReceiver?.copyTo(this, type = irClass.defaultType)
@@ -275,9 +277,10 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
                             origin = IrStatementOrigin.BRIDGE_DELEGATION,
                             superQualifierSymbol = if (invokeStatically) maybeOrphanedTarget.parentAsClass.symbol else null
                         ).apply {
-                            dispatchReceiver = irImplicitCast(irGet(dispatchReceiverParameter!!), dispatchReceiverParameter!!.type)
+                            passTypeArgumentsFrom(this@createBridgeBody)
+                            dispatchReceiver = irGet(dispatchReceiverParameter!!)
                             extensionReceiverParameter?.let {
-                                extensionReceiver = irImplicitCast(irGet(it), extensionReceiverParameter!!.type)
+                                extensionReceiver = irImplicitCast(irGet(it), maybeOrphanedTarget.extensionReceiverParameter!!.type)
                             }
                             valueParameters.forEach {
                                 putValueArgument(it.index, irImplicitCast(irGet(it), maybeOrphanedTarget.valueParameters[it.index].type))
@@ -317,7 +320,11 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
             }
 
     private fun IrValueParameter.copyWithTypeErasure(target: IrSimpleFunction): IrValueParameter {
-        val descriptor = WrappedValueParameterDescriptor(this.descriptor.annotations)
+        val descriptor = if (this.descriptor is ReceiverParameterDescriptor) {
+            WrappedReceiverParameterDescriptor(this.descriptor.annotations)
+        } else {
+            WrappedValueParameterDescriptor(this.descriptor.annotations)
+        }
         return IrValueParameterImpl(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
             IrDeclarationOrigin.BRIDGE,
@@ -332,40 +339,6 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
             descriptor.bind(this)
             parent = target
         }
-    }
-
-    /* Perform type erasure as much as is significant for JVM signature generation. */
-    // TODO: should be a type mapper functionality.
-    private fun IrType.eraseTypeParameters() = when (this) {
-        is IrErrorType -> this
-        is IrSimpleType -> {
-            val owner = classifier.owner
-            when (owner) {
-                is IrClass -> this
-                is IrTypeParameter -> {
-                    val upperBound = owner.upperBoundClass()
-                    IrSimpleTypeImpl(
-                        upperBound.symbol,
-                        hasQuestionMark,
-                        List(upperBound.typeParameters.size) { IrStarProjectionImpl },    // Should not affect JVM signature, but may result in an invalid type object
-                        owner.annotations
-                    )
-                }
-                else -> error("Unknown IrSimpleType classifier kind: $owner")
-            }
-        }
-        else -> error("Unknown IrType kind: $this")
-    }
-
-    private fun IrTypeParameter.upperBoundClass(): IrClass {
-        val simpleSuperClassifiers = superTypes.asSequence().filterIsInstance<IrSimpleType>().map { it.classifier }
-        return simpleSuperClassifiers
-                .filterIsInstance<IrClassSymbol>()
-                .let {
-                    it.firstOrNull { !it.owner.isInterface } ?: it.firstOrNull()
-                }?.owner ?:
-            simpleSuperClassifiers.filterIsInstance<IrTypeParameterSymbol>().map { it.owner.upperBoundClass() }.firstOrNull() ?:
-            context.irBuiltIns.anyClass.owner
     }
 
     private fun IrSimpleFunction.findAllReachableDeclarations() =
@@ -386,51 +359,11 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         }
     }
 
-    private data class SpecialMethodDescription(val kotlinFqClassName: FqName?, val name: Name, val arity: Int)
-
-    private fun makeDescription(classFqName: String, funName: String, arity: Int) = SpecialMethodDescription(FqName(classFqName), Name.identifier(funName), arity)
-
-    private fun IrSimpleFunction.toDescription() = SpecialMethodDescription(parentAsClass.fqNameWhenAvailable, name, valueParameters.size)
-
-    private fun constFalse(bridge: IrSimpleFunction) =
-        IrConstImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.booleanType, IrConstKind.Boolean, false)
-
-    private fun constNull(bridge: IrSimpleFunction) =
-        IrConstImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.anyNType, IrConstKind.Null, null)
-
-    private fun constMinusOne(bridge: IrSimpleFunction) =
-        IrConstImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.intType, IrConstKind.Int, -1)
-
-    private fun getSecondArg(bridge: IrSimpleFunction) =
-        IrGetValueImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, bridge.valueParameters[1].symbol)
-
-    private val SPECIAL_METHODS_WITH_DEFAULTS_MAP = mapOf<SpecialMethodDescription, (IrSimpleFunction) -> IrExpression>(
-        makeDescription("kotlin.collections.Collection", "contains", 1) to ::constFalse,
-        makeDescription("kotlin.collections.MutableCollection", "remove", 1) to ::constFalse,
-        makeDescription("kotlin.collections.Map", "containsKey", 1) to ::constFalse,
-        makeDescription("kotlin.collections.Map", "containsValue", 1) to ::constFalse,
-        makeDescription("kotlin.collections.MutableMap", "remove", 2) to ::constFalse,
-        makeDescription("kotlin.collections.Map", "getOrDefault", 1) to ::getSecondArg,
-        makeDescription("kotlin.collections.Map", "get", 1) to ::constNull,
-        makeDescription("kotlin.collections.MutableMap", "remove", 1) to ::constNull,
-        makeDescription("kotlin.collections.List", "indexOf", 1) to ::constMinusOne,
-        makeDescription("kotlin.collections.List", "lastIndexOf", 1) to ::constMinusOne
-    )
-
-    private fun findSpecialWithOverride(irFunction: IrSimpleFunction): Pair<IrSimpleFunction, (IrSimpleFunction) -> IrExpression>? {
-        irFunction.allOverridden().forEach { overridden ->
-            val description = overridden.toDescription()
-            SPECIAL_METHODS_WITH_DEFAULTS_MAP[description]?.let {
-                return Pair(overridden, it)
-            }
-        }
-        return null
-    }
 
     private inner class FunctionHandleForIrFunction(val irFunction: IrSimpleFunction) : FunctionHandle {
         override val isDeclaration get() = irFunction.origin != IrDeclarationOrigin.FAKE_OVERRIDE
         override val isAbstract get() = irFunction.modality == Modality.ABSTRACT
-        override val mayBeUsedAsSuperImplementation get() = !irFunction.parentAsClass.isInterface
+        override val mayBeUsedAsSuperImplementation get() = !irFunction.parentAsClass.isInterface || irFunction.hasJvmDefault()
 
         override fun getOverridden() = irFunction.overriddenSymbols.map { FunctionHandleForIrFunction(it.owner) }
 
@@ -447,8 +380,8 @@ private class BridgeLowering(val context: JvmBackendContext) : ClassLoweringPass
         return findConcreteSuperDeclaration(FunctionHandleForIrFunction(this))?.irFunction
     }
 
-    private fun IrFunction.getJvmSignature() = typeMapper.mapAsmMethod(descriptor)
-    private fun IrFunction.getJvmName() = getJvmSignature().name
+    private fun IrFunction.getJvmSignature(): Method = methodSignatureMapper.mapAsmMethod(this)
+    private fun IrFunction.getJvmName(): String = getJvmSignature().name
 }
 
 private data class SignatureWithSource(val signature: Method, val source: IrSimpleFunction) {
@@ -461,23 +394,12 @@ private data class SignatureWithSource(val signature: Method, val source: IrSimp
     }
 }
 
-fun IrSimpleFunction.allOverridden(): Sequence<IrSimpleFunction> {
-    val visited = mutableSetOf<IrSimpleFunction>()
-
-    fun IrSimpleFunction.search(): Sequence<IrSimpleFunction> {
-        if (this in visited) return emptySequence()
-        return sequence {
-            yield(this@search)
-            visited.add(this@search)
-            overriddenSymbols.forEach { yieldAll(it.owner.search()) }
-        }
-    }
-
-    return search().drop(1) // First element is `this`
-}
 
 fun IrSimpleFunction.overriddenInClasses(): Sequence<IrSimpleFunction> =
     allOverridden().filter { !(it.parent.safeAs<IrClass>()?.isInterface ?: true) }
+
+fun IrSimpleFunction.isCollectionStub(): Boolean =
+    origin == IrDeclarationOrigin.IR_BUILTINS_STUB
 
 // TODO: At present, there is no reliable way to distinguish Java imports from Kotlin cross-module imports.
 val ORIGINS_FROM_JAVA = setOf(IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB, IrDeclarationOrigin.IR_EXTERNAL_DECLARATION_STUB)

@@ -1,11 +1,12 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jvm.compiler
 
 import org.jetbrains.kotlin.codegen.CodegenTestCase
+import org.jetbrains.kotlin.test.InTextDirectivesUtils
 import org.jetbrains.kotlin.utils.sure
 import org.jetbrains.org.objectweb.asm.*
 import org.junit.Assert
@@ -14,14 +15,15 @@ import java.util.*
 import java.util.regex.MatchResult
 
 abstract class AbstractWriteSignatureTest : CodegenTestCase() {
-
-
-    override fun doMultiFileTest(wholeFile: File, files: MutableList<TestFile>, javaFilesDir: File?) {
-        compile(files, javaFilesDir)
+    override fun doMultiFileTest(wholeFile: File, files: MutableList<TestFile>) {
+        val isIgnored = InTextDirectivesUtils.isIgnoredTarget(backend, wholeFile)
+        compile(files)
         try {
             parseExpectations(wholeFile).check()
         } catch (e: Throwable) {
-            println(classFileFactory.createText())
+            if (!isIgnored) {
+                println(classFileFactory.createText())
+            }
             throw e
         }
     }

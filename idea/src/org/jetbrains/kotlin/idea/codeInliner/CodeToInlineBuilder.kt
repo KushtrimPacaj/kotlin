@@ -16,10 +16,7 @@
 
 package org.jetbrains.kotlin.idea.codeInliner
 
-import org.jetbrains.kotlin.descriptors.CallableDescriptor
-import org.jetbrains.kotlin.descriptors.PropertyDescriptor
-import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
-import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
+import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.idea.caches.resolve.getResolutionFacade
 import org.jetbrains.kotlin.idea.core.asExpression
@@ -41,21 +38,22 @@ import org.jetbrains.kotlin.resolve.descriptorUtil.isExtension
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.resolve.scopes.receivers.ImplicitReceiver
 import org.jetbrains.kotlin.types.ErrorUtils
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.utils.sure
 import java.util.*
 
 class CodeToInlineBuilder(
-        private val targetCallable: CallableDescriptor,
-        private val resolutionFacade: ResolutionFacade
+    private val targetCallable: CallableDescriptor,
+    private val resolutionFacade: ResolutionFacade
 ) {
     private val psiFactory = KtPsiFactory(resolutionFacade.project)
 
     //TODO: document that code will be modified
     fun prepareCodeToInline(
-            mainExpression: KtExpression?,
-            statementsBefore: List<KtExpression>,
-            analyze: () -> BindingContext,
-            reformat: Boolean
+        mainExpression: KtExpression?,
+        statementsBefore: List<KtExpression>,
+        analyze: () -> BindingContext,
+        reformat: Boolean
     ): CodeToInline {
         var bindingContext = analyze()
 
@@ -113,8 +111,8 @@ class CodeToInlineBuilder(
     }
 
     private fun needToAddParameterTypes(
-            lambdaExpression: KtLambdaExpression,
-            resolutionFacade: ResolutionFacade
+        lambdaExpression: KtLambdaExpression,
+        resolutionFacade: ResolutionFacade
     ): Boolean {
         val functionLiteral = lambdaExpression.functionLiteral
         val context = resolutionFacade.analyze(lambdaExpression, BodyResolveMode.PARTIAL_WITH_DIAGNOSTICS)
@@ -122,15 +120,19 @@ class CodeToInlineBuilder(
             val factory = diagnostic.factory
             val element = diagnostic.psiElement
             val hasCantInferParameter = factory == Errors.CANNOT_INFER_PARAMETER_TYPE &&
-                                        element.parent.parent == functionLiteral
+                    element.parent.parent == functionLiteral
             val hasUnresolvedItOrThis = factory == Errors.UNRESOLVED_REFERENCE &&
-                                        element.text == "it" &&
-                                        element.getStrictParentOfType<KtFunctionLiteral>() == functionLiteral
+                    element.text == "it" &&
+                    element.getStrictParentOfType<KtFunctionLiteral>() == functionLiteral
             hasCantInferParameter || hasUnresolvedItOrThis
         }
     }
 
-    private fun insertExplicitTypeArguments(codeToInline: MutableCodeToInline, bindingContext: BindingContext, analyze: () -> BindingContext): BindingContext {
+    private fun insertExplicitTypeArguments(
+        codeToInline: MutableCodeToInline,
+        bindingContext: BindingContext,
+        analyze: () -> BindingContext
+    ): BindingContext {
         val typeArgsToAdd = ArrayList<Pair<KtCallExpression, KtTypeArgumentList>>()
         codeToInline.forEachDescendantOfType<KtCallExpression> {
             if (InsertExplicitTypeArgumentsIntention.isApplicableTo(it, bindingContext)) {
@@ -149,7 +151,9 @@ class CodeToInlineBuilder(
     }
 
     private fun processReferences(codeToInline: MutableCodeToInline, bindingContext: BindingContext, reformat: Boolean) {
-        val receiversToAdd = ArrayList<Pair<KtExpression, KtExpression>>()
+        val receiversToAdd = ArrayList<Triple<KtExpression, KtExpression, KotlinType>>()
+        val targetDispatchReceiverType = targetCallable.dispatchReceiverParameter?.value?.type
+        val targetExtensionReceiverType = targetCallable.extensionReceiverParameter?.value?.type
 
         codeToInline.forEachDescendantOfType<KtSimpleNameExpression> { expression ->
             val target = bindingContext[BindingContext.REFERENCE_TARGET, expression] ?: return@forEachDescendantOfType
@@ -162,8 +166,7 @@ class CodeToInlineBuilder(
             if (expression.getReceiverExpression() == null) {
                 if (target is ValueParameterDescriptor && target.containingDeclaration == targetCallable) {
                     expression.putCopyableUserData(CodeToInline.PARAMETER_USAGE_KEY, target.name)
-                }
-                else if (target is TypeParameterDescriptor && target.containingDeclaration == targetCallable) {
+                } else if (target is TypeParameterDescriptor && target.containingDeclaration == targetCallable) {
                     expression.putCopyableUserData(CodeToInline.TYPE_PARAMETER_USAGE_KEY, target.name)
                 }
 
@@ -177,7 +180,7 @@ class CodeToInlineBuilder(
                         val resolutionScope = expression.getResolutionScope(bindingContext, resolutionFacade)
                         val receiverExpression = receiver.asExpression(resolutionScope, psiFactory)
                         if (receiverExpression != null) {
-                            receiversToAdd.add(expression to receiverExpression)
+                            receiversToAdd.add(Triple(expression, receiverExpression, receiver.type))
                         }
                     }
                 }
@@ -185,11 +188,18 @@ class CodeToInlineBuilder(
         }
 
         // add receivers in reverse order because arguments of a call were processed after the callee's name
-        for ((expr, receiverExpression) in receiversToAdd.asReversed()) {
+        for ((expr, receiverExpression, receiverType) in receiversToAdd.asReversed()) {
             val expressionToReplace = expr.parent as? KtCallExpression ?: expr
-            codeToInline.replaceExpression(expressionToReplace,
-                                           psiFactory.createExpressionByPattern("$0.$1", receiverExpression, expressionToReplace,
-                                                                                reformat = reformat))
+            val replaced = codeToInline.replaceExpression(
+                expressionToReplace,
+                psiFactory.createExpressionByPattern(
+                    "$0.$1", receiverExpression, expressionToReplace,
+                    reformat = reformat
+                )
+            ) as? KtQualifiedExpression
+            if (receiverType != targetDispatchReceiverType && receiverType != targetExtensionReceiverType) {
+                replaced?.receiverExpression?.putCopyableUserData(CodeToInline.SIDE_RECEIVER_USAGE_KEY, Unit)
+            }
         }
     }
 }

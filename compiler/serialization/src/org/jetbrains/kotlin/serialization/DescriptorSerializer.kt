@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.serialization
@@ -353,7 +353,7 @@ class DescriptorSerializer private constructor(
 
         contractSerializer.serializeContractOfFunctionIfAny(descriptor, builder, this)
 
-        extension.serializeFunction(descriptor, builder, local)
+        extension.serializeFunction(descriptor, builder, versionRequirementTable, local)
 
         return builder
     }
@@ -451,6 +451,8 @@ class DescriptorSerializer private constructor(
         for (annotation in descriptor.nonSourceAnnotations) {
             builder.addAnnotation(extension.annotationSerializer.serializeAnnotation(annotation))
         }
+
+        extension.serializeTypeAlias(descriptor, builder)
 
         return builder
     }

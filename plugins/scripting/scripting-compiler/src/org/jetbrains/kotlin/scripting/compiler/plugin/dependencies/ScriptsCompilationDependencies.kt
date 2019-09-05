@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.scripting.compiler.plugin.dependencies
@@ -8,12 +8,12 @@ package org.jetbrains.kotlin.scripting.compiler.plugin.dependencies
 import com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.cli.common.config.KotlinSourceRoot
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageLocation
-import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.cli.jvm.compiler.createSourceFilesFromSourceRoots
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.script.ScriptDependenciesProvider
+import org.jetbrains.kotlin.scripting.definitions.ScriptDependenciesProvider
 import java.io.File
+import kotlin.script.experimental.api.valueOrNull
 
 data class ScriptsCompilationDependencies(
     val classpath: List<File>,
@@ -42,11 +42,11 @@ fun collectScriptsCompilationDependencies(
         while (true) {
             val newRemainingSources = ArrayList<KtFile>()
             for (source in remainingSources) {
-                val dependencies = importsProvider.getScriptDependencies(source)
-                if (dependencies != null) {
-                    collectedClassPath.addAll(dependencies.classpath)
+                val refinedConfiguration = importsProvider.getScriptConfigurationResult(source)?.valueOrNull()
+                if (refinedConfiguration != null) {
+                    collectedClassPath.addAll(refinedConfiguration.dependenciesClassPath)
 
-                    val sourceDependenciesRoots = dependencies.scripts.map {
+                    val sourceDependenciesRoots = refinedConfiguration.importedScripts.map {
                         KotlinSourceRoot(it.path, false)
                     }
                     val sourceDependencies =

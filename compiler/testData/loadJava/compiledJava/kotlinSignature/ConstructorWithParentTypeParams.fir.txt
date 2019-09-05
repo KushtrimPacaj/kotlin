@@ -1,4 +1,4 @@
-<T> public open class ConstructorWithParentTypeParams : R|java/lang/Object| {
-    public final fun ConstructorWithParentTypeParams(first: R|ft<T, T?>|!): R|test/ConstructorWithParentTypeParams|
+public open class ConstructorWithParentTypeParams<T> : R|kotlin/Any| {
+    public constructor<T>(first: R|ft<T, T?>!|): R|test/ConstructorWithParentTypeParams<T>|
 
 }

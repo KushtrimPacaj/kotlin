@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.builtins.functions
@@ -50,9 +50,13 @@ class FunctionInterfaceMemberScope(
         TODO()
     }
 
+    private val classifiers = mutableMapOf<Name, ClassifierDescriptor>()
+
     override fun getContributedClassifier(name: Name, location: LookupLocation): ClassifierDescriptor? = when {
         classDescriptorFactory.shouldCreateClass(packageName, name) ->
-            classDescriptorFactory.createClass(ClassId.topLevel(packageName.child(name)))
+            classifiers.getOrPut(name) {
+                classDescriptorFactory.createClass(ClassId.topLevel(packageName.child(name)))!!
+            }
         else -> null
     }
 }

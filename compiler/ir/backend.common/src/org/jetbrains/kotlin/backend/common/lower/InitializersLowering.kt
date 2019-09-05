@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.common.lower
@@ -27,12 +27,13 @@ import org.jetbrains.kotlin.ir.util.patchDeclarationParents
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
+import org.jetbrains.kotlin.ir.util.deepCopyWithSymbols
 import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.name.Name
 
 object SYNTHESIZED_INIT_BLOCK: IrStatementOriginImpl("SYNTHESIZED_INIT_BLOCK")
 
-fun makeInitializersPhase(origin: IrDeclarationOrigin, clinitNeeded: Boolean)= makeIrFilePhase(
+fun makeInitializersPhase(origin: IrDeclarationOrigin, clinitNeeded: Boolean)= makeIrFilePhase<CommonBackendContext>(
     { context -> InitializersLowering(context, origin, clinitNeeded) },
     name = "Initializers",
     description = "Handle initializer statements",
@@ -161,7 +162,7 @@ class InitializersLowering(
     companion object {
         val clinitName = Name.special("<clinit>")
 
-        fun IrStatement.copy(containingDeclaration: IrDeclarationParent) = deepCopyWithWrappedDescriptors(containingDeclaration)
-        fun IrExpression.copy(containingDeclaration: IrDeclarationParent) = deepCopyWithWrappedDescriptors(containingDeclaration)
+        fun IrStatement.copy(containingDeclaration: IrDeclarationParent) = deepCopyWithSymbols(containingDeclaration)
+        fun IrExpression.copy(containingDeclaration: IrDeclarationParent) = deepCopyWithSymbols(containingDeclaration)
     }
 }

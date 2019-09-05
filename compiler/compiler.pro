@@ -16,6 +16,7 @@ messages/**)
 
 -dontnote **
 -dontwarn com.intellij.util.ui.IsRetina*
+-dontwarn com.intellij.util.ui.UIUtilities
 -dontwarn com.intellij.util.RetinaImage*
 -dontwarn apple.awt.*
 -dontwarn dk.brics.automaton.*
@@ -74,6 +75,7 @@ messages/**)
 -dontwarn com.intellij.util.io.Decompressor*
 -dontwarn org.w3c.dom.Location
 -dontwarn org.w3c.dom.Window
+-dontwarn org.slf4j.**
 
 
 #-libraryjars '<rtjar>'
@@ -253,3 +255,19 @@ messages/**)
 
 # used in LazyScriptDescriptor
 -keep class org.jetbrains.kotlin.utils.addToStdlib.AddToStdlibKt { *; }
+
+-keep class com.intellij.openapi.vfs.impl.jar.CoreJarFileSystem { *; }
+
+# used in REPL
+# TODO: pack jline directly to scripting-compiler jars instead
+-keep class org.jline.reader.LineReaderBuilder { *; }
+-keep class org.jline.reader.LineReader { *; }
+-keep class org.jline.reader.History { *; }
+-keep class org.jline.reader.EndOfFileException { *; }
+-keep class org.jline.reader.UserInterruptException { *; }
+-keep class org.jline.terminal.impl.jna.JnaSupportImpl  { *; }
+-keep class org.jline.terminal.impl.jansi.JansiSupportImpl  { *; }
+
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+}

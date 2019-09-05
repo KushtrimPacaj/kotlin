@@ -16,11 +16,16 @@
 
 package org.jetbrains.kotlin.gradle.utils
 
+import org.gradle.api.Action
 import org.gradle.api.GradleException
 import org.gradle.api.Task
+import org.gradle.api.artifacts.repositories.IvyArtifactRepository
+import org.gradle.api.artifacts.repositories.IvyPatternRepositoryLayout
 import org.gradle.api.tasks.TaskInputs
 import org.gradle.api.tasks.TaskOutputs
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.util.GradleVersion
+import java.io.File
 
 internal val Task.inputsCompatible: TaskInputs get() = inputs
 
@@ -46,12 +51,50 @@ internal fun TaskInputs.dirCompatible(dirPath: Any) {
     inputsDirMethod(this, dirPath)
 }
 
-internal fun checkGradleCompatibility(minSupportedVersion: GradleVersion = GradleVersion.version("4.1")) {
+internal fun checkGradleCompatibility(minSupportedVersion: GradleVersion = GradleVersion.version("4.3")) {
     val currentVersion = GradleVersion.current()
     if (currentVersion < minSupportedVersion) {
         throw GradleException(
             "Current version of Gradle $currentVersion is not compatible with Kotlin plugin. " +
                     "Please use Gradle $minSupportedVersion or newer or previous version of Kotlin plugin."
         )
+    }
+}
+
+internal fun AbstractArchiveTask.setArchiveAppendixCompatible(appendixProvider: () -> String) {
+    if (isGradleVersionAtLeast(5, 2)) {
+        archiveAppendix.set(project.provider { appendixProvider() })
+    } else {
+        @Suppress("DEPRECATION")
+        appendix = appendixProvider()
+    }
+}
+
+internal val AbstractArchiveTask.archivePathCompatible: File
+    get() =
+        if (isGradleVersionAtLeast(5, 1)) {
+            archiveFile.get().asFile
+        } else {
+            @Suppress("DEPRECATION")
+            archivePath
+        }
+
+internal fun AbstractArchiveTask.setArchiveClassifierCompatible(classifierProvider: () -> String) {
+    if (isGradleVersionAtLeast(5, 2)) {
+        archiveClassifier.set(project.provider { classifierProvider() })
+    } else {
+        @Suppress("DEPRECATION")
+        classifier = classifierProvider()
+    }
+}
+
+internal fun IvyArtifactRepository.patternLayoutCompatible(config: IvyPatternRepositoryLayout.() -> Unit) {
+    if (isGradleVersionAtLeast(5, 0)) {
+        patternLayout(config)
+    } else {
+        // The "layout" method is planned to be removed in Gradle 6.0. Access it using reflection.
+        javaClass
+            .getMethod("layout", String::class.java, Action::class.java)
+            .invoke(this, "pattern", Action<IvyPatternRepositoryLayout> { it.config() })
     }
 }

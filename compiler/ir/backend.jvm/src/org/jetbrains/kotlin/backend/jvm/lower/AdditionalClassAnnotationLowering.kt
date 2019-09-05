@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
@@ -24,17 +24,24 @@ import org.jetbrains.kotlin.ir.builders.declarations.buildValueParameter
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrEnumEntryImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrExternalPackageFragmentImpl
-import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrGetEnumValue
+import org.jetbrains.kotlin.ir.expressions.IrVararg
+import org.jetbrains.kotlin.ir.expressions.impl.IrConstructorCallImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrGetEnumValueImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrVarargImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrEnumEntrySymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrExternalPackageFragmentSymbolImpl
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.types.typeWith
-import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.defaultType
+import org.jetbrains.kotlin.ir.util.getAnnotation
+import org.jetbrains.kotlin.ir.util.hasAnnotation
+import org.jetbrains.kotlin.ir.util.isAnnotationClass
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 internal val additionalClassAnnotationPhase = makeIrFilePhase(
     ::AdditionalClassAnnotationLowering,
@@ -43,8 +50,7 @@ internal val additionalClassAnnotationPhase = makeIrFilePhase(
 )
 
 private class AdditionalClassAnnotationLowering(private val context: JvmBackendContext) : ClassLoweringPass {
-
-    val typeMapper = context.state.typeMapper
+    private val jvmTarget = context.state.target
 
     // TODO: import IR structures from the library?
 
@@ -99,7 +105,7 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
     private val rpRuntime = buildEnumEntry(retentionPolicyEnum, "RUNTIME")
 
     private val retentionConstructor = buildAnnotationConstructor(buildAnnotationClass("Retention")).apply {
-        addValueParameter(Name.identifier("value"), retentionPolicyEnum.defaultType, IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB)
+        addValueParameter("value", retentionPolicyEnum.defaultType, IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB)
     }
 
     private val elementTypeEnum = buildAnnotationClass("ElementType", classKind = ClassKind.ENUM_CLASS)
@@ -108,15 +114,13 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
     private val etField = buildEnumEntry(elementTypeEnum, "FIELD")
     private val etLocalVariable = buildEnumEntry(elementTypeEnum, "LOCAL_VARIABLE")
     private val etMethod = buildEnumEntry(elementTypeEnum, "METHOD")
-    private val tModule = buildEnumEntry(elementTypeEnum, "MODULE")
-    private val etPackage = buildEnumEntry(elementTypeEnum, "PACKAGE")
     private val etParameter = buildEnumEntry(elementTypeEnum, "PARAMETER")
     private val etType = buildEnumEntry(elementTypeEnum, "TYPE")
     private val etTypeParameter = buildEnumEntry(elementTypeEnum, "TYPE_PARAMETER")
     private val etTypeUse = buildEnumEntry(elementTypeEnum, "TYPE_USE")
 
     private val targetConstructor = buildAnnotationConstructor(buildAnnotationClass("Target")).apply {
-        addValueParameter(Name.identifier("value"), elementTypeEnum.defaultType, IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB)
+        addValueParameter("value", elementTypeEnum.defaultType, IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB)
     }
 
 
@@ -136,7 +140,7 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
         }
 
         irClass.annotations.add(
-            IrCallImpl(
+            IrConstructorCallImpl.fromSymbolOwner(
                 UNDEFINED_OFFSET, UNDEFINED_OFFSET, documentedConstructor.returnType, documentedConstructor.symbol
             )
         )
@@ -150,11 +154,14 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
 
     private fun generateRetentionAnnotation(irClass: IrClass) {
         if (irClass.hasAnnotation(FqName("java.lang.annotation.Retention"))) return
-        val kotlinRetentionPolicy = irClass.getAnnotation(FqName("kotlin.annotation.Retention"))
-        val javaRetentionPolicy = annotationRetentionMap[kotlinRetentionPolicy] ?: rpRuntime
+        val kotlinRetentionPolicyCall = irClass.getAnnotation(FqName("kotlin.annotation.Retention"))
+        val kotlinRetentionPolicyName =
+            kotlinRetentionPolicyCall?.getValueArgument(0)?.safeAs<IrGetEnumValue>()?.symbol?.owner?.name?.asString()
+        val kotlinRetentionPolicy = kotlinRetentionPolicyName?.let { KotlinRetention.valueOf(it) }
+        val javaRetentionPolicy = kotlinRetentionPolicy?.let { annotationRetentionMap[it] } ?: rpRuntime
 
         irClass.annotations.add(
-            IrCallImpl(
+            IrConstructorCallImpl.fromSymbolOwner(
                 UNDEFINED_OFFSET, UNDEFINED_OFFSET, retentionConstructor.returnType, retentionConstructor.symbol
             ).apply {
                 putValueArgument(
@@ -202,8 +209,8 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
 
     private fun generateTargetAnnotation(irClass: IrClass) {
         if (irClass.hasAnnotation(FqName("java.lang.annotation.Target"))) return
-        val annotationTargetMap = annotationTargetMaps[typeMapper.jvmTarget]
-            ?: throw AssertionError("No annotation target map for JVM target ${typeMapper.jvmTarget}")
+        val annotationTargetMap = annotationTargetMaps[jvmTarget]
+            ?: throw AssertionError("No annotation target map for JVM target $jvmTarget")
 
         val targets = irClass.applicableTargetSet() ?: return
         val javaTargets = targets.mapNotNull { annotationTargetMap[it] }
@@ -222,7 +229,7 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
         }
 
         irClass.annotations.add(
-            IrCallImpl(
+            IrConstructorCallImpl.fromSymbolOwner(
                 UNDEFINED_OFFSET, UNDEFINED_OFFSET, targetConstructor.returnType, targetConstructor.symbol
             ).apply {
                 putValueArgument(0, vararg)
@@ -233,7 +240,7 @@ private class AdditionalClassAnnotationLowering(private val context: JvmBackendC
 }
 
 // To be generalized to IrMemberAccessExpression as soon as properties get symbols.
-private fun IrCall.getValueArgument(name: Name): IrExpression? {
+private fun IrConstructorCall.getValueArgument(name: Name): IrExpression? {
     val index = symbol.owner.valueParameters.find { it.name == name }?.index ?: return null
     return getValueArgument(index)
 }
@@ -247,7 +254,7 @@ private fun IrClass.applicableTargetSet(): Set<KotlinTarget>? {
     return loadAnnotationTargets(targetEntry)
 }
 
-private fun loadAnnotationTargets(targetEntry: IrCall): Set<KotlinTarget>? {
+private fun loadAnnotationTargets(targetEntry: IrConstructorCall): Set<KotlinTarget>? {
     val valueArgument = targetEntry.getValueArgument(TARGET_ALLOWED_TARGETS)
             as? IrVararg ?: return null
     return valueArgument.elements.filterIsInstance<IrGetEnumValue>().mapNotNull {

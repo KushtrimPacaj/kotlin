@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.roots.ui
@@ -10,7 +10,10 @@ import org.jetbrains.jps.model.JpsElement
 import org.jetbrains.jps.model.java.JavaResourceRootProperties
 import org.jetbrains.jps.model.java.JavaSourceRootProperties
 import org.jetbrains.jps.model.module.JpsModuleSourceRootType
-import org.jetbrains.kotlin.config.*
+import org.jetbrains.kotlin.config.ResourceKotlinRootType
+import org.jetbrains.kotlin.config.SourceKotlinRootType
+import org.jetbrains.kotlin.config.TestResourceKotlinRootType
+import org.jetbrains.kotlin.config.TestSourceKotlinRootType
 
 sealed class KotlinModuleSourceRootEditHandler<Data : JpsElement>(
     rootType: JpsModuleSourceRootType<Data>,

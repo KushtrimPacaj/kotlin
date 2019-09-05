@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.caches.resolve;
@@ -42,6 +42,11 @@ public class MultiPlatformHighlightingTestGenerated extends AbstractMultiPlatfor
     @TestMetadata("catchHeaderExceptionInPlatformModule")
     public void testCatchHeaderExceptionInPlatformModule() throws Exception {
         runTest("idea/testData/multiModuleHighlighting/multiplatform/catchHeaderExceptionInPlatformModule/");
+    }
+
+    @TestMetadata("completionHandlexCoroutines")
+    public void testCompletionHandlexCoroutines() throws Exception {
+        runTest("idea/testData/multiModuleHighlighting/multiplatform/completionHandlexCoroutines/");
     }
 
     @TestMetadata("contracts")
@@ -97,6 +102,11 @@ public class MultiPlatformHighlightingTestGenerated extends AbstractMultiPlatfor
     @TestMetadata("internalDependencyFromTests")
     public void testInternalDependencyFromTests() throws Exception {
         runTest("idea/testData/multiModuleHighlighting/multiplatform/internalDependencyFromTests/");
+    }
+
+    @TestMetadata("internalInheritanceToCommon")
+    public void testInternalInheritanceToCommon() throws Exception {
+        runTest("idea/testData/multiModuleHighlighting/multiplatform/internalInheritanceToCommon/");
     }
 
     @TestMetadata("javaUsesPlatformFacade")
@@ -167,6 +177,11 @@ public class MultiPlatformHighlightingTestGenerated extends AbstractMultiPlatfor
     @TestMetadata("typeAliasedParameter")
     public void testTypeAliasedParameter() throws Exception {
         runTest("idea/testData/multiModuleHighlighting/multiplatform/typeAliasedParameter/");
+    }
+
+    @TestMetadata("typeAliasedSam")
+    public void testTypeAliasedSam() throws Exception {
+        runTest("idea/testData/multiModuleHighlighting/multiplatform/typeAliasedSam/");
     }
 
     @TestMetadata("useAppendable")

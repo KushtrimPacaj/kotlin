@@ -25,6 +25,8 @@ used if there are no quick fixes available for the inspection).
 - `ProblemHighlightType` should always be `ProblemHighlightType.GENERIC_ERROR_OR_WARNING` or empty (there's a correspondent overload for 
 `ProblemsHolder.registerProblem()`), otherwise, it won't be possible to individually change the desired level in the inspection settings.
 
+- Inspection highlighting range shouldn't be too wide. For example, to show some problem in a class it's much better to highlight its name than to highlight the whole class (the latter just looks very nasty).
+
 - Resolve operations (`analyze`, `resolveToCall`, `resolveToDescriptors`) are considered to be expensive and shouldn't be triggered more 
 often than it's absolutely needed. All possible checks should be applied on PSI or file text before actual resolve. 
 
@@ -34,6 +36,15 @@ requires multiple resolve calls in a row.
 
 - Prefer `resolveToDescriptorIfAny()` over `resolveToDesciptor()` because of exceptions that are thrown from latter 
 function when descriptor is absent. 
+
+- Any checks about code state and resolve that were made during reporting an inspection problem an registering a quick fix might be 
+invalidated by the moment of the actual quick fix execution. Avoid the code that can throw exceptions because of that. Re-checks with early 
+exit from the quick fix can be used to workaround it. 
+
+- Intentions and quick fixes execution happens in the UI thread so do not call long operations such as usages search or resolve to avoid 
+freezes. `PSI` elements obtained from resolve during the applicability check can be stored in `SmartPsiElementPointer` for the postponed 
+modification in quick-fixes. All complex searches should be executed in a background thread under a progress indicator. Some tests 
+already assert that resolve operations are not called from UI thread while applying fixes.
 
 - There shouldn't be PSI elements stored in QuickFix classes (`val psi: PsiElement`) as such elements might be invalidated and can lead 
 to memory leaks. Smart pointer (check `SmartPsiElementPointer` class and `createSmartPointer()` function) can be used when such storage 

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.js.test.ir.semantics;
@@ -88,6 +88,11 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
         runTest("compiler/testData/codegen/boxInline/suspend/kt26658.kt");
     }
 
+    @TestMetadata("maxStackWithCrossinline.kt")
+    public void testMaxStackWithCrossinline_1_3() throws Exception {
+        runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/maxStackWithCrossinline.kt", "kotlin.coroutines");
+    }
+
     @TestMetadata("multipleLocals.kt")
     public void testMultipleLocals_1_3() throws Exception {
         runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/multipleLocals.kt", "kotlin.coroutines");
@@ -96,6 +101,11 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
     @TestMetadata("multipleSuspensionPoints.kt")
     public void testMultipleSuspensionPoints_1_3() throws Exception {
         runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/multipleSuspensionPoints.kt", "kotlin.coroutines");
+    }
+
+    @TestMetadata("nonSuspendCrossinline.kt")
+    public void testNonSuspendCrossinline_1_3() throws Exception {
+        runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/nonSuspendCrossinline.kt", "kotlin.coroutines");
     }
 
     @TestMetadata("returnValue.kt")
@@ -120,19 +130,9 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/boxInline/suspend/callableReference"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.JS_IR, true);
         }
 
-        @TestMetadata("ordinaryParameter.kt")
-        public void testOrdinaryParameter() throws Exception {
-            runTest("compiler/testData/codegen/boxInline/suspend/callableReference/ordinaryParameter.kt");
-        }
-
         @TestMetadata("simple.kt")
         public void testSimple() throws Exception {
             runTest("compiler/testData/codegen/boxInline/suspend/callableReference/simple.kt");
-        }
-
-        @TestMetadata("suspendOfOrdinary.kt")
-        public void testSuspendOfOrdinary() throws Exception {
-            runTest("compiler/testData/codegen/boxInline/suspend/callableReference/suspendOfOrdinary.kt");
         }
     }
 
@@ -259,6 +259,16 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/boxInline/suspend/stateMachine"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.JS_IR, true);
         }
 
+        @TestMetadata("crossingCoroutineBoundaries.kt")
+        public void testCrossingCoroutineBoundaries_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/crossingCoroutineBoundaries.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("independentInline.kt")
+        public void testIndependentInline_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/independentInline.kt", "kotlin.coroutines");
+        }
+
         @TestMetadata("innerLambdaInsideLambda.kt")
         public void testInnerLambdaInsideLambda_1_3() throws Exception {
             runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/innerLambdaInsideLambda.kt", "kotlin.coroutines");
@@ -289,6 +299,11 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
             runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/innerObjectInsideInnerObject.kt", "kotlin.coroutines");
         }
 
+        @TestMetadata("innerObjectRetransformation.kt")
+        public void testInnerObjectRetransformation_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/innerObjectRetransformation.kt", "kotlin.coroutines");
+        }
+
         @TestMetadata("innerObjectSeveralFunctions.kt")
         public void testInnerObjectSeveralFunctions_1_3() throws Exception {
             runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/innerObjectSeveralFunctions.kt", "kotlin.coroutines");
@@ -304,6 +319,11 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
             runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/innerObject.kt", "kotlin.coroutines");
         }
 
+        @TestMetadata("insideObject.kt")
+        public void testInsideObject_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/insideObject.kt", "kotlin.coroutines");
+        }
+
         @TestMetadata("normalInline.kt")
         public void testNormalInline_1_3() throws Exception {
             runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/normalInline.kt", "kotlin.coroutines");
@@ -312,6 +332,36 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
         @TestMetadata("numberOfSuspentions.kt")
         public void testNumberOfSuspentions_1_3() throws Exception {
             runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/numberOfSuspentions.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("objectInsideLambdas.kt")
+        public void testObjectInsideLambdas_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/objectInsideLambdas.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("oneInlineTwoCaptures.kt")
+        public void testOneInlineTwoCaptures_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/oneInlineTwoCaptures.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("passLambda.kt")
+        public void testPassLambda_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/passLambda.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("passParameterLambda.kt")
+        public void testPassParameterLambda_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/passParameterLambda.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("passParameter.kt")
+        public void testPassParameter_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/passParameter.kt", "kotlin.coroutines");
+        }
+
+        @TestMetadata("unreachableSuspendMarker.kt")
+        public void testUnreachableSuspendMarker_1_3() throws Exception {
+            runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/stateMachine/unreachableSuspendMarker.kt", "kotlin.coroutines");
         }
     }
 }

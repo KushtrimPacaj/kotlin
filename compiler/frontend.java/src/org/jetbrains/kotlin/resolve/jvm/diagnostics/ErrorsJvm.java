@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.jvm.diagnostics;
@@ -49,6 +49,7 @@ public interface ErrorsJvm {
     DiagnosticFactory0<KtAnnotationEntry> VOLATILE_ON_DELEGATE = DiagnosticFactory0.create(ERROR);
     DiagnosticFactory0<KtAnnotationEntry> SYNCHRONIZED_ON_ABSTRACT = DiagnosticFactory0.create(ERROR);
     DiagnosticFactory0<KtElement> SYNCHRONIZED_ON_INLINE = DiagnosticFactory0.create(WARNING);
+    DiagnosticFactory0<KtAnnotationEntry> SYNCHRONIZED_IN_INTERFACE = DiagnosticFactory0.create(ERROR);
 
     DiagnosticFactory0<KtAnnotationEntry> OVERLOADS_WITHOUT_DEFAULT_ARGUMENTS = DiagnosticFactory0.create(WARNING);
     DiagnosticFactory0<KtAnnotationEntry> OVERLOADS_ABSTRACT = DiagnosticFactory0.create(ERROR);

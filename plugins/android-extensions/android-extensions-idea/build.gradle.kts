@@ -57,30 +57,31 @@ dependencies {
         testRuntime(intellijPluginDep("maven"))
     }
     testRuntime(intellijPluginDep("android"))
-    if (Platform[181].orHigher()) {
-        testRuntime(intellijPluginDep("smali"))
+    testRuntime(intellijPluginDep("smali"))
+
+    if (Ide.AS36.orHigher()) {
+        testRuntime(intellijPluginDep("android-layoutlib"))
+        testRuntime(intellijPluginDep("android-wizardTemplate-plugin"))
     }
 }
 
 sourceSets {
-    if (Ide.AS33.orHigher() || Ide.IJ191.orHigher()) {
-        "main" { }
-        "test" { }
-    } else {
+    if (Ide.IJ183()) {
         "main" { projectDefault() }
         "test" { projectDefault() }
+    } else {
+        "main" { }
+        "test" { }
     }
 }
 
 testsJar {}
 
-projectTest {
-    dependsOn(":kotlin-android-extensions-runtime:dist")
+projectTest(parallel = true) {
+    dependsOn(":dist")
     workingDir = rootDir
     useAndroidSdk()
     useAndroidJar()
 }
 
 runtimeJar()
-
-ideaPlugin()

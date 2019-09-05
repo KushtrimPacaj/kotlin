@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.serialization.deserialization
@@ -241,7 +241,7 @@ class TypeDeserializer(
     private fun typeArgument(parameter: TypeParameterDescriptor?, typeArgumentProto: ProtoBuf.Type.Argument): TypeProjection {
         if (typeArgumentProto.projection == ProtoBuf.Type.Argument.Projection.STAR) {
             return if (parameter == null)
-                TypeBasedStarProjectionImpl(c.components.moduleDescriptor.builtIns.nullableAnyType)
+                StarProjectionForAbsentTypeParameter(c.components.moduleDescriptor.builtIns)
             else
                 StarProjectionImpl(parameter)
         }

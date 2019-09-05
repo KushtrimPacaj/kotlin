@@ -23,7 +23,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analyzer.AnalysisResult
-import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.container.ComponentProvider
 import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.context.GlobalContext
@@ -33,13 +32,13 @@ import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.diagnostics.DiagnosticUtils
 import org.jetbrains.kotlin.frontend.di.createContainerForLazyBodyResolve
 import org.jetbrains.kotlin.idea.caches.project.getModuleInfo
-import org.jetbrains.kotlin.idea.compiler.IDELanguageSettingsProvider
+import org.jetbrains.kotlin.idea.project.IdeaModuleStructureOracle
 import org.jetbrains.kotlin.idea.project.TargetPlatformDetector
+import org.jetbrains.kotlin.idea.project.findAnalyzerServices
 import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 import org.jetbrains.kotlin.resolve.*
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.resolve.lazy.ResolveSession
 import java.util.*
@@ -181,6 +180,16 @@ private object KotlinResolveDataProvider {
                 return AnalysisResult.success(bindingContext, moduleDescriptor)
             }
 
+            /*
+            Note that currently we *have* to re-create LazyTopDownAnalyzer with custom trace in order to disallow resolution of
+            bodies in top-level trace (trace from DI-container).
+            Resolving bodies in top-level trace may lead to memory leaks and incorrect resolution, because top-level
+            trace isn't invalidated on in-block modifications (while body resolution surely does)
+
+            Also note that for function bodies, we'll create DelegatingBindingTrace in ResolveElementCache anyways
+            (see 'functionAdditionalResolve'). However, this trace is still needed, because we have other
+            codepaths for other KtDeclarationWithBodies (like property accessors/secondary constructors/class initializers)
+             */
             val trace = DelegatingBindingTrace(
                 resolveSession.bindingContext,
                 "Trace for resolution of " + analyzableElement,
@@ -189,10 +198,8 @@ private object KotlinResolveDataProvider {
 
             val moduleInfo = analyzableElement.containingKtFile.getModuleInfo()
 
+            // TODO: should return proper platform!
             val targetPlatform = moduleInfo.platform ?: TargetPlatformDetector.getPlatform(analyzableElement.containingKtFile)
-            val targetPlatformVersion = IDELanguageSettingsProvider.getTargetPlatform(moduleInfo, project).let {
-                if (targetPlatform == JvmPlatform && it !is JvmTarget) JvmTarget.DEFAULT else it
-            }
 
             val lazyTopDownAnalyzer = createContainerForLazyBodyResolve(
                 //TODO: should get ModuleContext
@@ -201,8 +208,9 @@ private object KotlinResolveDataProvider {
                 trace,
                 targetPlatform,
                 bodyResolveCache,
-                targetPlatformVersion,
-                analyzableElement.languageVersionSettings
+                targetPlatform.findAnalyzerServices,
+                analyzableElement.languageVersionSettings,
+                IdeaModuleStructureOracle()
             ).get<LazyTopDownAnalyzer>()
 
             lazyTopDownAnalyzer.analyzeDeclarations(TopDownAnalysisMode.TopLevelDeclarations, listOf(analyzableElement))

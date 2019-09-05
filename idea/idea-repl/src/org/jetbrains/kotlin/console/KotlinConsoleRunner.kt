@@ -62,8 +62,9 @@ import org.jetbrains.kotlin.idea.caches.project.productionSourceInfo
 import org.jetbrains.kotlin.idea.caches.project.testSourceInfo
 import org.jetbrains.kotlin.idea.caches.resolve.unsafeResolveToDescriptor
 import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionContributor
+import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionSourceAsContributor
 import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionsManager
-import org.jetbrains.kotlin.idea.project.KOTLIN_CONSOLE_KEY
+import org.jetbrains.kotlin.idea.caches.trackers.KOTLIN_CONSOLE_KEY
 import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.parsing.KotlinParserDefinition
@@ -71,12 +72,14 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtScript
 import org.jetbrains.kotlin.resolve.lazy.ForceResolveUtil
 import org.jetbrains.kotlin.resolve.repl.ReplState
-import org.jetbrains.kotlin.script.KotlinScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.ScriptDefinition
 import java.awt.Color
 import java.awt.Font
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.properties.Delegates
+import kotlin.script.experimental.jvm.defaultJvmScriptingHostConfiguration
 
 private val KOTLIN_SHELL_EXECUTE_ACTION_ID = "KotlinShellExecute"
 
@@ -131,9 +134,7 @@ class KotlinConsoleRunner(
 
     private val consoleScriptDefinition = object : KotlinScriptDefinition(Any::class) {
         override val name = "Kotlin REPL"
-        override fun isScript(fileName: String): Boolean {
-            return fileName == consoleView.virtualFile.name
-        }
+        override fun isScript(fileName: String): Boolean = fileName.startsWith(consoleView.virtualFile.name)
         override fun getScriptName(script: KtScript) = Name.identifier("REPL")
     }
 
@@ -275,10 +276,13 @@ class KotlinConsoleRunner(
         runReadAction {
             val lineNumber = replState.successfulLinesCount + 1
             val virtualFile =
-                    LightVirtualFile("line$lineNumber${KotlinParserDefinition.STD_SCRIPT_EXT}", KotlinLanguage.INSTANCE, text).apply {
-                        charset = CharsetToolkit.UTF8_CHARSET
-                        isWritable = false
-                    }
+                LightVirtualFile(
+                    "${consoleView.virtualFile.name}$lineNumber${KotlinParserDefinition.STD_SCRIPT_EXT}",
+                    KotlinLanguage.INSTANCE, text
+                ).apply {
+                    charset = CharsetToolkit.UTF8_CHARSET
+                    isWritable = false
+                }
             val psiFile = (PsiFileFactory.getInstance(project) as PsiFileFactoryImpl).trySetupPsiForFile(virtualFile, KotlinLanguage.INSTANCE, true, false) as KtFile?
                           ?: error("Failed to setup PSI for file:\n$text")
 
@@ -305,20 +309,21 @@ class KotlinConsoleRunner(
     }
 }
 
-class ConsoleScriptDefinitionContributor: ScriptDefinitionContributor {
-    private val definitions = ContainerUtil.newConcurrentSet<KotlinScriptDefinition>()
+class ConsoleScriptDefinitionContributor: ScriptDefinitionSourceAsContributor {
+
+    val definitionsSet = ContainerUtil.newConcurrentSet<ScriptDefinition>()
+
+    override val definitions: Sequence<ScriptDefinition>
+        get() = definitionsSet.asSequence()
 
     override val id: String = "IDEA Console"
 
-    override fun getDefinitions(): List<KotlinScriptDefinition> {
-        return definitions.toList()
-    }
-
+    // TODO: rewrite to ScriptDefinition
     fun registerDefinition(definition: KotlinScriptDefinition) {
-        definitions.add(definition)
+        definitionsSet.add(ScriptDefinition.FromLegacy(defaultJvmScriptingHostConfiguration, definition))
     }
 
     fun unregisterDefinition(definition: KotlinScriptDefinition) {
-        definitions.remove(definition)
+        definitionsSet.removeIf { it.asLegacyOrNull<KotlinScriptDefinition>() == definition }
     }
 }

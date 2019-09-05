@@ -4,6 +4,7 @@ import net.rubygrapefruit.platform.Native
 import net.rubygrapefruit.platform.WindowsRegistry
 import org.gradle.api.GradleException
 import org.gradle.api.Project
+import java.nio.file.Paths
 import java.io.File
 import net.rubygrapefruit.platform.WindowsRegistry.Key.HKEY_LOCAL_MACHINE
 import org.gradle.internal.os.OperatingSystem
@@ -25,7 +26,7 @@ fun Project.getConfiguredJdks(): List<JdkId> {
                 ?: System.getenv(jdkMajorVersion.name)
                 ?: jdkAlternativeVarNames[jdkMajorVersion]?.mapNotNull { System.getenv(it) }?.firstOrNull()
                 ?: continue
-        val explicitJdk = File(explicitJdkEnvVal)
+        val explicitJdk = Paths.get(explicitJdkEnvVal).toRealPath().toFile()
         if (!explicitJdk.isDirectory) {
             throw GradleException("Invalid environment value $jdkMajorVersion: $explicitJdkEnvVal, expecting JDK home path")
         }
@@ -43,7 +44,7 @@ private val javaVersionRegex = Regex("""(?:1\.)?(\d+)(\.\d+)?([+-_]\w+){0,3}""")
 
 fun MutableCollection<JdkId>.addIfBetter(project: Project, version: String, id: String, homeDir: File): Boolean {
     val matchString = javaMajorVersionRegex.matchEntire(version)?.groupValues?.get(1)
-    val majorJersion = when (matchString) {
+    val majorJdkVersion = when (matchString) {
         "6" -> JdkMajorVersion.JDK_16
         "7" -> JdkMajorVersion.JDK_17
         "8" -> JdkMajorVersion.JDK_18
@@ -53,9 +54,9 @@ fun MutableCollection<JdkId>.addIfBetter(project: Project, version: String, id: 
             return false
         }
     }
-    val prev = find { it.majorVersion == majorJersion }
+    val prev = find { it.majorVersion == majorJdkVersion }
     if (prev == null) {
-        add(JdkId(false, majorJersion, version, homeDir))
+        add(JdkId(false, majorJdkVersion, version, homeDir))
         return true
     }
     if (prev.explicit) return false

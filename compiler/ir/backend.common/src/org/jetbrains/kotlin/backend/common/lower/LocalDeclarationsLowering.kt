@@ -1,19 +1,23 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.common.lower
 
 import org.jetbrains.kotlin.backend.common.BackendContext
-import org.jetbrains.kotlin.backend.common.DeclarationContainerLoweringPass
+import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.IrElementVisitorVoidWithContext
+import org.jetbrains.kotlin.backend.common.ScopeWithIr
 import org.jetbrains.kotlin.backend.common.descriptors.*
-import org.jetbrains.kotlin.backend.common.ir.copyTo
-import org.jetbrains.kotlin.backend.common.ir.copyTypeParametersFrom
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
-import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.backend.common.ir.*
+import org.jetbrains.kotlin.descriptors.Modality
+import org.jetbrains.kotlin.descriptors.ReceiverParameterDescriptor
+import org.jetbrains.kotlin.descriptors.Visibilities
+import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
+import org.jetbrains.kotlin.ir.builders.Scope
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrConstructorImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrFieldImpl
@@ -27,24 +31,13 @@ import org.jetbrains.kotlin.ir.symbols.impl.IrFieldSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.util.patchDeclarationParents
-import org.jetbrains.kotlin.ir.util.transformDeclarationsFlat
-import org.jetbrains.kotlin.ir.visitors.*
+import org.jetbrains.kotlin.ir.util.dump
+import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
+import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
+import org.jetbrains.kotlin.ir.visitors.acceptVoid
+import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.name.NameUtils
 import java.util.*
-
-val jvmLocalDeclarationsPhase = makeIrFilePhase(
-    { context ->
-        LocalDeclarationsLowering(context, object : LocalNameProvider {
-            override fun localName(declaration: IrDeclarationWithName): String =
-                NameUtils.sanitizeAsJavaIdentifier(super.localName(declaration))
-        }, Visibilities.PUBLIC)
-    },
-    name = "JvmLocalDeclarations",
-    description = "Move local declarations to classes",
-    prerequisite = setOf(sharedVariablesPhase)
-)
 
 interface LocalNameProvider {
     fun localName(declaration: IrDeclarationWithName): String =
@@ -63,56 +56,24 @@ val IrDeclaration.parents: Sequence<IrDeclarationParent>
 
 object BOUND_VALUE_PARAMETER: IrDeclarationOriginImpl("BOUND_VALUE_PARAMETER")
 
+object BOUND_RECEIVER_PARAMETER: IrDeclarationOriginImpl("BOUND_RECEIVER_PARAMETER")
+
 class LocalDeclarationsLowering(
     val context: BackendContext,
     val localNameProvider: LocalNameProvider = LocalNameProvider.DEFAULT,
     val loweredConstructorVisibility: Visibility = Visibilities.PRIVATE
 ) :
-    DeclarationContainerLoweringPass {
+    FileLoweringPass {
 
-    private object DECLARATION_ORIGIN_FIELD_FOR_CAPTURED_VALUE :
+    object DECLARATION_ORIGIN_FIELD_FOR_CAPTURED_VALUE :
         IrDeclarationOriginImpl("FIELD_FOR_CAPTURED_VALUE", isSynthetic = true)
 
     private object STATEMENT_ORIGIN_INITIALIZER_OF_FIELD_FOR_CAPTURED_VALUE :
         IrStatementOriginImpl("INITIALIZER_OF_FIELD_FOR_CAPTURED_VALUE")
 
-    override fun lower(irDeclarationContainer: IrDeclarationContainer) {
-        if (irDeclarationContainer is IrDeclaration) {
-            val parents = irDeclarationContainer.parents
-
-            if (parents.any { it is IrFunction || it is IrField }) {
-                // Lowering of non-local declarations handles all local declarations inside.
-                // This declaration is local and shouldn't be considered.
-                return
-            }
-        }
-
-        // Continuous numbering across all declarations in the container.
-        lambdasCount = 0
-
-        irDeclarationContainer.transformDeclarationsFlat { memberDeclaration ->
-            // TODO: may be do the opposite - specify the list of IR elements which need not to be transformed
-            when (memberDeclaration) {
-                is IrFunction -> LocalDeclarationsTransformer(memberDeclaration).lowerLocalDeclarations()
-                is IrProperty -> LocalDeclarationsTransformer(memberDeclaration).lowerLocalDeclarations()
-                is IrField -> LocalDeclarationsTransformer(memberDeclaration).lowerLocalDeclarations()
-                is IrAnonymousInitializer -> LocalDeclarationsTransformer(memberDeclaration).lowerLocalDeclarations()
-                is IrEnumEntry -> {
-                    // The responsibility of pulling up classes for enum entries is on EnumClassLowering.
-                    // Moreover, EnumClassLowering needs information whether a enum entry has its own class or not.
-                    val correspondingClass = memberDeclaration.correspondingClass
-                    memberDeclaration.correspondingClass = null
-                    LocalDeclarationsTransformer(memberDeclaration).lowerLocalDeclarations().also {
-                        memberDeclaration.correspondingClass = correspondingClass
-                    }
-                }
-                // TODO: visit children as well
-                else -> null
-            }
-        }
+    override fun lower(irFile: IrFile) {
+        LocalDeclarationsTransformer(irFile).lowerLocalDeclarations()
     }
-
-    private var lambdasCount = 0
 
     private abstract class LocalContext {
         /**
@@ -126,7 +87,7 @@ class LocalDeclarationsLowering(
         abstract val declaration: IrFunction
         abstract val transformedDeclaration: IrFunction
 
-        val capturedValueToParameter: MutableMap<IrValueDeclaration, IrValueParameter> = HashMap()
+        val capturedValueToParameter: MutableMap<IrValueDeclaration, IrValueParameter> = mutableMapOf()
 
         override fun irGet(startOffset: Int, endOffset: Int, valueDeclaration: IrValueDeclaration): IrExpression? {
             val parameter = capturedValueToParameter[valueDeclaration] ?: return null
@@ -135,12 +96,15 @@ class LocalDeclarationsLowering(
         }
     }
 
-    private class LocalFunctionContext(override val declaration: IrFunction) : LocalContextWithClosureAsParameters() {
+    private class LocalFunctionContext(
+        override val declaration: IrSimpleFunction,
+        val index: Int,
+        val ownerForLoweredDeclaration: IrDeclarationContainer
+    ) :
+        LocalContextWithClosureAsParameters() {
         lateinit var closure: Closure
 
         override lateinit var transformedDeclaration: IrSimpleFunction
-
-        var index: Int = -1
     }
 
     private class LocalClassConstructorContext(override val declaration: IrConstructor) : LocalContextWithClosureAsParameters() {
@@ -150,7 +114,9 @@ class LocalDeclarationsLowering(
     private class LocalClassContext(val declaration: IrClass) : LocalContext() {
         lateinit var closure: Closure
 
-        val capturedValueToField: MutableMap<IrValueDeclaration, IrField> = HashMap()
+        // NOTE: This map is iterated over in `rewriteClassMembers` and we're relying on
+        // the deterministic iteration order that `mutableMapOf` provides.
+        val capturedValueToField: MutableMap<IrValueDeclaration, IrField> = mutableMapOf()
 
         override fun irGet(startOffset: Int, endOffset: Int, valueDeclaration: IrValueDeclaration): IrExpression? {
             val field = capturedValueToField[valueDeclaration] ?: return null
@@ -176,12 +142,12 @@ class LocalDeclarationsLowering(
 
     }
 
-    private inner class LocalDeclarationsTransformer(val memberDeclaration: IrDeclaration) {
+    private inner class LocalDeclarationsTransformer(val irFile: IrFile) {
         val localFunctions: MutableMap<IrFunction, LocalFunctionContext> = LinkedHashMap()
         val localClasses: MutableMap<IrClass, LocalClassContext> = LinkedHashMap()
         val localClassConstructors: MutableMap<IrConstructor, LocalClassConstructorContext> = LinkedHashMap()
 
-        val transformedDeclarations = mutableMapOf<IrDeclaration, IrDeclaration>()
+        val transformedDeclarations = mutableMapOf<IrSymbolOwner, IrDeclaration>()
 
         val IrFunction.transformed: IrFunction?
             get() = transformedDeclarations[this] as IrFunction?
@@ -190,44 +156,35 @@ class LocalDeclarationsLowering(
         val oldParameterToNew: MutableMap<IrValueParameter, IrValueParameter> = mutableMapOf()
         val newParameterToCaptured: MutableMap<IrValueParameter, IrValueSymbol> = mutableMapOf()
 
-        fun lowerLocalDeclarations(): List<IrDeclaration> {
+        fun lowerLocalDeclarations() {
             collectLocalDeclarations()
-            if (localFunctions.isEmpty() && localClasses.isEmpty()) return listOf(memberDeclaration)
+            if (localFunctions.isEmpty() && localClasses.isEmpty()) return
 
-            collectClosures()
+            collectClosureForLocalDeclarations()
 
             transformDeclarations()
 
             rewriteDeclarations()
 
-            val rewrittenDeclarations = collectRewrittenDeclarations()
-            rewrittenDeclarations.forEach {
-                it.patchDeclarationParents(memberDeclaration.parent)
-            }
-            return rewrittenDeclarations
+            insertLoweredDeclarationForLocalFunctions()
         }
 
-        private fun collectRewrittenDeclarations(): ArrayList<IrDeclaration> =
-            ArrayList<IrDeclaration>(localFunctions.size + localClasses.size + 1).apply {
-                localFunctions.values.mapTo(this) {
+        private fun insertLoweredDeclarationForLocalFunctions() {
+            localFunctions.values.forEach {
+                it.transformedDeclaration.apply {
                     val original = it.declaration
-                    it.transformedDeclaration.apply {
-                        this.body = original.body
+                    this.body = original.body
 
-                        original.valueParameters.filter { v -> v.defaultValue != null }.forEach { argument ->
-                            val body = argument.defaultValue
-                            oldParameterToNew[argument]!!.defaultValue = body
-                        }
+                    original.valueParameters.filter { v -> v.defaultValue != null }.forEach { argument ->
+                        val body = argument.defaultValue!!
+                        oldParameterToNew[argument]!!.defaultValue = body
                     }
+                    acceptChildren(SetDeclarationsParentVisitor, this)
                 }
-
-                localClasses.values.mapTo(this) {
-                    it.declaration.parent = memberDeclaration.parent
-                    it.declaration
-                }
-
-                add(memberDeclaration)
+                it.ownerForLoweredDeclaration.addChild(it.transformedDeclaration)
             }
+        }
+
 
         private inner class FunctionBodiesRewriter(val localContext: LocalContext?) : IrElementTransformerVoid() {
             override fun visitLocalDelegatedProperty(declaration: IrLocalDelegatedProperty) =
@@ -235,8 +192,7 @@ class LocalDeclarationsLowering(
                 declaration.delegate.transform(this, null)
 
             override fun visitClass(declaration: IrClass) = if (declaration in localClasses) {
-                // Replace local class definition with an empty composite.
-                IrCompositeImpl(declaration.startOffset, declaration.endOffset, context.irBuiltIns.unitType)
+                localClasses[declaration]!!.declaration
             } else {
                 super.visitClass(declaration)
             }
@@ -267,6 +223,7 @@ class LocalDeclarationsLowering(
                     declaration.valueParameters.filter { it.defaultValue != null }.forEach { argument ->
                         oldParameterToNew[argument]!!.defaultValue = argument.defaultValue
                     }
+                    acceptChildren(SetDeclarationsParentVisitor, this)
                 } ?: super.visitConstructor(declaration)
             }
 
@@ -288,7 +245,16 @@ class LocalDeclarationsLowering(
                 expression.transformChildrenVoid(this)
 
                 val oldCallee = expression.symbol.owner
-                val newCallee = oldCallee.transformed ?: return expression
+                val newCallee = (oldCallee.transformed ?: return expression) as IrSimpleFunction
+
+                return createNewCall(expression, newCallee).fillArguments2(expression, newCallee)
+            }
+
+            override fun visitConstructorCall(expression: IrConstructorCall): IrExpression {
+                expression.transformChildrenVoid(this)
+
+                val oldCallee = expression.symbol.owner
+                val newCallee = (oldCallee.transformed ?: return expression) as IrConstructor
 
                 return createNewCall(expression, newCallee).fillArguments2(expression, newCallee)
             }
@@ -367,6 +333,7 @@ class LocalDeclarationsLowering(
                 ).also {
                     it.fillArguments2(expression, newCallee)
                     it.copyTypeArgumentsFrom(expression)
+                    it.copyAttributes(expression)
                 }
             }
 
@@ -391,14 +358,14 @@ class LocalDeclarationsLowering(
             }
 
             override fun visitDeclaration(declaration: IrDeclaration): IrStatement {
-                if (declaration in transformedDeclarations) {
+                if (declaration is IrSymbolOwner && declaration in transformedDeclarations) {
                     TODO()
                 }
                 return super.visitDeclaration(declaration)
             }
         }
 
-        private fun rewriteFunctionBody(irDeclaration: IrDeclaration, localContext: LocalContext?) {
+        private fun rewriteFunctionBody(irDeclaration: IrElement, localContext: LocalContext?) {
             irDeclaration.transformChildrenVoid(FunctionBodiesRewriter(localContext))
         }
 
@@ -415,26 +382,26 @@ class LocalDeclarationsLowering(
 
             assert(constructorsCallingSuper.any()) { "Expected at least one constructor calling super; class: $irClass" }
 
-            localClassContext.capturedValueToField.forEach { capturedValue, field ->
-                val startOffset = irClass.startOffset
-                val endOffset = irClass.endOffset
-                irClass.declarations.add(field)
+            irClass.declarations += localClassContext.capturedValueToField.values
 
-                for (constructorContext in constructorsCallingSuper) {
-                    val blockBody = constructorContext.declaration.body as? IrBlockBody
-                        ?: throw AssertionError("Unexpected constructor body: ${constructorContext.declaration.body}")
-                    val capturedValueExpression = constructorContext.irGet(startOffset, endOffset, capturedValue)!!
-                    blockBody.statements.add(
-                        0,
+            for (constructorContext in constructorsCallingSuper) {
+                val blockBody = constructorContext.declaration.body as? IrBlockBody
+                    ?: throw AssertionError("Unexpected constructor body: ${constructorContext.declaration.body}")
+
+                // NOTE: It's important to set the fields for captured values in the same order as the arguments,
+                // since `AnonymousObjectTransformer` relies on this ordering.
+                blockBody.statements.addAll(
+                    0,
+                    localClassContext.capturedValueToField.map { (capturedValue, field) ->
                         IrSetFieldImpl(
-                            startOffset, endOffset, field.symbol,
-                            IrGetValueImpl(startOffset, endOffset, irClass.thisReceiver!!.symbol),
-                            capturedValueExpression,
+                            irClass.startOffset, irClass.endOffset, field.symbol,
+                            IrGetValueImpl(irClass.startOffset, irClass.endOffset, irClass.thisReceiver!!.symbol),
+                            constructorContext.irGet(irClass.startOffset, irClass.endOffset, capturedValue)!!,
                             context.irBuiltIns.unitType,
                             STATEMENT_ORIGIN_INITIALIZER_OF_FIELD_FOR_CAPTURED_VALUE
                         )
-                    )
-                }
+                    }
+                )
             }
         }
 
@@ -451,23 +418,30 @@ class LocalDeclarationsLowering(
                 rewriteClassMembers(it.declaration, it)
             }
 
-            rewriteFunctionBody(memberDeclaration, null)
+            rewriteFunctionBody(irFile, null)
         }
 
         private fun createNewCall(oldCall: IrCall, newCallee: IrFunction) =
-            if (oldCall is IrCallWithShallowCopy)
-                oldCall.shallowCopy(oldCall.origin, newCallee.symbol, oldCall.superQualifierSymbol)
-            else
-                IrCallImpl(
-                    oldCall.startOffset, oldCall.endOffset,
-                    newCallee.returnType,
-                    newCallee.symbol,
-                    newCallee.descriptor,
-                    oldCall.typeArgumentsCount,
-                    oldCall.origin, oldCall.superQualifierSymbol
-                ).also {
-                    it.copyTypeArgumentsFrom(oldCall)
-                }
+            IrCallImpl(
+                oldCall.startOffset, oldCall.endOffset,
+                newCallee.returnType,
+                newCallee.symbol,
+                newCallee.descriptor,
+                oldCall.typeArgumentsCount,
+                oldCall.origin, oldCall.superQualifierSymbol
+            ).also {
+                it.copyTypeArgumentsFrom(oldCall)
+            }
+
+        private fun createNewCall(oldCall: IrConstructorCall, newCallee: IrConstructor) =
+            IrConstructorCallImpl.fromSymbolOwner(
+                oldCall.startOffset, oldCall.endOffset,
+                newCallee.returnType,
+                newCallee.symbol,
+                oldCall.origin
+            ).also {
+                it.copyTypeArgumentsFrom(oldCall)
+            }
 
         private fun transformDeclarations() {
             localFunctions.values.forEach {
@@ -503,9 +477,9 @@ class LocalDeclarationsLowering(
             )
 
         private fun createLiftedDeclaration(localFunctionContext: LocalFunctionContext) {
-            val oldDeclaration = localFunctionContext.declaration as IrSimpleFunction
+            val oldDeclaration = localFunctionContext.declaration
 
-            val memberOwner = memberDeclaration.parent
+            val memberOwner = localFunctionContext.ownerForLoweredDeclaration
             val newDescriptor = WrappedSimpleFunctionDescriptor(oldDeclaration.descriptor)
             val newSymbol = IrSimpleFunctionSymbolImpl(newDescriptor)
             val newName = generateNameForLiftedDeclaration(oldDeclaration, memberOwner)
@@ -563,8 +537,17 @@ class LocalDeclarationsLowering(
                 val parameterDescriptor = WrappedValueParameterDescriptor()
                 val p = capturedValue.owner
                 IrValueParameterImpl(
-                    p.startOffset, p.endOffset, BOUND_VALUE_PARAMETER, IrValueParameterSymbolImpl(parameterDescriptor),
-                    suggestNameForCapturedValue(p), i, p.type, null, false, false
+                    p.startOffset,
+                    p.endOffset,
+                    if (p.descriptor is ReceiverParameterDescriptor && newDeclaration is IrConstructor)
+                        BOUND_RECEIVER_PARAMETER else BOUND_VALUE_PARAMETER,
+                    IrValueParameterSymbolImpl(parameterDescriptor),
+                    suggestNameForCapturedValue(p),
+                    i,
+                    p.type,
+                    null,
+                    isCrossinline = false,
+                    isNoinline = false
                 ).also {
                     parameterDescriptor.bind(it)
                     it.parent = newDeclaration
@@ -619,12 +602,11 @@ class LocalDeclarationsLowering(
             newDeclaration.parent = localClassContext.declaration
             newDeclaration.copyTypeParametersFrom(oldDeclaration)
 
-            // TODO: should dispatch receiver be copied?
-            newDeclaration.dispatchReceiverParameter = oldDeclaration.dispatchReceiverParameter?.copyTo(newDeclaration)?.also {
-                newParameterToOld.putAbsentOrSame(it, oldDeclaration.dispatchReceiverParameter!!)
+            oldDeclaration.dispatchReceiverParameter?.run {
+                throw AssertionError("Local class constructor can't have dispatch receiver: ${ir2string(oldDeclaration)}")
             }
-            newDeclaration.extensionReceiverParameter = oldDeclaration.extensionReceiverParameter?.run {
-                throw AssertionError("constructors can't have extension receiver")
+            oldDeclaration.extensionReceiverParameter?.run {
+                throw AssertionError("Local class constructor can't have extension receiver: ${ir2string(oldDeclaration)}")
             }
 
             newDeclaration.valueParameters += createTransformedValueParameters(capturedValues, oldDeclaration, newDeclaration)
@@ -653,9 +635,9 @@ class LocalDeclarationsLowering(
                 name,
                 fieldType,
                 visibility,
-                true,
-                false,
-                false
+                isFinal = true,
+                isExternal = false,
+                isStatic = false
             ).also {
                 descriptor.bind(it)
                 it.parent = parent
@@ -693,56 +675,66 @@ class LocalDeclarationsLowering(
                 val oldNameStr = declaration.name.asString()
                 oldNameStr.substring(1, oldNameStr.length - 1).synthesizedName
             } else
-                declaration.name
+                declaration.name.asString().synthesizedName
 
 
-        private fun collectClosures() {
-            val annotator = ClosureAnnotator(memberDeclaration)
+        private fun collectClosureForLocalDeclarations() {
+            //TODO: maybe use for granular declarations
+            val annotator = ClosureAnnotator(irFile)
 
-            localFunctions.forEach { declaration, context ->
+            localFunctions.forEach { (declaration, context) ->
                 context.closure = annotator.getFunctionClosure(declaration)
             }
 
-            localClasses.forEach { declaration, context ->
+            localClasses.forEach { (declaration, context) ->
                 context.closure = annotator.getClassClosure(declaration)
             }
         }
 
         private fun collectLocalDeclarations() {
-            memberDeclaration.acceptChildrenVoid(object : IrElementVisitorVoid {
+            class ScopeWithCounter(scope: Scope, irElement: IrElement) : ScopeWithIr(scope, irElement) {
+                // Continuous numbering across all declarations in the container.
+                var counter: Int = 0
+            }
+
+            irFile.acceptVoid(object : IrElementVisitorVoidWithContext() {
 
                 override fun visitElement(element: IrElement) {
                     element.acceptChildrenVoid(this)
                 }
 
-                override fun visitFunction(declaration: IrFunction) {
-                    declaration.acceptChildrenVoid(this)
+                override fun createScope(declaration: IrSymbolOwner): ScopeWithIr {
+                    return ScopeWithCounter(Scope(declaration.symbol), declaration)
+                }
+
+                override fun visitSimpleFunction(declaration: IrSimpleFunction) {
+                    super.visitSimpleFunction(declaration)
 
                     if (declaration.visibility == Visibilities.LOCAL) {
-                        val localFunctionContext = LocalFunctionContext(declaration)
-
-                        localFunctions[declaration] = localFunctionContext
-
-                        if (declaration.name.isSpecial) {
-                            localFunctionContext.index = lambdasCount++
-                        }
+                        val scopeWithIr =
+                            (currentClass ?: currentFile /*file is required for K/N cause file declarations are not split by classes*/
+                            ?: error("No scope for ${declaration.dump()}"))
+                        localFunctions[declaration] =
+                            LocalFunctionContext(
+                                declaration,
+                                if (declaration.name.isSpecial) (scopeWithIr as ScopeWithCounter).counter++ else -1,
+                                scopeWithIr.irElement as IrDeclarationContainer
+                            )
                     }
                 }
 
                 override fun visitConstructor(declaration: IrConstructor) {
-                    declaration.acceptChildrenVoid(this)
+                    super.visitConstructor(declaration)
 
-                    assert(declaration.visibility != Visibilities.LOCAL)
-
-                    if ((declaration.parent as IrClass).isInner) return
+                    if (!(declaration.parent as IrClass).isLocalNotInner()) return
 
                     localClassConstructors[declaration] = LocalClassConstructorContext(declaration)
                 }
 
-                override fun visitClass(declaration: IrClass) {
-                    declaration.acceptChildrenVoid(this)
+                override fun visitClassNew(declaration: IrClass) {
+                    super.visitClassNew(declaration)
 
-                    if (declaration.isInner) return
+                    if (!declaration.isLocalNotInner()) return
 
                     val localClassContext = LocalClassContext(declaration)
                     localClasses[declaration] = localClassContext
@@ -752,3 +744,6 @@ class LocalDeclarationsLowering(
     }
 
 }
+
+// Local inner classes capture anything through outer
+internal fun IrClass.isLocalNotInner(): Boolean = visibility == Visibilities.LOCAL && !isInner

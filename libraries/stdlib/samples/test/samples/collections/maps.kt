@@ -63,6 +63,17 @@ class Maps {
             assertPrints(map, "{1=x, 2=1.05}")
         }
 
+        @Sample
+        fun emptyHashMap() {
+            val map = hashMapOf<Int, Any?>()
+            assertTrue(map.isEmpty())
+
+            map[1] = "x"
+            map[2] = 1.05
+            // Now map contains something:
+            assertPrints(map, "{1=x, 2=1.05}")
+        }
+
     }
 
 
@@ -277,7 +288,6 @@ class Maps {
             assertPrints(map2, "{beverage=2.7$, meal=12.4$}")
         }
 
-
         @Sample
         fun mapToSortedMap() {
             val map = mapOf(Pair("c", 3), Pair("b", 2), Pair("d", 1))
@@ -301,6 +311,16 @@ class Maps {
             assertPrints(props.getProperty("x"), "value A")
             assertPrints(props.getProperty("y", "fail"), "value B")
             assertPrints(props.getProperty("z", "fail"), "fail")
+        }
+
+        @Sample
+        fun mapToList() {
+            val peopleToAge = mapOf("Alice" to 20, "Bob" to 21)
+            assertPrints(
+                peopleToAge.map { (name, age) -> "$name is $age years old" },
+                "[Alice is 20 years old, Bob is 21 years old]"
+            )
+            assertPrints(peopleToAge.map { it.value }, "[20, 21]")
         }
 
     }

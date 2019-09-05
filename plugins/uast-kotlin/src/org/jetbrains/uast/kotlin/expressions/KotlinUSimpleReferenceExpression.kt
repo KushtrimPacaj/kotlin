@@ -17,18 +17,18 @@
 package org.jetbrains.uast.kotlin
 
 import com.intellij.psi.*
-import org.jetbrains.kotlin.descriptors.CallableDescriptor
-import org.jetbrains.kotlin.descriptors.ConstructorDescriptor
-import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
-import org.jetbrains.kotlin.descriptors.PackageViewDescriptor
+import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.load.java.sam.SamConstructorDescriptor
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getAssignmentByLHS
 import org.jetbrains.kotlin.psi.psiUtil.getQualifiedExpressionForSelectorOrThis
 import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.ImportedFromObjectCallableDescriptor
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
+import org.jetbrains.kotlin.resolve.calls.tower.NewResolvedCallImpl
+import org.jetbrains.kotlin.resolve.source.getPsi
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedCallableMemberDescriptor
 import org.jetbrains.kotlin.synthetic.SyntheticJavaPropertyDescriptor
 import org.jetbrains.kotlin.utils.addToStdlib.constant
@@ -39,22 +39,36 @@ import org.jetbrains.uast.kotlin.internal.DelegatedMultiResolve
 import org.jetbrains.uast.visitor.UastVisitor
 
 open class KotlinUSimpleReferenceExpression(
-    override val psi: KtSimpleNameExpression,
+    override val sourcePsi: KtSimpleNameExpression,
     givenParent: UElement?
 ) : KotlinAbstractUExpression(givenParent), USimpleNameReferenceExpression, KotlinUElementWithType, KotlinEvaluatableUElement {
     private val resolvedDeclaration: PsiElement? by lz {
-        psi.resolveCallToDeclaration()?.let { return@lz it }
+        sourcePsi.resolveCallToDeclaration()?.let { return@lz it }
 
-        val declarationDescriptor = psi.analyze()[BindingContext.REFERENCE_TARGET, psi] ?: return@lz null
-
-        if (declarationDescriptor is PackageViewDescriptor) {
-            return@lz JavaPsiFacade.getInstance(psi.project).findPackage(declarationDescriptor.fqName.asString())
+        var declarationDescriptor = sourcePsi.analyze()[BindingContext.REFERENCE_TARGET, sourcePsi] ?: return@lz null
+        if (declarationDescriptor is ImportedFromObjectCallableDescriptor<*>) {
+            declarationDescriptor = declarationDescriptor.callableFromObject
+        }
+        if (declarationDescriptor is SyntheticJavaPropertyDescriptor) {
+            declarationDescriptor = when (sourcePsi.readWriteAccess()) {
+                ReferenceAccess.WRITE, ReferenceAccess.READ_WRITE ->
+                    declarationDescriptor.setMethod ?: declarationDescriptor.getMethod
+                ReferenceAccess.READ -> declarationDescriptor.getMethod
+            }
         }
 
-        resolveToPsiClass(this, declarationDescriptor, psi)
+        if (declarationDescriptor is PackageViewDescriptor) {
+            return@lz JavaPsiFacade.getInstance(sourcePsi.project).findPackage(declarationDescriptor.fqName.asString())
+        }
+
+        resolveToPsiClass(this, declarationDescriptor, sourcePsi)?.let { return@lz it }
+        if (declarationDescriptor is DeclarationDescriptorWithSource) {
+            declarationDescriptor.source.getPsi()?.let { it.getMaybeLightElement() ?: it }?.let { return@lz it }
+        }
+        return@lz resolveDeserialized(sourcePsi, declarationDescriptor, sourcePsi.readWriteAccess())
     }
 
-    override val identifier get() = psi.getReferencedName()
+    override val identifier get() = sourcePsi.getReferencedName()
 
     override fun resolve() = resolvedDeclaration
 
@@ -64,22 +78,24 @@ open class KotlinUSimpleReferenceExpression(
     override fun accept(visitor: UastVisitor) {
         visitor.visitSimpleNameReferenceExpression(this)
 
-        if (psi.parent.destructuringDeclarationInitializer != true) {
+        if (sourcePsi.parent.destructuringDeclarationInitializer != true) {
             visitAccessorCalls(visitor)
         }
 
         visitor.afterVisitSimpleNameReferenceExpression(this)
     }
 
+    override val referenceNameElement: UElement? by lz { sourcePsi.getIdentifier()?.toUElement() }
+
     private fun visitAccessorCalls(visitor: UastVisitor) {
         // Visit Kotlin get-set synthetic Java property calls as function calls
-        val bindingContext = psi.analyze()
-        val access = psi.readWriteAccess()
-        val resolvedCall = psi.getResolvedCall(bindingContext)
+        val bindingContext = sourcePsi.analyze()
+        val access = sourcePsi.readWriteAccess()
+        val resolvedCall = sourcePsi.getResolvedCall(bindingContext)
         val resultingDescriptor = resolvedCall?.resultingDescriptor as? SyntheticJavaPropertyDescriptor
         if (resultingDescriptor != null) {
             val setterValue = if (access.isWrite) {
-                findAssignment(psi, psi.parent)?.right ?: run {
+                findAssignment(sourcePsi, sourcePsi.parent)?.right ?: run {
                     visitor.afterVisitSimpleNameReferenceExpression(this)
                     return
                 }
@@ -87,17 +103,15 @@ open class KotlinUSimpleReferenceExpression(
                 null
             }
 
-            if (resolvedCall != null) {
-                if (access.isRead) {
-                    val getDescriptor = resultingDescriptor.getMethod
-                    KotlinAccessorCallExpression(psi, this, resolvedCall, getDescriptor, null).accept(visitor)
-                }
+            if (access.isRead) {
+                val getDescriptor = resultingDescriptor.getMethod
+                KotlinAccessorCallExpression(sourcePsi, this, resolvedCall, getDescriptor, null).accept(visitor)
+            }
 
-                if (access.isWrite && setterValue != null) {
-                    val setDescriptor = resultingDescriptor.setMethod
-                    if (setDescriptor != null) {
-                        KotlinAccessorCallExpression(psi, this, resolvedCall, setDescriptor, setterValue).accept(visitor)
-                    }
+            if (access.isWrite && setterValue != null) {
+                val setDescriptor = resultingDescriptor.setMethod
+                if (setDescriptor != null) {
+                    KotlinAccessorCallExpression(sourcePsi, this, resolvedCall, setDescriptor, setterValue).accept(visitor)
                 }
             }
         }
@@ -111,7 +125,7 @@ open class KotlinUSimpleReferenceExpression(
     }
 
     class KotlinAccessorCallExpression(
-        override val psi: KtSimpleNameExpression,
+        override val sourcePsi: KtSimpleNameExpression,
         override val uastParent: KotlinUSimpleReferenceExpression,
         private val resolvedCall: ResolvedCall<*>,
         private val accessorDescriptor: DeclarationDescriptor,
@@ -129,18 +143,18 @@ open class KotlinUSimpleReferenceExpression(
                     null
             }
 
-        override val javaPsi: PsiElement? = null
-        override val sourcePsi: PsiElement? = psi
+        override val javaPsi: PsiElement? get() = null
+        override val psi: PsiElement? get() = sourcePsi
 
         override val annotations: List<UAnnotation>
             get() = emptyList()
 
         override val receiverType by lz {
             val type = (resolvedCall.dispatchReceiver ?: resolvedCall.extensionReceiver)?.type ?: return@lz null
-            type.toPsiType(this, psi, boxed = true)
+            type.toPsiType(this, sourcePsi, boxed = true)
         }
 
-        override val methodIdentifier: UIdentifier? by lazy { KotlinUIdentifier(psi.getReferencedNameElement(), this) }
+        override val methodIdentifier: UIdentifier? by lazy { KotlinUIdentifier(sourcePsi.getReferencedNameElement(), this) }
 
         override val classReference: UReferenceExpression?
             get() = null
@@ -161,11 +175,11 @@ open class KotlinUSimpleReferenceExpression(
             get() = resolvedCall.typeArguments.size
 
         override val typeArguments by lz {
-            resolvedCall.typeArguments.values.map { it.toPsiType(this, psi, true) }
+            resolvedCall.typeArguments.values.map { it.toPsiType(this, sourcePsi, true) }
         }
 
         override val returnType by lz {
-            (accessorDescriptor as? CallableDescriptor)?.returnType?.toPsiType(this, psi, boxed = false)
+            (accessorDescriptor as? CallableDescriptor)?.returnType?.toPsiType(this, sourcePsi, boxed = false)
         }
 
         override val kind: UastCallKind
@@ -173,12 +187,8 @@ open class KotlinUSimpleReferenceExpression(
 
         override fun resolve(): PsiMethod? {
             val source = accessorDescriptor.toSource()
-            return resolveSource(psi, accessorDescriptor, source)
+            return resolveSource(sourcePsi, accessorDescriptor, source)
         }
-    }
-
-    enum class ReferenceAccess(val isRead: Boolean, val isWrite: Boolean) {
-        READ(true, false), WRITE(false, true), READ_WRITE(true, true)
     }
 
     private fun KtExpression.readWriteAccess(): ReferenceAccess {
@@ -209,7 +219,7 @@ open class KotlinUSimpleReferenceExpression(
 }
 
 class KotlinClassViaConstructorUSimpleReferenceExpression(
-    override val psi: KtCallElement,
+    override val sourcePsi: KtCallElement,
     override val identifier: String,
     givenParent: UElement?
 ) : KotlinAbstractUExpression(givenParent), USimpleNameReferenceExpression, KotlinUElementWithType {
@@ -217,13 +227,13 @@ class KotlinClassViaConstructorUSimpleReferenceExpression(
         get() = (resolved as? PsiNamedElement)?.name
 
     private val resolved by lazy {
-        when (val resultingDescriptor = psi.getResolvedCall(psi.analyze())?.resultingDescriptor) {
+        when (val resultingDescriptor = sourcePsi.getResolvedCall(sourcePsi.analyze())?.descriptorForResolveViaConstructor()) {
             is ConstructorDescriptor -> {
                 resultingDescriptor.constructedClass.toSource()?.getMaybeLightElement()
-                    ?: (resultingDescriptor as? DeserializedCallableMemberDescriptor)?.let { resolveContainingDeserializedClass(psi, it) }
+                    ?: (resultingDescriptor as? DeserializedCallableMemberDescriptor)?.let { resolveContainingDeserializedClass(sourcePsi, it) }
             }
             is SamConstructorDescriptor ->
-                (resultingDescriptor.returnType?.getFunctionalInterfaceType(this, psi) as? PsiClassType)?.resolve()
+                (resultingDescriptor.returnType?.getFunctionalInterfaceType(this, sourcePsi) as? PsiClassType)?.resolve()
             else -> null
         }
     }
@@ -231,6 +241,11 @@ class KotlinClassViaConstructorUSimpleReferenceExpression(
     override fun resolve(): PsiElement? = resolved
 
     override fun asLogString(): String = log<USimpleNameReferenceExpression>("identifier = $identifier, resolvesTo = $resolvedName")
+
+    // In new inference, SAM constructor is substituted with a function descriptor, so we use candidate descriptor to preserve behavior
+    private fun ResolvedCall<*>.descriptorForResolveViaConstructor(): CallableDescriptor? {
+        return if (this is NewResolvedCallImpl) candidateDescriptor else resultingDescriptor
+    }
 }
 
 class KotlinStringUSimpleReferenceExpression(

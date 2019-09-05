@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.caches.resolve;
@@ -97,6 +97,11 @@ public class IdeLightClassTestGenerated extends AbstractIdeLightClassTest {
     @TestMetadata("InheritingInterfaceDefaultImpls.kt")
     public void testInheritingInterfaceDefaultImpls() throws Exception {
         runTest("compiler/testData/asJava/lightClasses/InheritingInterfaceDefaultImpls.kt");
+    }
+
+    @TestMetadata("InlineReified.kt")
+    public void testInlineReified() throws Exception {
+        runTest("compiler/testData/asJava/lightClasses/InlineReified.kt");
     }
 
     @TestMetadata("JvmNameOnMember.kt")
@@ -335,24 +340,6 @@ public class IdeLightClassTestGenerated extends AbstractIdeLightClassTest {
         @TestMetadata("OverridingProtected.kt")
         public void testOverridingProtected() throws Exception {
             runTest("compiler/testData/asJava/lightClasses/ideRegression/OverridingProtected.kt");
-        }
-    }
-
-    @TestMetadata("compiler/testData/asJava/lightClasses/local")
-    @TestDataPath("$PROJECT_ROOT")
-    @RunWith(JUnit3RunnerWithInners.class)
-    public static class Local extends AbstractIdeLightClassTest {
-        private void runTest(String testDataFilePath) throws Exception {
-            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
-        }
-
-        public void testAllFilesPresentInLocal() throws Exception {
-            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/asJava/lightClasses/local"), Pattern.compile("^([^.]+)\\.(kt|kts)$"), TargetBackend.ANY, true);
-        }
-
-        @TestMetadata("DollarsInNameLocal.kt")
-        public void testDollarsInNameLocal() throws Exception {
-            runTest("compiler/testData/asJava/lightClasses/local/DollarsInNameLocal.kt");
         }
     }
 

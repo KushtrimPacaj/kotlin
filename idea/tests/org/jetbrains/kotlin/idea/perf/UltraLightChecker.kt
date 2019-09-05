@@ -1,29 +1,35 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.perf
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.module.Module
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.psi.*
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.testFramework.UsefulTestCase
-import org.jetbrains.annotations.TestOnly
+import junit.framework.TestCase
 import org.jetbrains.kotlin.asJava.LightClassGenerationSupport
-import org.jetbrains.kotlin.asJava.classes.KtLightClassForSourceDeclaration
-import org.jetbrains.kotlin.asJava.classes.KtUltraLightClass
-import org.jetbrains.kotlin.asJava.classes.isPrivateOrParameterInPrivateMethod
+import org.jetbrains.kotlin.asJava.classes.*
 import org.jetbrains.kotlin.asJava.elements.KtLightNullabilityAnnotation
+import org.jetbrains.kotlin.asJava.elements.KtLightPsiArrayInitializerMemberValue
+import org.jetbrains.kotlin.config.LanguageFeature
+import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.load.kotlin.NON_EXISTENT_CLASS_NAME
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 import org.junit.Assert
 
-fun UsefulTestCase.forceUsingUltraLightClassesForTest() {
-    KtUltraLightClass.forceUsingUltraLightClasses = true
+fun UsefulTestCase.forceUsingOldLightClassesForTest() {
+    KtUltraLightSupport.forceUsingOldLightClasses = true
     Disposer.register(testRootDisposable, Disposable {
-        KtUltraLightClass.forceUsingUltraLightClasses = false
+        KtUltraLightSupport.forceUsingOldLightClasses = false
     })
 }
 
@@ -34,13 +40,47 @@ object UltraLightChecker {
         }
     }
 
+    fun checkForReleaseCoroutine(sourceFileText: String, module: Module) {
+        if (sourceFileText.contains("//RELEASE_COROUTINE_NEEDED")) {
+            TestCase.assertTrue(
+                "Test should be runned under language version that supports released coroutines",
+                module.languageVersionSettings.supportsFeature(LanguageFeature.ReleaseCoroutines)
+            )
+        }
+    }
+
     fun allClasses(file: KtFile): List<KtClassOrObject> =
         SyntaxTraverser.psiTraverser(file).filter(KtClassOrObject::class.java).toList()
 
+
+    fun checkFacadeEquivalence(
+        fqName: FqName,
+        searchScope: GlobalSearchScope,
+        project: Project
+    ): KtLightClassForFacade? {
+
+        val oldForceFlag = KtUltraLightSupport.forceUsingOldLightClasses
+        KtUltraLightSupport.forceUsingOldLightClasses = true
+        val gold = KtLightClassForFacade.createForFacadeNoCache(fqName, searchScope, project)
+        KtUltraLightSupport.forceUsingOldLightClasses = false
+        val ultraLightClass = KtLightClassForFacade.createForFacadeNoCache(fqName, searchScope, project) ?: return null
+        KtUltraLightSupport.forceUsingOldLightClasses = oldForceFlag
+
+        checkClassEquivalenceByRendering(gold, ultraLightClass)
+
+        return ultraLightClass
+    }
+
     fun checkClassEquivalence(ktClass: KtClassOrObject): KtUltraLightClass? {
-        val gold = KtLightClassForSourceDeclaration.create(ktClass)
+        val gold = KtLightClassForSourceDeclaration.createNoCache(ktClass, forceUsingOldLightClasses = true)
         val ultraLightClass = LightClassGenerationSupport.getInstance(ktClass.project).createUltraLightClass(ktClass) ?: return null
 
+        checkClassEquivalenceByRendering(gold, ultraLightClass)
+
+        return ultraLightClass
+    }
+
+    private fun checkClassEquivalenceByRendering(gold: PsiClass?, ultraLightClass: PsiClass) {
         if (gold != null) {
             Assert.assertFalse(gold.javaClass.name.contains("Ultra"))
         }
@@ -54,26 +94,42 @@ object UltraLightChecker {
                 "// Ultra-light implementation:\n$ultraText"
             )
         }
-        return ultraLightClass
     }
 
-    private fun PsiAnnotation.renderAnnotation() =
-        "@" + qualifiedName + "(" + parameterList.attributes.joinToString { it.name + "=" + (it.value?.text ?: "?") } + ")"
+    private fun PsiAnnotation.renderAnnotation(): String {
+
+        val renderedAttributes = parameterList.attributes.map {
+            val attributeValue = it.value?.renderAnnotationMemberValue() ?: "?"
+
+            val name = when {
+                it.name === null && qualifiedName?.startsWith("java.lang.annotation.") == true -> "value"
+                else -> it.name
+            }
+
+            if (name !== null) "$name = $attributeValue" else attributeValue
+        }
+        return "@$qualifiedName(${renderedAttributes.joinToString()})"
+    }
+
 
     private fun PsiModifierListOwner.renderModifiers(typeIfApplicable: PsiType? = null): String {
-        val buffer = StringBuilder()
+        val annotationsBuffer = mutableListOf<String>()
         for (annotation in annotations) {
             if (annotation is KtLightNullabilityAnnotation<*> && skipRenderingNullability(typeIfApplicable)) {
                 continue
             }
 
-            buffer.append(annotation.renderAnnotation())
-            buffer.append(if (this is PsiParameter) " " else "\n")
+            annotationsBuffer.add(
+                annotation.renderAnnotation() + (if (this is PsiParameter) " " else "\n")
+            )
         }
+        annotationsBuffer.sort()
+
+        val resultBuffer = StringBuffer(annotationsBuffer.joinToString(separator = ""))
         for (modifier in PsiModifier.MODIFIERS.filter(::hasModifierProperty)) {
-            buffer.append(modifier).append(" ")
+            resultBuffer.append(modifier).append(" ")
         }
-        return buffer.toString()
+        return resultBuffer.toString()
     }
 
     private fun PsiModifierListOwner.skipRenderingNullability(typeIfApplicable: PsiType?) =
@@ -90,9 +146,17 @@ object UltraLightChecker {
 
     private fun PsiType.renderType() = getCanonicalText(true)
 
-    private fun PsiReferenceList?.renderRefList(keyword: String): String {
-        if (this == null || this.referencedTypes.isEmpty()) return ""
-        return " " + keyword + " " + referencedTypes.joinToString { it.renderType() }
+    private fun PsiReferenceList?.renderRefList(keyword: String, sortReferences: Boolean = true): String {
+        if (this == null) return ""
+
+        val references = referencedTypes
+        if (references.isEmpty()) return ""
+
+        val referencesTypes = references.map { it.renderType() }.toTypedArray()
+
+        if (sortReferences) referencesTypes.sort()
+
+        return " " + keyword + " " + referencesTypes.joinToString()
     }
 
     private fun PsiVariable.renderVar(): String {
@@ -114,6 +178,12 @@ object UltraLightChecker {
             it.name!! + bounds
         } + "> "
 
+    private fun PsiAnnotationMemberValue.renderAnnotationMemberValue(): String = when (this) {
+        is KtLightPsiArrayInitializerMemberValue -> "{${initializers.joinToString { it.renderAnnotationMemberValue() }}}"
+        is PsiAnnotation -> renderAnnotation()
+        else -> text
+    }
+
     private fun PsiMethod.renderMethod() =
         renderModifiers(returnType) +
                 (if (isVarArgs) "/* vararg */ " else "") +
@@ -121,7 +191,7 @@ object UltraLightChecker {
                 (returnType?.renderType() ?: "") + " " +
                 name +
                 "(" + parameterList.parameters.joinToString { it.renderModifiers(it.type) + it.type.renderType() } + ")" +
-                (this as? PsiAnnotationMethod)?.defaultValue?.let { " default " + it.text }.orEmpty() +
+                (this as? PsiAnnotationMethod)?.defaultValue?.let { " default " + it.renderAnnotationMemberValue() }.orEmpty() +
                 throwsList.referencedTypes.let { thrownTypes ->
                     if (thrownTypes.isEmpty()) ""
                     else " throws " + thrownTypes.joinToString { it.renderType() }

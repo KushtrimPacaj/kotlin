@@ -11,6 +11,7 @@ import org.jdom.output.XMLOutputter
 import org.jetbrains.kotlin.gradle.model.ModelContainer
 import org.jetbrains.kotlin.gradle.model.ModelFetcherBuildAction
 import org.jetbrains.kotlin.gradle.util.*
+import org.jetbrains.kotlin.test.util.trimTrailingWhitespaces
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert
@@ -32,7 +33,8 @@ abstract class BaseGradleIT {
 
     @Before
     fun setUp() {
-        workingDir = createTempDir("BaseGradleIT")
+        // Aapt2 from Android Gradle Plugin 3.2 and below does not handle long paths on Windows.
+        workingDir = createTempDir(if (isWindows) "" else "BaseGradleIT")
         acceptAndroidSdkLicenses()
     }
 
@@ -164,9 +166,17 @@ abstract class BaseGradleIT {
             assert(version != runnerGradleVersion) { "Not stopping Gradle daemon v$version as it matches the runner version" }
             println("Stopping gradle daemon v$version")
 
+            val envVariables = if (GradleVersion.version(version) < GradleVersion.version("5.0")) {
+                // Gradle versions below 5.0 do not support running on JDK11, and some of the tests
+                // set JAVA_HOME to JDK11. This makes sure we are using JDK8 when stopping those daemons.
+                environmentVariables + mapOf("JAVA_HOME" to System.getenv()["JDK_18"]!!)
+            } else {
+                environmentVariables
+            }
+
             val wrapperDir = gradleWrappers[version] ?: error("Was asked to stop unknown daemon $version")
             val cmd = createGradleCommand(wrapperDir, arrayListOf("-stop"))
-            val result = runProcess(cmd, wrapperDir, environmentVariables)
+            val result = runProcess(cmd, wrapperDir, envVariables)
             assert(result.isSuccessful) { "Could not stop daemon: $result" }
             DaemonRegistry.unregister(version)
         }
@@ -285,7 +295,12 @@ abstract class BaseGradleIT {
         build(*params, options = options.copy(kotlinDaemonDebugPort = debugPort), check = check)
     }
 
-    fun Project.build(vararg params: String, options: BuildOptions = defaultBuildOptions(), check: CompiledProject.() -> Unit) {
+    fun Project.build(
+        vararg params: String,
+        options: BuildOptions = defaultBuildOptions(),
+        projectDir: File = File(workingDir, projectName),
+        check: CompiledProject.() -> Unit
+    ) {
         val wrapperVersion = chooseWrapperVersionOrFinishTest()
 
         val env = createEnvironmentVariablesMap(options)
@@ -294,7 +309,6 @@ abstract class BaseGradleIT {
 
         println("<=== Test build: ${this.projectName} $cmd ===>")
 
-        val projectDir = File(workingDir, projectName)
         if (!projectDir.exists()) {
             setupWorkingDir()
         }
@@ -305,7 +319,7 @@ abstract class BaseGradleIT {
         } catch (t: Throwable) {
             // to prevent duplication of output
             if (!options.forceOutputToStdout) {
-                System.out.println(result.output)
+                println(result.output)
             }
             throw t
         }
@@ -516,6 +530,12 @@ abstract class BaseGradleIT {
         assertTasksNotRealized(*tasks)
     }
 
+    fun CompiledProject.assertTasksSkipped(vararg tasks: String) {
+        for (task in tasks) {
+            assertContains("Skipping task '$task'")
+        }
+    }
+
     fun CompiledProject.getOutputForTask(taskName: String): String {
         val taskOutputRegex = ("(?:\\[LIFECYCLE] \\[class org\\.gradle(?:\\.internal\\.buildevents)?\\.TaskExecutionLogger] :$taskName|" +
                 "\\[org\\.gradle\\.execution\\.plan\\.DefaultPlanExecutor\\] :$taskName.*?started)" +
@@ -600,42 +620,50 @@ abstract class BaseGradleIT {
      * @param assertionFileName path to xml with expected test results, relative to test resources root
      */
     fun CompiledProject.assertTestResults(
-            @TestDataFile assertionFileName: String,
-            testReportName: String
+        @TestDataFile assertionFileName: String,
+        vararg testReportNames: String
     ) {
         val projectDir = project.projectDir
-        val testReportDir = projectDir.resolve("build/test-results/$testReportName")
+        val testReportDirs = testReportNames.map { projectDir.resolve("build/test-results/$it") }
 
-        if (!testReportDir.isDirectory) {
-            error("Test report dir was not created")
+        testReportDirs.forEach {
+            if (!it.isDirectory) {
+                error("Test report dir $it was not created")
+            }
         }
 
-        val actualTestResults = readAndCleanupTestResults(testReportDir, projectDir)
-        val expectedTestResults = resourcesRootFile.resolve(assertionFileName).readText()
+        val actualTestResults = readAndCleanupTestResults(testReportDirs, projectDir)
+        val expectedTestResults = prettyPrintXml(resourcesRootFile.resolve(assertionFileName).readText())
 
-        assertEquals(
-                prettyPrintXml(expectedTestResults),
-                prettyPrintXml(actualTestResults)
-        )
+        assertEquals(expectedTestResults, actualTestResults)
     }
 
-    private fun readAndCleanupTestResults(testReportDir: File, projectDir: File): String {
-        val files = testReportDir
-                .listFiles()
-                .filter { it.isFile && it.name.endsWith(".xml") }
-                .sortedBy {
-                    // let containing test suite be first
-                    it.name.replace(".xml", ".A.xml")
+    private fun readAndCleanupTestResults(testReportDirs: List<File>, projectDir: File): String {
+        val files = testReportDirs
+            .flatMap {
+                (it.listFiles() ?: arrayOf()).filter {
+                    it.isFile && it.name.endsWith(".xml")
                 }
+            }
+            .sortedBy {
+                // let containing test suite be first
+                it.name.replace(".xml", ".A.xml")
+            }
 
-        val xmlString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<results>\n" +
-                files.joinToString("") {
+        val xmlString = buildString {
+            appendln("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+            appendln("<results>")
+            files.forEach {
+                appendln(
                     it.readText()
-                            .replace(projectDir.absolutePath, "/\$PROJECT_DIR$")
-                            .replace(projectDir.name, "\$PROJECT_NAME$")
-                            .replace("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n", "")
-                } +
-                "</results>"
+                        .trimTrailingWhitespaces()
+                        .replace(projectDir.absolutePath, "/\$PROJECT_DIR$")
+                        .replace(projectDir.name, "\$PROJECT_NAME$")
+                        .replace("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n", "")
+                )
+            }
+            appendln("</results>")
+        }
 
         val doc = SAXBuilder().build(xmlString.reader())
         val skipAttrs = setOf("timestamp", "hostname", "time", "message")
@@ -715,7 +743,6 @@ abstract class BaseGradleIT {
 
             // Workaround: override a console type set in the user machine gradle.properties (since Gradle 4.3):
             add("--console=plain")
-            add("-Dkotlin.daemon.ea=true")
             addAll(options.freeCommandLineArgs)
         }
 

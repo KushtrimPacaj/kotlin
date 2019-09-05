@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jvm.compiler;
@@ -532,14 +532,9 @@ public class WriteSignatureTestGenerated extends AbstractWriteSignatureTest {
             runTest("compiler/testData/writeSignature/inlineClasses/genericInlineClassBasedOnGenericType.kt");
         }
 
-        @TestMetadata("genericInlineClassWithDefaultTypeParameter.kt")
-        public void testGenericInlineClassWithDefaultTypeParameter() throws Exception {
-            runTest("compiler/testData/writeSignature/inlineClasses/genericInlineClassWithDefaultTypeParameter.kt");
-        }
-
-        @TestMetadata("genericInlineClassWithNotNullTypeParameter.kt")
-        public void testGenericInlineClassWithNotNullTypeParameter() throws Exception {
-            runTest("compiler/testData/writeSignature/inlineClasses/genericInlineClassWithNotNullTypeParameter.kt");
+        @TestMetadata("genericMethodInsideClass.kt")
+        public void testGenericMethodInsideClass() throws Exception {
+            runTest("compiler/testData/writeSignature/inlineClasses/genericMethodInsideClass.kt");
         }
 
         @TestMetadata("inlineClassAsGenericArgument.kt")

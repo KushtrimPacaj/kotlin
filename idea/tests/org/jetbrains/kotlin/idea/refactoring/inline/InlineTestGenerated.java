@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.refactoring.inline;
@@ -84,6 +84,11 @@ public class InlineTestGenerated extends AbstractInlineTest {
         @TestMetadata("ReturnNotInTheEnd.kt")
         public void testReturnNotInTheEnd() throws Exception {
             runTest("idea/testData/refactoring/inline/function/ReturnNotInTheEnd.kt");
+        }
+
+        @TestMetadata("Sequence.kt")
+        public void testSequence() throws Exception {
+            runTest("idea/testData/refactoring/inline/function/Sequence.kt");
         }
 
         @TestMetadata("UnitReturnType.kt")
@@ -514,6 +519,11 @@ public class InlineTestGenerated extends AbstractInlineTest {
         @TestMetadata("ifInQualifiedExpression.kt")
         public void testIfInQualifiedExpression() throws Exception {
             runTest("idea/testData/refactoring/inline/inlineVariableOrProperty/ifInQualifiedExpression.kt");
+        }
+
+        @TestMetadata("InAnnotation.kt")
+        public void testInAnnotation() throws Exception {
+            runTest("idea/testData/refactoring/inline/inlineVariableOrProperty/InAnnotation.kt");
         }
 
         @TestMetadata("InFunctionLiteral.kt")

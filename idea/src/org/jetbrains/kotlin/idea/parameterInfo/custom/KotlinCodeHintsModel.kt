@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.parameterInfo.custom
@@ -11,16 +11,16 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.event.EditorFactoryEvent
+import com.intellij.openapi.editor.event.EditorFactoryListener
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.util.containers.ContainerUtil
-import org.jetbrains.kotlin.idea.conversion.copy.range
+import org.jetbrains.kotlin.idea.core.util.range
 import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.kotlin.idea.util.compat.EditorFactoryListenerWrapper
 import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import java.util.concurrent.ConcurrentHashMap
 
-class KotlinCodeHintsModel(val project: Project) : EditorFactoryListenerWrapper {
+class KotlinCodeHintsModel(val project: Project) : EditorFactoryListener {
     companion object {
         fun getInstance(project: Project): KotlinCodeHintsModel =
             project.getComponent(KotlinCodeHintsModel::class.java) ?: error("Component `KotlinCodeHintsModel` is expected to be registered")

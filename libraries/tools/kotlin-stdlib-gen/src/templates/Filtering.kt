@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package templates
@@ -84,7 +84,7 @@ object Filtering : TemplateGroupBase() {
             }
             var count = 0
             for (item in this) {
-                if (count++ >= n) list.add(item)
+                if (count >= n) list.add(item) else ++count
             }
             return list.optimizeReadOnlyList()
             """
@@ -153,9 +153,9 @@ object Filtering : TemplateGroupBase() {
             var count = 0
             val list = ArrayList<T>(n)
             for (item in this) {
-                if (count++ == n)
-                    break
                 list.add(item)
+                if (++count == n)
+                    break
             }
             return list.optimizeReadOnlyList()
             """
@@ -201,9 +201,9 @@ object Filtering : TemplateGroupBase() {
             var count = 0
             val list = ArrayList<T>(n)
             for (item in this) {
-                if (count++ == n)
-                    break
                 list.add(item)
+                if (++count == n)
+                    break
             }
             return list
             """

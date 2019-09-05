@@ -37,10 +37,10 @@ import com.intellij.openapi.wm.ex.StatusBarEx
 import com.intellij.psi.PsiFile
 import com.intellij.util.ui.UIUtil
 import org.jetbrains.kotlin.idea.core.script.IdeScriptReportSink
-import org.jetbrains.kotlin.idea.core.script.ScriptDefinitionsManager
-import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesUpdater
+import org.jetbrains.kotlin.idea.script.ScriptDiagnosticFixProvider
 import org.jetbrains.kotlin.psi.KtFile
-import kotlin.script.experimental.dependencies.ScriptReport
+import kotlin.script.experimental.api.ScriptDiagnostic
+import kotlin.script.experimental.api.SourceCode
 
 class ScriptExternalHighlightingPass(
     private val file: KtFile,
@@ -53,34 +53,26 @@ class ScriptExternalHighlightingPass(
 
         if (!file.isScript()) return
 
-        if (!ScriptDefinitionsManager.getInstance(file.project).isReady()) {
-            showNotification(
-                file,
-                "Highlighting in scripts is not available until all Script Definitions are loaded"
-            )
-        }
+        val reports = IdeScriptReportSink.getReports(file.virtualFile)
 
-        if (!ScriptDependenciesUpdater.areDependenciesCached(file)) {
-            showNotification(
-                file,
-                "Highlighting in scripts is not available until all Script Dependencies are loaded"
-            )
-        }
-
-        val reports = file.virtualFile.getUserData(IdeScriptReportSink.Reports) ?: return
-
-        val annotations = reports.mapNotNull { (message, severity, position) ->
-            val (startOffset, endOffset) = position?.let { computeOffsets(document, position) } ?: 0 to 0
+        val annotations = reports.mapNotNull { scriptDiagnostic ->
+            val (startOffset, endOffset) = scriptDiagnostic.location?.let { computeOffsets(document, it) } ?: 0 to 0
             val annotation = Annotation(
                 startOffset,
                 endOffset,
-                severity.convertSeverity() ?: return@mapNotNull null,
-                message,
-                message
+                scriptDiagnostic.severity.convertSeverity() ?: return@mapNotNull null,
+                scriptDiagnostic.message,
+                scriptDiagnostic.message
             )
 
             // if range is empty, show notification panel in editor
             annotation.isFileLevelAnnotation = startOffset == endOffset
+
+            for (provider in ScriptDiagnosticFixProvider.EP_NAME.extensions) {
+                provider.provideFixes(scriptDiagnostic).forEach {
+                    annotation.registerFix(it)
+                }
+            }
 
             annotation
         }
@@ -89,14 +81,14 @@ class ScriptExternalHighlightingPass(
         UpdateHighlightersUtil.setHighlightersToEditor(myProject, myDocument!!, 0, file.textLength, infos, colorsScheme, id)
     }
 
-    private fun computeOffsets(document: Document, position: ScriptReport.Position): Pair<Int, Int> {
-        val startLine = position.startLine.coerceLineIn(document)
-        val startOffset = document.offsetBy(startLine, position.startColumn)
+    private fun computeOffsets(document: Document, position: SourceCode.Location): Pair<Int, Int> {
+        val startLine = position.start.line.coerceLineIn(document)
+        val startOffset = document.offsetBy(startLine, position.start.col)
 
-        val endLine = position.endLine?.coerceAtLeast(startLine)?.coerceLineIn(document) ?: startLine
+        val endLine = position.end?.line?.coerceAtLeast(startLine)?.coerceLineIn(document) ?: startLine
         val endOffset = document.offsetBy(
             endLine,
-            position.endColumn ?: document.getLineEndOffset(endLine)
+            position.end?.col ?: document.getLineEndOffset(endLine)
         ).coerceAtLeast(startOffset)
 
         return startOffset to endOffset
@@ -108,13 +100,13 @@ class ScriptExternalHighlightingPass(
         return (getLineStartOffset(line) + col).coerceIn(getLineStartOffset(line), getLineEndOffset(line))
     }
 
-    private fun ScriptReport.Severity.convertSeverity(): HighlightSeverity? {
+    private fun ScriptDiagnostic.Severity.convertSeverity(): HighlightSeverity? {
         return when (this) {
-            ScriptReport.Severity.FATAL -> ERROR
-            ScriptReport.Severity.ERROR -> ERROR
-            ScriptReport.Severity.WARNING -> WARNING
-            ScriptReport.Severity.INFO -> INFORMATION
-            ScriptReport.Severity.DEBUG -> if (ApplicationManager.getApplication().isInternal) INFORMATION else null
+            ScriptDiagnostic.Severity.FATAL -> ERROR
+            ScriptDiagnostic.Severity.ERROR -> ERROR
+            ScriptDiagnostic.Severity.WARNING -> WARNING
+            ScriptDiagnostic.Severity.INFO -> INFORMATION
+            ScriptDiagnostic.Severity.DEBUG -> if (ApplicationManager.getApplication().isInternal) INFORMATION else null
         }
     }
 

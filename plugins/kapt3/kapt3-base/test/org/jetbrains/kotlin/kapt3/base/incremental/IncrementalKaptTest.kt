@@ -1,14 +1,17 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt.base.test.org.jetbrains.kotlin.kapt3.base.incremental
 
+import org.jetbrains.kotlin.base.kapt3.KaptFlag
 import org.jetbrains.kotlin.base.kapt3.KaptOptions
 import org.jetbrains.kotlin.base.kapt3.collectJavaSourceFiles
 import org.jetbrains.kotlin.kapt3.base.KaptContext
 import org.jetbrains.kotlin.kapt3.base.doAnnotationProcessing
+import org.jetbrains.kotlin.kapt3.base.incremental.RuntimeProcType
+import org.jetbrains.kotlin.kapt3.base.incremental.SourcesToReprocess
 import org.jetbrains.kotlin.kapt3.base.util.WriterBackedKaptLogger
 import org.junit.Assert.*
 import org.junit.Rule
@@ -32,9 +35,6 @@ class IncrementalKaptTest {
 
         val outputDir = tmp.newFolder()
         val incrementalCacheDir = tmp.newFolder()
-        val classpathHistory = tmp.newFolder().also {
-            it.resolve("0").createNewFile()
-        }
         val options = KaptOptions.Builder().apply {
             projectBaseDir = tmp.newFolder()
             javaSourceRoots.add(sourcesDir)
@@ -45,14 +45,12 @@ class IncrementalKaptTest {
             incrementalDataOutputDir = outputDir
 
             incrementalCache = incrementalCacheDir
-            classpathFqNamesHistory = classpathHistory
         }.build()
 
         val logger = WriterBackedKaptLogger(isVerbose = true)
         KaptContext(options, true, logger).use {
-            val toReprocess = it.cacheManager!!.invalidateAndGetDirtyFiles(options.changedFiles)
             it.doAnnotationProcessing(
-                options.collectJavaSourceFiles(toReprocess), listOf(SimpleProcessor().toIsolating())
+                options.collectJavaSourceFiles(SourcesToReprocess.FullRebuild), listOf(SimpleProcessor().toIsolating())
             )
         }
 
@@ -72,14 +70,14 @@ class IncrementalKaptTest {
             incrementalDataOutputDir = outputDir
 
             incrementalCache = incrementalCacheDir
-            classpathFqNamesHistory = classpathHistory
             compiledSources.add(classesOutput)
             changedFiles.add(sourcesDir.resolve("User.java"))
+            flags.add(KaptFlag.INCREMENTAL_APT)
         }.build()
 
         KaptContext(optionsForSecondRun, true, logger).use {
             val sourcesToReprocess =
-                it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles)
+                it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles, emptyList())
             assertFalse(outputDir.resolve("test/UserGenerated.java").exists())
 
             it.doAnnotationProcessing(
@@ -92,7 +90,7 @@ class IncrementalKaptTest {
 
         sourcesDir.resolve("User.java").delete()
         KaptContext(optionsForSecondRun, true, logger).use {
-            val sourcesToReprocess = it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles)
+            val sourcesToReprocess = it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles, emptyList())
 
             it.doAnnotationProcessing(
                 optionsForSecondRun.collectJavaSourceFiles(sourcesToReprocess), listOf(SimpleProcessor().toIsolating())
@@ -114,9 +112,6 @@ class IncrementalKaptTest {
 
         val outputDir = tmp.newFolder()
         val incrementalCacheDir = tmp.newFolder()
-        val classpathHistory = tmp.newFolder().also {
-            it.resolve("0").createNewFile()
-        }
         val options = KaptOptions.Builder().apply {
             projectBaseDir = tmp.newFolder()
             javaSourceRoots.add(sourcesDir)
@@ -127,14 +122,12 @@ class IncrementalKaptTest {
             incrementalDataOutputDir = outputDir
 
             incrementalCache = incrementalCacheDir
-            classpathFqNamesHistory = classpathHistory
         }.build()
 
         val logger = WriterBackedKaptLogger(isVerbose = true)
         KaptContext(options, true, logger).use {
-            val toReprocess = it.cacheManager!!.invalidateAndGetDirtyFiles(options.changedFiles)
             it.doAnnotationProcessing(
-                options.collectJavaSourceFiles(toReprocess), listOf(SimpleGeneratingIfTypeDoesNotExist().toIsolating())
+                options.collectJavaSourceFiles(SourcesToReprocess.FullRebuild), listOf(SimpleGeneratingIfTypeDoesNotExist().toIsolating())
             )
         }
 
@@ -151,18 +144,81 @@ class IncrementalKaptTest {
             incrementalDataOutputDir = outputDir
 
             incrementalCache = incrementalCacheDir
-            classpathFqNamesHistory = classpathHistory
             compiledSources.add(classesOutput)
             changedFiles.add(sourcesDir.resolve("User.java"))
+            flags.add(KaptFlag.INCREMENTAL_APT)
         }.build()
 
         KaptContext(optionsForSecondRun, true, logger).use {
             val sourcesToReprocess =
-                it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles)
+                it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles, emptyList())
             assertFalse(outputDir.resolve("test/UserGenerated.java").exists())
 
             it.doAnnotationProcessing(
                 optionsForSecondRun.collectJavaSourceFiles(sourcesToReprocess), listOf(SimpleGeneratingIfTypeDoesNotExist().toIsolating())
+            )
+        }
+
+        assertTrue(outputDir.resolve("test/UserGenerated.java").exists())
+    }
+
+    /** Regression test for KT-31322. */
+    @Test
+    fun testCleanupWithDynamicNonIncremental() {
+        val sourcesDir = tmp.newFolder().resolve("test").also { base ->
+            base.mkdir()
+            listOf("User.java", "Address.java", "Observable.java").map {
+                TEST_DATA_DIR.resolve(it).copyTo(base.resolve(it))
+            }
+        }
+
+        val outputDir = tmp.newFolder()
+        val incrementalCacheDir = tmp.newFolder()
+        val options = KaptOptions.Builder().apply {
+            projectBaseDir = tmp.newFolder()
+            javaSourceRoots.add(sourcesDir)
+
+            sourcesOutputDir = outputDir
+            classesOutputDir = outputDir
+            stubsOutputDir = outputDir
+            incrementalDataOutputDir = outputDir
+
+            incrementalCache = incrementalCacheDir
+        }.build()
+
+        val logger = WriterBackedKaptLogger(isVerbose = true)
+        KaptContext(options, true, logger).use {
+            it.doAnnotationProcessing(
+                options.collectJavaSourceFiles(SourcesToReprocess.FullRebuild),
+                listOf(DynamicProcessor(RuntimeProcType.NON_INCREMENTAL).toDynamic())
+            )
+        }
+
+        val optionsForSecondRun = KaptOptions.Builder().apply {
+            projectBaseDir = tmp.newFolder()
+            javaSourceRoots.add(sourcesDir)
+
+            sourcesOutputDir = outputDir
+            classesOutputDir = outputDir
+            stubsOutputDir = outputDir
+            incrementalDataOutputDir = outputDir
+
+            incrementalCache = incrementalCacheDir
+            changedFiles.add(sourcesDir.resolve("User.java"))
+            flags.add(KaptFlag.INCREMENTAL_APT)
+        }.build()
+
+        KaptContext(optionsForSecondRun, true, logger).use {
+            val sourcesToReprocess =
+                it.cacheManager!!.invalidateAndGetDirtyFiles(optionsForSecondRun.changedFiles, emptyList())
+            assertEquals(SourcesToReprocess.FullRebuild, sourcesToReprocess)
+
+            // check output dir is empty
+            assertEquals(listOf(outputDir), outputDir.walkTopDown().toList())
+
+            it.doAnnotationProcessing(
+                optionsForSecondRun.collectJavaSourceFiles(sourcesToReprocess),
+                listOf(DynamicProcessor(RuntimeProcType.NON_INCREMENTAL).toDynamic())
             )
         }
 

@@ -16,12 +16,13 @@
 
 package org.jetbrains.kotlin.codegen.inline
 
-import org.jetbrains.kotlin.codegen.context.MethodContext
 import org.jetbrains.kotlin.codegen.generateAsCast
 import org.jetbrains.kotlin.codegen.generateIsCheck
 import org.jetbrains.kotlin.codegen.intrinsics.IntrinsicMethods
 import org.jetbrains.kotlin.codegen.optimization.common.intConstant
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper
+import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.config.isReleaseCoroutines
 import org.jetbrains.kotlin.resolve.jvm.AsmTypes
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeUtils
@@ -32,6 +33,7 @@ import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.Type
 import org.jetbrains.org.objectweb.asm.commons.InstructionAdapter
 import org.jetbrains.org.objectweb.asm.tree.*
+import kotlin.math.max
 
 class ReificationArgument(
     val parameterName: String, val nullable: Boolean, private val arrayDepth: Int
@@ -65,7 +67,7 @@ class ReificationArgument(
 class ReifiedTypeInliner(
     private val parametersMapping: TypeParameterMappings?,
     private val typeMapper: KotlinTypeMapper,
-    private val isReleaseCoroutines: Boolean
+    private val languageVersionSettings: LanguageVersionSettings
 ) {
     enum class OperationKind {
         NEW_ARRAY, AS, SAFE_AS, IS, JAVA_CLASS, ENUM_REIFIED, TYPE_OF;
@@ -188,13 +190,13 @@ class ReifiedTypeInliner(
         if (stubCheckcast !is TypeInsnNode) return false
 
         val newMethodNode = MethodNode(Opcodes.API_VERSION)
-        generateAsCast(InstructionAdapter(newMethodNode), kotlinType, asmType, safe, isReleaseCoroutines)
+        generateAsCast(InstructionAdapter(newMethodNode), kotlinType, asmType, safe, languageVersionSettings)
 
         instructions.insert(insn, newMethodNode.instructions)
         instructions.remove(stubCheckcast)
 
         // TODO: refine max stack calculation (it's not always as big as +4)
-        maxStackSize = Math.max(maxStackSize, 4)
+        maxStackSize = max(maxStackSize, 4)
 
         return true
     }
@@ -208,13 +210,13 @@ class ReifiedTypeInliner(
         if (stubInstanceOf !is TypeInsnNode) return false
 
         val newMethodNode = MethodNode(Opcodes.API_VERSION)
-        generateIsCheck(InstructionAdapter(newMethodNode), kotlinType, asmType, isReleaseCoroutines)
+        generateIsCheck(InstructionAdapter(newMethodNode), kotlinType, asmType, languageVersionSettings.isReleaseCoroutines())
 
         instructions.insert(insn, newMethodNode.instructions)
         instructions.remove(stubInstanceOf)
 
         // TODO: refine max stack calculation (it's not always as big as +2)
-        maxStackSize = Math.max(maxStackSize, 2)
+        maxStackSize = max(maxStackSize, 2)
         return true
     }
 
@@ -229,7 +231,7 @@ class ReifiedTypeInliner(
         instructions.insert(insn, newMethodNode.instructions)
         instructions.remove(stubConstNull)
 
-        maxStackSize = Math.max(maxStackSize, stackSize)
+        maxStackSize = max(maxStackSize, stackSize)
         return true
     }
 
@@ -348,18 +350,14 @@ class ReifiedTypeParametersUsages {
         usedTypeParameters.add(name)
     }
 
-    fun propagateChildUsagesWithinContext(child: ReifiedTypeParametersUsages, context: MethodContext) {
+    fun propagateChildUsagesWithinContext(child: ReifiedTypeParametersUsages, reifiedTypeParameterNamesInContext: () -> Set<String>) {
         if (!child.wereUsedReifiedParameters()) return
         // used for propagating reified TP usages from children member codegen to parent's
         // mark enclosing object-literal/lambda as needed reification iff
         // 1. at least one of it's method contains operations to reify
         // 2. reified type parameter of these operations is not from current method signature
         // i.e. from outer scope
-        child.usedTypeParameters.filterNot { name ->
-            context.contextDescriptor.typeParameters.any { typeParameter ->
-                typeParameter.isReified && typeParameter.name.asString() == name
-            }
-        }.forEach { usedTypeParameters.add(it) }
+        usedTypeParameters.addAll(child.usedTypeParameters - reifiedTypeParameterNamesInContext())
     }
 
     fun mergeAll(other: ReifiedTypeParametersUsages) {

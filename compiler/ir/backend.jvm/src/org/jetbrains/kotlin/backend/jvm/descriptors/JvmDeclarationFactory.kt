@@ -1,47 +1,40 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.descriptors
 
-import org.jetbrains.kotlin.backend.common.deepCopyWithWrappedDescriptors
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedClassConstructorDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedClassDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedValueParameterDescriptor
-import org.jetbrains.kotlin.backend.common.ir.DeclarationFactory
-import org.jetbrains.kotlin.backend.common.ir.copyTo
-import org.jetbrains.kotlin.backend.common.ir.copyTypeParametersFrom
-import org.jetbrains.kotlin.backend.common.ir.createImplicitParameterDeclarationWithWrappedDescriptor
+import org.jetbrains.kotlin.backend.common.ir.*
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
-import org.jetbrains.kotlin.backend.jvm.lower.createStaticFunctionWithReceivers
+import org.jetbrains.kotlin.backend.jvm.codegen.MethodSignatureMapper
 import org.jetbrains.kotlin.builtins.CompanionObjectMapping.isMappedIntrinsicCompanionObject
 import org.jetbrains.kotlin.codegen.OwnerKind
-import org.jetbrains.kotlin.codegen.state.GenerationState
-import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.descriptors.annotations.Annotations
-import org.jetbrains.kotlin.descriptors.impl.PropertyDescriptorImpl
+import org.jetbrains.kotlin.descriptors.ClassKind
+import org.jetbrains.kotlin.descriptors.Modality
+import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
+import org.jetbrains.kotlin.ir.builders.declarations.buildField
+import org.jetbrains.kotlin.ir.builders.setSourceRange
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrClassImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrConstructorImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrFieldImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrValueParameterImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrClassSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
-import org.jetbrains.kotlin.ir.symbols.impl.IrFieldSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.toKotlinType
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.load.java.JavaVisibilities
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.org.objectweb.asm.Opcodes
 import java.util.*
 
 class JvmDeclarationFactory(
-    private val state: GenerationState
+    private val methodSignatureMapper: MethodSignatureMapper
 ) : DeclarationFactory {
     private val singletonFieldDeclarations = HashMap<IrSymbolOwner, IrField>()
     private val outerThisDeclarations = HashMap<IrClass, IrField>()
@@ -50,33 +43,31 @@ class JvmDeclarationFactory(
     private val defaultImplsMethods = HashMap<IrSimpleFunction, IrSimpleFunction>()
     private val defaultImplsClasses = HashMap<IrClass, IrClass>()
 
-    override fun getFieldForEnumEntry(enumEntry: IrEnumEntry, type: IrType): IrField =
+    override fun getFieldForEnumEntry(enumEntry: IrEnumEntry, entryType: IrType): IrField =
         singletonFieldDeclarations.getOrPut(enumEntry) {
-            val symbol = IrFieldSymbolImpl(createEnumEntryFieldDescriptor(enumEntry.descriptor))
-            IrFieldImpl(
-                enumEntry.startOffset,
-                enumEntry.endOffset,
-                IrDeclarationOrigin.FIELD_FOR_ENUM_ENTRY,
-                symbol,
-                type
-            )
+            buildField {
+                setSourceRange(enumEntry)
+                name = enumEntry.name
+                type = enumEntry.parentAsClass.defaultType
+                origin = IrDeclarationOrigin.FIELD_FOR_ENUM_ENTRY
+                isFinal = true
+                isStatic = true
+            }.apply {
+                parent = enumEntry.parent
+            }
         }
 
     override fun getOuterThisField(innerClass: IrClass): IrField =
-        if (!innerClass.isInner) throw AssertionError("Class is not inner: ${innerClass.dump()}")
-        else outerThisDeclarations.getOrPut(innerClass) {
-            val outerClass = innerClass.parent as? IrClass
-                ?: throw AssertionError("No containing class for inner class ${innerClass.dump()}")
-
-            val symbol = IrFieldSymbolImpl(
-                JvmPropertyDescriptorImpl.createFinalField(
-                    Name.identifier("this$0"), outerClass.defaultType.toKotlinType(), innerClass.descriptor,
-                    Annotations.EMPTY, JavaVisibilities.PACKAGE_VISIBILITY, Opcodes.ACC_SYNTHETIC, SourceElement.NO_SOURCE
-                )
-            )
-
-            IrFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, DeclarationFactory.FIELD_FOR_OUTER_THIS, symbol, outerClass.defaultType).also {
-                it.parent = innerClass
+        outerThisDeclarations.getOrPut(innerClass) {
+            assert(innerClass.isInner) { "Class is not inner: ${innerClass.dump()}" }
+            buildField {
+                name = Name.identifier("this$0")
+                type = innerClass.parentAsClass.defaultType
+                origin = DeclarationFactory.FIELD_FOR_OUTER_THIS
+                visibility = JavaVisibilities.PACKAGE_VISIBILITY
+                isFinal = true
+            }.apply {
+                parent = innerClass
             }
         }
 
@@ -97,7 +88,7 @@ class JvmDeclarationFactory(
             oldConstructor.isInline, oldConstructor.isExternal, oldConstructor.isPrimary
         ).apply {
             newDescriptor.bind(this)
-            annotations.addAll(oldConstructor.annotations.map { it.deepCopyWithWrappedDescriptors(this) })
+            annotations.addAll(oldConstructor.annotations.map { it.deepCopyWithSymbols(this) })
             parent = oldConstructor.parent
             returnType = oldConstructor.returnType
             copyTypeParametersFrom(oldConstructor)
@@ -124,51 +115,19 @@ class JvmDeclarationFactory(
         }
     }
 
-
-    private fun createEnumEntryFieldDescriptor(enumEntryDescriptor: ClassDescriptor): PropertyDescriptor {
-        assert(enumEntryDescriptor.kind == ClassKind.ENUM_ENTRY) { "Should be enum entry: $enumEntryDescriptor" }
-
-        val enumClassDescriptor = enumEntryDescriptor.containingDeclaration as ClassDescriptor
-        assert(enumClassDescriptor.kind == ClassKind.ENUM_CLASS) { "Should be enum class: $enumClassDescriptor" }
-
-        return JvmPropertyDescriptorImpl.createStaticVal(
-            enumEntryDescriptor.name,
-            enumClassDescriptor.defaultType,
-            enumClassDescriptor,
-            enumEntryDescriptor.annotations,
-            Modality.FINAL,
-            Visibilities.PUBLIC,
-            Opcodes.ACC_ENUM,
-            enumEntryDescriptor.source
-        )
-    }
-
     override fun getFieldForObjectInstance(singleton: IrClass): IrField =
         singletonFieldDeclarations.getOrPut(singleton) {
-            val symbol = IrFieldSymbolImpl(createObjectInstanceFieldDescriptor(singleton.descriptor))
-            return IrFieldImpl(
-                UNDEFINED_OFFSET,
-                UNDEFINED_OFFSET,
-                IrDeclarationOrigin.FIELD_FOR_OBJECT_INSTANCE,
-                symbol,
-                singleton.defaultType
-            )
+            val isNotMappedCompanion = singleton.isCompanion && !isMappedIntrinsicCompanionObject(singleton.descriptor)
+            buildField {
+                name = if (isNotMappedCompanion) singleton.name else Name.identifier(JvmAbi.INSTANCE_FIELD)
+                type = singleton.defaultType
+                origin = IrDeclarationOrigin.FIELD_FOR_OBJECT_INSTANCE
+                isFinal = true
+                isStatic = true
+            }.apply {
+                parent = if (isNotMappedCompanion) singleton.parent else singleton
+            }
         }
-
-    private fun createObjectInstanceFieldDescriptor(objectDescriptor: ClassDescriptor): PropertyDescriptor {
-        assert(objectDescriptor.kind == ClassKind.OBJECT) { "Should be an object: $objectDescriptor" }
-
-        val isNotMappedCompanion = objectDescriptor.isCompanionObject && !isMappedIntrinsicCompanionObject(objectDescriptor)
-        val name = if (isNotMappedCompanion) objectDescriptor.name else Name.identifier("INSTANCE")
-        val containingDeclaration = if (isNotMappedCompanion) objectDescriptor.containingDeclaration else objectDescriptor
-        return PropertyDescriptorImpl.create(
-            containingDeclaration,
-            Annotations.EMPTY, Modality.FINAL, Visibilities.PUBLIC, false,
-            name,
-            CallableMemberDescriptor.Kind.SYNTHESIZED, SourceElement.NO_SOURCE, /* lateInit = */ false, /* isConst = */ false,
-            /* isExpect = */ false, /* isActual = */ false, /* isExternal = */ false, /* isDelegated = */ false
-        ).initialize(objectDescriptor.defaultType)
-    }
 
     fun getDefaultImplsFunction(interfaceFun: IrSimpleFunction): IrSimpleFunction {
         val parent = interfaceFun.parentAsClass
@@ -176,11 +135,25 @@ class JvmDeclarationFactory(
         return defaultImplsMethods.getOrPut(interfaceFun) {
             val defaultImpls = getDefaultImplsClass(interfaceFun.parentAsClass)
 
-            val name = Name.identifier(state.typeMapper.mapFunctionName(interfaceFun.descriptor.original, OwnerKind.IMPLEMENTATION))
+            val name = Name.identifier(methodSignatureMapper.mapFunctionName(interfaceFun, OwnerKind.IMPLEMENTATION))
             createStaticFunctionWithReceivers(
                 defaultImpls, name, interfaceFun,
                 dispatchReceiverType = parent.defaultType,
-                origin = JvmLoweredDeclarationOrigin.DEFAULT_IMPLS
+                // If `interfaceFun` is not a real implementation, then we're generating stubs in a descendant
+                // interface's DefaultImpls. For example,
+                //
+                //     interface I1 { fun f() { ... } }
+                //     interface I2 : I1
+                //
+                // is supposed to allow using `I2.DefaultImpls.f` as if it was inherited from `I1.DefaultImpls`.
+                // The classes are not actually related and `I2.DefaultImpls.f` is not a fake override but a bridge.
+                origin = when {
+                    interfaceFun.origin != IrDeclarationOrigin.FAKE_OVERRIDE -> interfaceFun.origin
+                    interfaceFun.resolveFakeOverride()!!.origin.isSynthetic -> JvmLoweredDeclarationOrigin.DEFAULT_IMPLS_BRIDGE_TO_SYNTHETIC
+                    else -> JvmLoweredDeclarationOrigin.DEFAULT_IMPLS_BRIDGE
+                },
+                // Old backend doesn't generate ACC_FINAL on DefaultImpls methods.
+                modality = Modality.OPEN
             )
         }
     }

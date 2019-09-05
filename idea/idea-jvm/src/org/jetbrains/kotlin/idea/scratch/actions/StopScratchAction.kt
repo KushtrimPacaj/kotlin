@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.scratch.actions
@@ -8,8 +8,7 @@ package org.jetbrains.kotlin.idea.scratch.actions
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnActionEvent
 import org.jetbrains.kotlin.idea.KotlinBundle
-import org.jetbrains.kotlin.idea.scratch.getScratchPanelFromSelectedEditor
-import org.jetbrains.kotlin.idea.scratch.LOG as log
+import org.jetbrains.kotlin.idea.scratch.getScratchFileFromSelectedEditor
 
 class StopScratchAction : ScratchAction(
     KotlinBundle.message("scratch.stop.button"),
@@ -24,8 +23,8 @@ class StopScratchAction : ScratchAction(
         super.update(e)
 
         val project = e.project ?: return
-        val panel = getScratchPanelFromSelectedEditor(project) ?: return
+        val scratchFile = getScratchFileFromSelectedEditor(project) ?: return
 
-        e.presentation.isEnabledAndVisible = ScratchCompilationSupport.isInProgress(panel.scratchFile)
+        e.presentation.isEnabledAndVisible = ScratchCompilationSupport.isInProgress(scratchFile)
     }
 }
